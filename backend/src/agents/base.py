@@ -1,12 +1,13 @@
 """Agent plugin contract.
 
 DESIGN.md §4. Every agent declares an `AgentCapability` and implements
-`async run(state) -> state`. Registration happens via the `@register_agent`
-decorator in `src.agents.registry` (auto-instantiates a singleton).
+`async run(state, ctx) -> dict`. Registration happens via the
+`@register_agent` decorator in `src.agents.registry`.
 
-`AgentState` is defined in `src.orchestration.state` and passed through
-the LangGraph StateGraph nodes — agents receive the current state and
-return a (possibly partial) update dict that LangGraph merges.
+`AgentState` and `AgentContext` are defined in `src.orchestration.state`.
+The state flows through the LangGraph StateGraph; the context carries
+non-serializable runtime dependencies (DB session, project_id, ...) that
+must NOT live inside the LangGraph state (which is checkpointed).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # avoid runtime circular import with orchestration
-    from src.orchestration.state import AgentState
+    from src.orchestration.state import AgentContext, AgentState
 
 
 class AgentCapability(BaseModel):
@@ -45,20 +46,25 @@ class BaseAgent(ABC):
 
     Subclasses MUST:
     - declare a class-level `capability: AgentCapability` (not an instance attribute)
-    - implement `async run(state)` returning a state update dict (or full state)
-
-    Subclasses are typically registered via `@register_agent`.
+    - implement `async run(state, ctx)` returning a state update dict that
+      LangGraph merges into the global state.
     """
 
     capability: ClassVar[AgentCapability]
 
     @abstractmethod
-    async def run(self, state: "AgentState") -> dict[str, Any] | "AgentState":
-        """Execute the agent. Receives the current AgentState; returns either
-        a partial update dict (LangGraph merges) or a full new state."""
+    async def run(self, state: "AgentState", ctx: "AgentContext") -> dict[str, Any]:
+        """Execute the agent.
+
+        Args:
+            state: current LangGraph state (TypedDict; treat as read-only).
+            ctx:   non-serializable runtime context (DB session, project_id).
+
+        Returns:
+            Partial state update dict. LangGraph merges with the running state.
+        """
         raise NotImplementedError
 
-    # Convenience for nicer repr/debugging.
     def __repr__(self) -> str:  # pragma: no cover
         return f"<{type(self).__name__} name={self.capability.name!r}>"
 

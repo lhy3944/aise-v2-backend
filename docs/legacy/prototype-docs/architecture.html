@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AISE 2.0 Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Inter',system-ui,sans-serif;background:#f0f4f8;color:#1e293b}
+    .container{max-width:1200px;margin:0 auto;padding:48px 24px}
+    h1{text-align:center;font-size:36px;font-weight:800;letter-spacing:-0.02em}
+    .subtitle{text-align:center;color:#64748b;font-size:15px;margin:8px 0 36px}
+    .panel{background:#fff;border:2.5px solid #1e293b;border-radius:18px;margin-bottom:24px;overflow:hidden}
+    .panel-header{padding:16px 20px 0}
+    .panel-label{display:inline-block;background:#1e293b;color:#fff;padding:6px 20px;border-radius:99px;font-size:13px;font-weight:600;letter-spacing:0.02em}
+    .panel-body{padding:12px 16px 16px;display:flex;justify-content:center;align-items:center}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+    .legend{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;padding:20px 24px}
+    .legend-item{display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;font-weight:500}
+    .legend-color{width:28px;height:18px;border-radius:5px}
+    .box-title{font-family:'Inter',sans-serif;font-size:13px;font-weight:600;fill:#1e293b}
+    .box-sub{font-family:'Inter',sans-serif;font-size:10px;fill:#64748b}
+    .box-icon{font-size:15px}
+    .layer-label{font-family:'Inter',sans-serif;font-size:11px;font-weight:700;fill:#94a3b8;letter-spacing:0.1em}
+    .arrow-label{font-family:'Inter',sans-serif;font-size:10px;fill:#64748b;font-weight:500}
+    .arrow{fill:none;stroke-width:2;stroke-linecap:round}
+    .section-label{font-family:'Inter',sans-serif;font-size:10px;font-weight:700;fill:#94a3b8;letter-spacing:0.08em}
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>AISE 2.0</h1>
+  <p class="subtitle">AI-powered Software Engineering Platform &mdash; System Architecture</p>
+
+  <!-- ===== PANEL 1: SYSTEM OVERVIEW ===== -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-label">SYSTEM OVERVIEW</span></div>
+    <div class="panel-body">
+      <svg viewBox="0 0 1100 520" width="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah-gray" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#94a3b8"/></marker>
+          <marker id="ah-blue" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#3b82f6"/></marker>
+          <marker id="ah-green" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#10b981"/></marker>
+          <marker id="ah-purple" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#8b5cf6"/></marker>
+          <marker id="ah-cyan" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#06b6d4"/></marker>
+          <marker id="ah-pink" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#ec4899"/></marker>
+          <marker id="ah-orange" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#f97316"/></marker>
+        </defs>
+
+        <!-- Background layers -->
+        <rect x="25" y="5" width="1050" height="88" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+        <rect x="25" y="113" width="1050" height="107" rx="12" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+        <rect x="25" y="243" width="1050" height="107" rx="12" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+        <rect x="25" y="378" width="1050" height="122" rx="12" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1"/>
+
+        <!-- Layer labels -->
+        <text class="layer-label" x="1050" y="55" text-anchor="end">CLIENT</text>
+        <text class="layer-label" x="1050" y="172" text-anchor="end">FRONTEND</text>
+        <text class="layer-label" x="1050" y="302" text-anchor="end">BACKEND</text>
+        <text class="layer-label" x="1050" y="445" text-anchor="end">SERVICES</text>
+
+        <!-- B1: User / Browser — x=425 y=18 w=250 h=64 cx=550 bottom=(550,82) -->
+        <rect x="425" y="18" width="250" height="64" rx="12" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
+        <text class="box-title" x="550" y="55" text-anchor="middle">&#x1F464; User / Browser</text>
+
+        <!-- B2: Next.js 16 — x=300 y=138 w=500 h=64 cx=550 top=(550,138) bottom=(550,202) -->
+        <rect x="300" y="138" width="500" height="64" rx="12" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+        <text class="box-title" x="550" y="162" text-anchor="middle">&#x26A1; Next.js 16 + React 19</text>
+        <text class="box-sub" x="550" y="180" text-anchor="middle">TypeScript 5 &middot; Tailwind CSS 4 &middot; Zustand &middot; Vercel AI SDK</text>
+
+        <!-- B3: FastAPI — x=300 y=268 w=500 h=64 cx=550 top=(550,268) bottom=(550,332) -->
+        <rect x="300" y="268" width="500" height="64" rx="12" fill="#d1fae5" stroke="#34d399" stroke-width="2"/>
+        <text class="box-title" x="550" y="292" text-anchor="middle">&#x1F680; FastAPI + Python 3.14</text>
+        <text class="box-sub" x="550" y="310" text-anchor="middle">SQLAlchemy &middot; asyncpg &middot; Loguru &middot; Deep Agents</text>
+
+        <!-- B4: Azure OpenAI — x=55 y=403 w=270 h=72 cx=190 top=(190,403) -->
+        <rect x="55" y="403" width="270" height="72" rx="12" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+        <text class="box-title" x="190" y="433" text-anchor="middle">&#x1F9E0; Azure OpenAI</text>
+        <text class="box-sub" x="190" y="453" text-anchor="middle">GPT-5.2 &middot; Responses API</text>
+
+        <!-- B5: PostgreSQL — x=415 y=403 w=270 h=72 cx=550 top=(550,403) -->
+        <rect x="415" y="403" width="270" height="72" rx="12" fill="#cffafe" stroke="#22d3ee" stroke-width="2"/>
+        <text class="box-title" x="550" y="433" text-anchor="middle">&#x1F4BE; PostgreSQL 16</text>
+        <text class="box-sub" x="550" y="453" text-anchor="middle">Docker &middot; asyncpg</text>
+
+        <!-- B6: Keycloak SSO — x=775 y=403 w=270 h=72 cx=910 top=(910,403) -->
+        <rect x="775" y="403" width="270" height="72" rx="12" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+        <text class="box-title" x="910" y="433" text-anchor="middle">&#x1F510; Keycloak SSO</text>
+        <text class="box-sub" x="910" y="453" text-anchor="middle">OIDC &middot; LDAP</text>
+
+        <!-- A1: User.bottom(550,82) → Next.js.top(550,138) -->
+        <path d="M 550,82 L 550,138" class="arrow" stroke="#94a3b8" marker-end="url(#ah-gray)"/>
+        <text class="arrow-label" x="565" y="114" text-anchor="start">HTTP / WebSocket</text>
+
+        <!-- A2: Next.js.bottom(550,202) → FastAPI.top(550,268) -->
+        <path d="M 550,202 L 550,268" class="arrow" stroke="#3b82f6" marker-end="url(#ah-blue)"/>
+        <text class="arrow-label" x="565" y="240" text-anchor="start">REST API (JSON)</text>
+
+        <!-- A3: FastAPI.bottom(480,332) → Azure.top(190,403) fanout left -->
+        <!-- turnY=375 midY=(332+375)/2=354 -->
+        <path d="M 480,332 C 480,354 190,354 190,375 L 190,403" class="arrow" stroke="#8b5cf6" marker-end="url(#ah-purple)"/>
+        <text class="arrow-label" x="290" y="350" text-anchor="start">Responses API</text>
+
+        <!-- A4: FastAPI.bottom(550,332) → PostgreSQL.top(550,403) -->
+        <path d="M 550,332 L 550,403" class="arrow" stroke="#06b6d4" marker-end="url(#ah-cyan)"/>
+        <text class="arrow-label" x="565" y="372" text-anchor="start">asyncpg</text>
+
+        <!-- A5: FastAPI.bottom(620,332) → Keycloak.top(910,403) fanout right -->
+        <!-- turnY=375 midY=354 -->
+        <path d="M 620,332 C 620,354 910,354 910,375 L 910,403" class="arrow" stroke="#8b5cf6" marker-end="url(#ah-purple)"/>
+        <text class="arrow-label" x="780" y="350" text-anchor="start">OIDC / LDAP</text>
+
+        <!-- Animations -->
+        <circle r="3.5" fill="#fb923c" opacity="0.85">
+          <animateMotion dur="1.5s" repeatCount="indefinite" begin="0s" path="M 550,82 L 550,138"/>
+        </circle>
+        <circle r="3.5" fill="#3b82f6" opacity="0.85">
+          <animateMotion dur="1.5s" repeatCount="indefinite" begin="0.3s" path="M 550,202 L 550,268"/>
+        </circle>
+        <circle r="3.5" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="2s" repeatCount="indefinite" begin="0.6s" path="M 480,332 C 480,354 190,354 190,375 L 190,403"/>
+        </circle>
+        <circle r="3.5" fill="#06b6d4" opacity="0.85">
+          <animateMotion dur="1.5s" repeatCount="indefinite" begin="0.9s" path="M 550,332 L 550,403"/>
+        </circle>
+        <circle r="3.5" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="2s" repeatCount="indefinite" begin="1.2s" path="M 620,332 C 620,354 910,354 910,375 L 910,403"/>
+        </circle>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== PANEL 2-3: FRONTEND + BACKEND (grid) ===== -->
+  <div class="grid-2">
+
+    <!-- FRONTEND ARCHITECTURE -->
+    <div class="panel">
+      <div class="panel-header"><span class="panel-label">FRONTEND ARCHITECTURE</span></div>
+      <div class="panel-body">
+        <svg viewBox="0 0 520 440" width="100%" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="f-ah-blue" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#3b82f6"/></marker>
+            <marker id="f-ah-gold" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#eab308"/></marker>
+            <marker id="f-ah-pink" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#ec4899"/></marker>
+          </defs>
+
+          <!-- Row 0: App Router — x=160 y=20 w=200 h=56 cx=260 bottom=(260,76) -->
+          <rect x="160" y="20" width="200" height="56" rx="12" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+          <text class="box-title" x="260" y="52" text-anchor="middle">&#x1F4F1; App Router</text>
+
+          <!-- Row 1: Pages -->
+          <text class="section-label" x="260" y="108" text-anchor="middle">PAGES</text>
+          <!-- /chat: x=25 y=118 w=110 h=48 cx=80 top=(80,118) bottom=(80,166) -->
+          <rect x="25" y="118" width="110" height="48" rx="10" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+          <text class="box-title" x="80" y="146" text-anchor="middle">/chat</text>
+          <!-- /dashboard: x=148 y=118 w=110 h=48 cx=203 -->
+          <rect x="148" y="118" width="110" height="48" rx="10" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+          <text class="box-title" x="203" y="146" text-anchor="middle">/dashboard</text>
+          <!-- /project: x=271 y=118 w=110 h=48 cx=326 -->
+          <rect x="271" y="118" width="110" height="48" rx="10" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+          <text class="box-title" x="326" y="146" text-anchor="middle">/project</text>
+          <!-- /workflow: x=394 y=118 w=110 h=48 cx=449 -->
+          <rect x="394" y="118" width="110" height="48" rx="10" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+          <text class="box-title" x="449" y="146" text-anchor="middle">/workflow</text>
+
+          <!-- Row 2: Components -->
+          <text class="section-label" x="260" y="218" text-anchor="middle">COMPONENTS</text>
+          <!-- Layout: x=15 y=228 w=155 h=48 cx=92 top=(92,228) bottom=(92,276) -->
+          <rect x="15" y="228" width="155" height="48" rx="10" fill="#fef9c3" stroke="#facc15" stroke-width="1.5"/>
+          <text class="box-title" x="92" y="256" text-anchor="middle">&#x1F3D7;&#xFE0F; Layout</text>
+          <!-- Chat: x=183 y=228 w=155 h=48 cx=260 -->
+          <rect x="183" y="228" width="155" height="48" rx="10" fill="#fef9c3" stroke="#facc15" stroke-width="1.5"/>
+          <text class="box-title" x="260" y="256" text-anchor="middle">&#x1F4AC; Chat</text>
+          <!-- Overlay/UI: x=350 y=228 w=155 h=48 cx=427 -->
+          <rect x="350" y="228" width="155" height="48" rx="10" fill="#fef9c3" stroke="#facc15" stroke-width="1.5"/>
+          <text class="box-title" x="427" y="256" text-anchor="middle">&#x1F3A8; Overlay / UI</text>
+
+          <!-- Row 3: Zustand Stores -->
+          <text class="section-label" x="260" y="328" text-anchor="middle">STATE (ZUSTAND)</text>
+          <!-- ChatStore: x=15 y=338 w=155 h=48 cx=92 top=(92,338) -->
+          <rect x="15" y="338" width="155" height="48" rx="10" fill="#fce7f3" stroke="#f472b6" stroke-width="1.5"/>
+          <text class="box-title" x="92" y="366" text-anchor="middle">ChatStore</text>
+          <!-- PanelStore: x=183 y=338 w=155 h=48 cx=260 -->
+          <rect x="183" y="338" width="155" height="48" rx="10" fill="#fce7f3" stroke="#f472b6" stroke-width="1.5"/>
+          <text class="box-title" x="260" y="366" text-anchor="middle">PanelStore</text>
+          <!-- OverlayStore: x=350 y=338 w=155 h=48 cx=427 -->
+          <rect x="350" y="338" width="155" height="48" rx="10" fill="#fce7f3" stroke="#f472b6" stroke-width="1.5"/>
+          <text class="box-title" x="427" y="366" text-anchor="middle">OverlayStore</text>
+
+          <!-- Arrows: App Router → Pages (fanout) -->
+          <!-- Source bottom=(260,76), 4 targets: (80,118),(203,118),(326,118),(449,118) -->
+          <!-- Start offsets: -60,-20,+20,+60 → 200,240,280,320 -->
+          <!-- turnY=118-25=93, midY=(76+93)/2=85 -->
+          <path d="M 200,76 C 200,85 80,85 80,93 L 80,118" class="arrow" stroke="#3b82f6" marker-end="url(#f-ah-blue)"/>
+          <path d="M 240,76 C 240,85 203,85 203,93 L 203,118" class="arrow" stroke="#3b82f6" marker-end="url(#f-ah-blue)"/>
+          <path d="M 280,76 C 280,85 326,85 326,93 L 326,118" class="arrow" stroke="#3b82f6" marker-end="url(#f-ah-blue)"/>
+          <path d="M 320,76 C 320,85 449,85 449,93 L 449,118" class="arrow" stroke="#3b82f6" marker-end="url(#f-ah-blue)"/>
+
+          <!-- Arrows: Pages → Components -->
+          <!-- /chat(80,166) → Layout(92,228), midY=(166+228)/2=197 -->
+          <path d="M 80,166 C 80,197 92,197 92,228" class="arrow" stroke="#eab308" marker-end="url(#f-ah-gold)"/>
+          <!-- /dashboard(203,166) → Chat(260,228) -->
+          <path d="M 203,166 C 203,197 260,197 260,228" class="arrow" stroke="#eab308" marker-end="url(#f-ah-gold)"/>
+          <!-- /workflow(449,166) → Overlay(427,228) -->
+          <path d="M 449,166 C 449,197 427,197 427,228" class="arrow" stroke="#eab308" marker-end="url(#f-ah-gold)"/>
+
+          <!-- Arrows: Components → Stores (straight vertical) -->
+          <path d="M 92,276 L 92,338" class="arrow" stroke="#ec4899" marker-end="url(#f-ah-pink)"/>
+          <path d="M 260,276 L 260,338" class="arrow" stroke="#ec4899" marker-end="url(#f-ah-pink)"/>
+          <path d="M 427,276 L 427,338" class="arrow" stroke="#ec4899" marker-end="url(#f-ah-pink)"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- BACKEND ARCHITECTURE -->
+    <div class="panel">
+      <div class="panel-header"><span class="panel-label">BACKEND ARCHITECTURE</span></div>
+      <div class="panel-body">
+        <svg viewBox="0 0 520 440" width="100%" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="b-ah-green" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#10b981"/></marker>
+            <marker id="b-ah-purple" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#8b5cf6"/></marker>
+            <marker id="b-ah-cyan" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#06b6d4"/></marker>
+          </defs>
+
+          <!-- Row 0: FastAPI Entry — x=110 y=20 w=300 h=56 cx=260 bottom=(260,76) -->
+          <rect x="110" y="20" width="300" height="56" rx="12" fill="#d1fae5" stroke="#34d399" stroke-width="2"/>
+          <text class="box-title" x="260" y="44" text-anchor="middle">&#x1F680; FastAPI + Middleware</text>
+          <text class="box-sub" x="260" y="60" text-anchor="middle">Logging &middot; CORS &middot; Exception Handler</text>
+
+          <!-- Row 1: Routers -->
+          <text class="section-label" x="260" y="108" text-anchor="middle">ROUTERS</text>
+          <!-- API v1: x=30 y=118 w=220 h=48 cx=140 top=(140,118) bottom=(140,166) -->
+          <rect x="30" y="118" width="220" height="48" rx="10" fill="#d1fae5" stroke="#34d399" stroke-width="1.5"/>
+          <text class="box-title" x="140" y="146" text-anchor="middle">&#x1F50C; API v1 Routes</text>
+          <!-- Dev API: x=270 y=118 w=220 h=48 cx=380 top=(380,118) bottom=(380,166) -->
+          <rect x="270" y="118" width="220" height="48" rx="10" fill="#d1fae5" stroke="#34d399" stroke-width="1.5"/>
+          <text class="box-title" x="380" y="146" text-anchor="middle">&#x1F50C; Dev API (Chat)</text>
+
+          <!-- Row 2: Services + Agents -->
+          <text class="section-label" x="260" y="218" text-anchor="middle">BUSINESS LOGIC</text>
+          <!-- Services: x=30 y=228 w=220 h=48 cx=140 top=(140,228) bottom=(140,276) -->
+          <rect x="30" y="228" width="220" height="48" rx="10" fill="#d1fae5" stroke="#34d399" stroke-width="1.5"/>
+          <text class="box-title" x="140" y="256" text-anchor="middle">&#x2699;&#xFE0F; Services</text>
+          <!-- Deep Agents: x=270 y=228 w=220 h=48 cx=380 top=(380,228) bottom=(380,276) -->
+          <rect x="270" y="228" width="220" height="48" rx="10" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5"/>
+          <text class="box-title" x="380" y="256" text-anchor="middle">&#x1F916; Deep Agents</text>
+
+          <!-- Row 3: Data Layer -->
+          <text class="section-label" x="260" y="328" text-anchor="middle">DATA LAYER</text>
+          <!-- Models: x=15 y=338 w=155 h=48 cx=92 top=(92,338) -->
+          <rect x="15" y="338" width="155" height="48" rx="10" fill="#cffafe" stroke="#22d3ee" stroke-width="1.5"/>
+          <text class="box-title" x="92" y="366" text-anchor="middle">&#x1F4CA; Models</text>
+          <!-- Schemas: x=183 y=338 w=155 h=48 cx=260 top=(260,338) -->
+          <rect x="183" y="338" width="155" height="48" rx="10" fill="#fef9c3" stroke="#facc15" stroke-width="1.5"/>
+          <text class="box-title" x="260" y="366" text-anchor="middle">&#x1F4CB; Schemas</text>
+          <!-- Prompts: x=350 y=338 w=155 h=48 cx=427 top=(427,338) -->
+          <rect x="350" y="338" width="155" height="48" rx="10" fill="#fef9c3" stroke="#facc15" stroke-width="1.5"/>
+          <text class="box-title" x="427" y="366" text-anchor="middle">&#x270D;&#xFE0F; Prompts</text>
+
+          <!-- Arrows: Entry → Routers (fanout) -->
+          <!-- Source bottom=(260,76), targets: (140,118),(380,118) -->
+          <!-- Start offsets: -40,+40 → 220,300 -->
+          <!-- turnY=93, midY=(76+93)/2=85 -->
+          <path d="M 220,76 C 220,85 140,85 140,93 L 140,118" class="arrow" stroke="#10b981" marker-end="url(#b-ah-green)"/>
+          <path d="M 300,76 C 300,85 380,85 380,93 L 380,118" class="arrow" stroke="#10b981" marker-end="url(#b-ah-green)"/>
+
+          <!-- Arrows: Routers → Services/Agents (straight) -->
+          <path d="M 140,166 L 140,228" class="arrow" stroke="#10b981" marker-end="url(#b-ah-green)"/>
+          <path d="M 380,166 L 380,228" class="arrow" stroke="#8b5cf6" marker-end="url(#b-ah-purple)"/>
+
+          <!-- Arrows: Services → Models, Schemas -->
+          <!-- Services(140,276), 2 targets offset: 120,160 -->
+          <!-- turnY=338-25=313, midY=(276+313)/2=295 -->
+          <path d="M 120,276 C 120,295 92,295 92,313 L 92,338" class="arrow" stroke="#06b6d4" marker-end="url(#b-ah-cyan)"/>
+          <path d="M 160,276 C 160,295 260,295 260,313 L 260,338" class="arrow" stroke="#10b981" marker-end="url(#b-ah-green)"/>
+
+          <!-- Arrows: Deep Agents → Prompts -->
+          <!-- Deep Agents(380,276) → Prompts(427,338) -->
+          <path d="M 380,276 C 380,295 427,295 427,313 L 427,338" class="arrow" stroke="#8b5cf6" marker-end="url(#b-ah-purple)"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PANEL 4: AI GENERATION PIPELINE ===== -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-label">AI GENERATION PIPELINE</span></div>
+    <div class="panel-body">
+      <svg viewBox="0 0 1080 160" width="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="p-ah-purple" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#8b5cf6"/></marker>
+        </defs>
+
+        <!-- B1 Requirements: x=30 y=52 w=145 h=56 cx=102 right=(175,80) -->
+        <rect x="30" y="52" width="145" height="56" rx="12" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+        <text class="box-title" x="102" y="76" text-anchor="middle">&#x1F4DD; Requirements</text>
+        <text class="box-sub" x="102" y="92" text-anchor="middle">FR / QA / Constraints</text>
+
+        <!-- B2 AI Assist: x=205 y=52 w=145 h=56 cx=277 left=(205,80) right=(350,80) -->
+        <rect x="205" y="52" width="145" height="56" rx="12" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+        <text class="box-title" x="277" y="76" text-anchor="middle">&#x2728; AI Assist</text>
+        <text class="box-sub" x="277" y="92" text-anchor="middle">Refine / Suggest</text>
+
+        <!-- B3 Review: x=380 y=52 w=145 h=56 cx=452 left=(380,80) right=(525,80) -->
+        <rect x="380" y="52" width="145" height="56" rx="12" fill="#fce7f3" stroke="#f472b6" stroke-width="2"/>
+        <text class="box-title" x="452" y="76" text-anchor="middle">&#x1F50D; Review</text>
+        <text class="box-sub" x="452" y="92" text-anchor="middle">Quality Gate</text>
+
+        <!-- B4 SRS: x=555 y=52 w=145 h=56 cx=627 left=(555,80) right=(700,80) -->
+        <rect x="555" y="52" width="145" height="56" rx="12" fill="#d1fae5" stroke="#34d399" stroke-width="2"/>
+        <text class="box-title" x="627" y="76" text-anchor="middle">&#x1F4D1; SRS / SAD</text>
+        <text class="box-sub" x="627" y="92" text-anchor="middle">Auto Generation</text>
+
+        <!-- B5 Design: x=730 y=52 w=145 h=56 cx=802 left=(730,80) right=(875,80) -->
+        <rect x="730" y="52" width="145" height="56" rx="12" fill="#d1fae5" stroke="#34d399" stroke-width="2"/>
+        <text class="box-title" x="802" y="76" text-anchor="middle">&#x1F3D7;&#xFE0F; Design</text>
+        <text class="box-sub" x="802" y="92" text-anchor="middle">UCD / UCS / Models</text>
+
+        <!-- B6 TestCase: x=905 y=52 w=145 h=56 cx=977 left=(905,80) -->
+        <rect x="905" y="52" width="145" height="56" rx="12" fill="#ffedd5" stroke="#fb923c" stroke-width="2"/>
+        <text class="box-title" x="977" y="76" text-anchor="middle">&#x1F9EA; Test Cases</text>
+        <text class="box-sub" x="977" y="92" text-anchor="middle">Generate / Export</text>
+
+        <!-- Horizontal arrows -->
+        <path d="M 175,80 L 205,80" class="arrow" stroke="#8b5cf6" marker-end="url(#p-ah-purple)"/>
+        <path d="M 350,80 L 380,80" class="arrow" stroke="#8b5cf6" marker-end="url(#p-ah-purple)"/>
+        <path d="M 525,80 L 555,80" class="arrow" stroke="#8b5cf6" marker-end="url(#p-ah-purple)"/>
+        <path d="M 700,80 L 730,80" class="arrow" stroke="#8b5cf6" marker-end="url(#p-ah-purple)"/>
+        <path d="M 875,80 L 905,80" class="arrow" stroke="#8b5cf6" marker-end="url(#p-ah-purple)"/>
+
+        <!-- Animations: purple dots traveling right -->
+        <circle r="3" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="1s" repeatCount="indefinite" begin="0s" path="M 175,80 L 205,80"/>
+        </circle>
+        <circle r="3" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="1s" repeatCount="indefinite" begin="0.4s" path="M 350,80 L 380,80"/>
+        </circle>
+        <circle r="3" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="1s" repeatCount="indefinite" begin="0.8s" path="M 525,80 L 555,80"/>
+        </circle>
+        <circle r="3" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="1s" repeatCount="indefinite" begin="1.2s" path="M 700,80 L 730,80"/>
+        </circle>
+        <circle r="3" fill="#8b5cf6" opacity="0.85">
+          <animateMotion dur="1s" repeatCount="indefinite" begin="1.6s" path="M 875,80 L 905,80"/>
+        </circle>
+
+        <!-- Step labels -->
+        <text class="box-sub" x="102" y="40" text-anchor="middle">STEP 1</text>
+        <text class="box-sub" x="277" y="40" text-anchor="middle">STEP 2</text>
+        <text class="box-sub" x="452" y="40" text-anchor="middle">STEP 3</text>
+        <text class="box-sub" x="627" y="40" text-anchor="middle">STEP 4</text>
+        <text class="box-sub" x="802" y="40" text-anchor="middle">STEP 5</text>
+        <text class="box-sub" x="977" y="40" text-anchor="middle">STEP 6</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== PANEL 5: DEPLOYMENT ===== -->
+  <div class="panel">
+    <div class="panel-header"><span class="panel-label">DEPLOYMENT &amp; INFRASTRUCTURE</span></div>
+    <div class="panel-body">
+      <svg viewBox="0 0 1080 90" width="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="d-ah-gray" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="7" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#94a3b8"/></marker>
+        </defs>
+
+        <!-- B1 Docker: x=40 y=17 w=210 h=56 cx=145 right=(250,45) -->
+        <rect x="40" y="17" width="210" height="56" rx="12" fill="#cffafe" stroke="#22d3ee" stroke-width="2"/>
+        <text class="box-title" x="145" y="42" text-anchor="middle">&#x1F433; Docker Compose</text>
+        <text class="box-sub" x="145" y="58" text-anchor="middle">Container Orchestration</text>
+
+        <!-- B2 PostgreSQL: x=310 y=17 w=210 h=56 cx=415 left=(310,45) right=(520,45) -->
+        <rect x="310" y="17" width="210" height="56" rx="12" fill="#cffafe" stroke="#22d3ee" stroke-width="2"/>
+        <text class="box-title" x="415" y="42" text-anchor="middle">&#x1F4BE; PostgreSQL 16</text>
+        <text class="box-sub" x="415" y="58" text-anchor="middle">Persistent Volume</text>
+
+        <!-- B3 Backend: x=580 y=17 w=210 h=56 cx=685 left=(580,45) right=(790,45) -->
+        <rect x="580" y="17" width="210" height="56" rx="12" fill="#d1fae5" stroke="#34d399" stroke-width="2"/>
+        <text class="box-title" x="685" y="42" text-anchor="middle">&#x1F4E6; UV + FastAPI</text>
+        <text class="box-sub" x="685" y="58" text-anchor="middle">Python 3.14 Runtime</text>
+
+        <!-- B4 Frontend: x=850 y=17 w=210 h=56 cx=955 left=(850,45) -->
+        <rect x="850" y="17" width="210" height="56" rx="12" fill="#dbeafe" stroke="#60a5fa" stroke-width="2"/>
+        <text class="box-title" x="955" y="42" text-anchor="middle">&#x26A1; Next.js 16</text>
+        <text class="box-sub" x="955" y="58" text-anchor="middle">App Router + SSR</text>
+
+        <!-- Horizontal arrows -->
+        <path d="M 250,45 L 310,45" class="arrow" stroke="#94a3b8" marker-end="url(#d-ah-gray)"/>
+        <path d="M 520,45 L 580,45" class="arrow" stroke="#94a3b8" marker-end="url(#d-ah-gray)"/>
+        <path d="M 790,45 L 850,45" class="arrow" stroke="#94a3b8" marker-end="url(#d-ah-gray)"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== LEGEND ===== -->
+  <div class="panel">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-color" style="background:#f1f5f9;border-color:#94a3b8"></div>Client / User</div>
+      <div class="legend-item"><div class="legend-color" style="background:#dbeafe;border-color:#60a5fa"></div>Frontend</div>
+      <div class="legend-item"><div class="legend-color" style="background:#d1fae5;border-color:#34d399"></div>Backend API</div>
+      <div class="legend-item"><div class="legend-color" style="background:#ede9fe;border-color:#a78bfa"></div>External Service</div>
+      <div class="legend-item"><div class="legend-color" style="background:#cffafe;border-color:#22d3ee"></div>Storage</div>
+      <div class="legend-item"><div class="legend-color" style="background:#fce7f3;border-color:#f472b6"></div>AI Review / State</div>
+      <div class="legend-item"><div class="legend-color" style="background:#fef9c3;border-color:#facc15"></div>Config / Schema</div>
+      <div class="legend-item"><div class="legend-color" style="background:#ffedd5;border-color:#fb923c"></div>Output / Export</div>
+    </div>
+  </div>
+
+  <p style="text-align:center;color:#94a3b8;font-size:12px;margin-top:16px">Generated on 2026-03-27 &mdash; AISE 2.0 Architecture v1.0</p>
+</div>
+</body>
+</html>

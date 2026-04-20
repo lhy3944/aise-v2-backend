@@ -31,6 +31,21 @@ services:
     volumes:
       - minio_data:/data
 
+  redis:
+    image: redis:7-alpine
+    container_name: aise2_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -43,6 +58,8 @@ services:
       - .env.prod
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aise}:${POSTGRES_PASSWORD:-aise1234}@postgres:5432/${POSTGRES_DB:-aise}
+      LANGGRAPH_CHECKPOINT_URL: postgresql://${POSTGRES_USER:-aise}:${POSTGRES_PASSWORD:-aise1234}@postgres:5432/${POSTGRES_DB:-aise}
+      REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: ${ENVIRONMENT:-prod}
       CORS_ORIGINS: "http://${HOST_IP:-localhost}:4000"
       MINIO_ENDPOINT: minio:9000
@@ -51,6 +68,8 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-aise-knowledge}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:
@@ -72,3 +91,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:

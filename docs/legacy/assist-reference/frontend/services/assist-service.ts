@@ -1,10 +1,3 @@
-/**
- * DEPRECATED (MIGRATION_PLAN §5 D3):
- *   Scheduled for removal in Phase 2 once the Requirement Agent path
- *   replaces refine/suggest/chat. Snapshot preserved under
- *   docs/legacy/assist-reference/. Do not add new call sites.
- */
-
 import { api } from '@/lib/api';
 import type {
   ChatRequest,

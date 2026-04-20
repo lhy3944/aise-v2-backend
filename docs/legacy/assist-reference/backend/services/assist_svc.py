@@ -1,10 +1,4 @@
-"""AI Assist 서비스 — 요구사항 정제(refine), 보완 제안(suggest), 대화 모드(chat).
-
-DEPRECATED (MIGRATION_PLAN §5 D3):
-    Scheduled for removal in Phase 2 once the Requirement Agent (new
-    orchestration path) replaces refine/suggest/chat. Snapshot preserved
-    under docs/legacy/assist-reference/.
-"""
+"""AI Assist 서비스 — 요구사항 정제(refine), 보완 제안(suggest), 대화 모드(chat)."""
 
 import uuid
 

@@ -1,6 +1,3 @@
-"""DEPRECATED (MIGRATION_PLAN §5 D3) — scheduled for removal in Phase 2.
-Snapshot preserved under docs/legacy/assist-reference/."""
-
 from typing import Literal
 import uuid
 

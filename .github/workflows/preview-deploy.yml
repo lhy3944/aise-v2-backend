@@ -1,0 +1,98 @@
+name: Preview Deploy
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'claude/**'
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'references/**'
+  workflow_dispatch:
+
+concurrency:
+  group: preview-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            # Install SSH client
+            which ssh || sudo apt-get install -y openssh-client
+            # Write SSH key
+            mkdir -p ~/.ssh
+            echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh-keyscan -p ${{ secrets.VPS_PORT || 22 }} -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+            # Execute deploy
+            ssh -i ~/.ssh/deploy_key -o ConnectTimeout=30 -o StrictHostKeyChecking=no -p ${{ secrets.VPS_PORT || 22 }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'DEPLOY_SCRIPT'
+            set -e
+
+            REPO_DIR="${{ secrets.VPS_REPO_DIR || '/home/workspace/aise-v2-preview' }}"
+            BRANCH="${{ github.ref_name }}"
+
+            echo "=== Deploying branch: $BRANCH ==="
+
+            cd "$REPO_DIR"
+
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+
+            export HOST_IP=$(hostname -I | awk '{print $1}')
+
+            docker compose -f docker-compose.preview.yml up -d --build
+
+            echo "=== Deploy complete ==="
+            echo "Frontend: http://$HOST_IP:4100"
+            echo "Backend:  http://$HOST_IP:8181"
+            DEPLOY_SCRIPT
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: deploy-preview
+    if: always()
+    steps:
+      - name: Send Telegram notification (success)
+        if: needs.deploy-preview.result == 'success'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            ✅ <b>Preview 배포 완료</b>
+
+            <b>브랜치:</b> <code>${{ github.ref_name }}</code>
+            <b>커밋:</b> <code>${{ github.sha }}</code>
+
+            🌐 <a href="https://preview.devbanjang.cloud">Frontend</a>
+            📡 <a href="http://${{ secrets.VPS_HOST }}:8181">Backend</a>
+            📖 <a href="http://${{ secrets.VPS_HOST }}:8181/docs">Swagger</a>
+
+            <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">커밋 보기</a>
+
+      - name: Send Telegram notification (failure)
+        if: needs.deploy-preview.result == 'failure'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            ❌ <b>Preview 배포 실패</b>
+
+            <b>브랜치:</b> <code>${{ github.ref_name }}</code>
+            <b>커밋:</b> <code>${{ github.sha }}</code>
+
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">로그 확인</a>

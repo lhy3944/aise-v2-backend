@@ -1,0 +1,93 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'references/**'
+  workflow_dispatch:
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            # Install SSH client
+            which ssh || sudo apt-get install -y openssh-client
+            # Write SSH key
+            mkdir -p ~/.ssh
+            echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh-keyscan -p ${{ secrets.VPS_PORT || 22 }} -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+            # Execute deploy
+            ssh -i ~/.ssh/deploy_key -o ConnectTimeout=30 -o StrictHostKeyChecking=no -p ${{ secrets.VPS_PORT || 22 }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'DEPLOY_SCRIPT'
+            set -e
+
+            REPO_DIR="/home/workspace/aise-v2"
+
+            echo "=== Deploying master to production ==="
+
+            cd "$REPO_DIR"
+
+            git fetch origin master
+            git checkout master
+            git pull origin master
+
+            export HOST_IP=$(hostname -I | awk '{print $1}')
+
+            docker compose up -d --build
+
+            echo "=== Production deploy complete ==="
+            echo "Frontend: http://$HOST_IP:4000"
+            echo "Backend:  http://$HOST_IP:8081"
+            DEPLOY_SCRIPT
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    if: always()
+    steps:
+      - name: Send Telegram notification (success)
+        if: needs.deploy-prod.result == 'success'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            ✅ <b>Production 배포 완료</b>
+
+            <b>커밋:</b> <code>${{ github.sha }}</code>
+
+            🌐 <a href="https://aise.devbanjang.cloud">Frontend</a>
+            📡 <a href="http://${{ secrets.VPS_HOST }}:8081">Backend</a>
+            📖 <a href="http://${{ secrets.VPS_HOST }}:8081/docs">Swagger</a>
+
+            <a href="https://github.com/${{ github.repository }}/commit/${{ github.sha }}">커밋 보기</a>
+
+      - name: Send Telegram notification (failure)
+        if: needs.deploy-prod.result == 'failure'
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            ❌ <b>Production 배포 실패</b>
+
+            <b>커밋:</b> <code>${{ github.sha }}</code>
+
+            <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">로그 확인</a>

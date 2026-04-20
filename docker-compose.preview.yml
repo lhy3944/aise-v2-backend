@@ -1,0 +1,86 @@
+# Preview 환경 (master와 포트/컨테이너 완전 분리)
+# 사용: docker compose -f docker-compose.preview.yml up -d --build
+#
+# master:  Frontend 4000, Backend 8081, DB 5432 (aise2_*)
+# preview: Frontend 4100, Backend 8181, DB 5433 (aise2_preview_*)
+#
+# API 프록시: 브라우저 → https://preview.devbanjang.cloud/api/*
+#           → Next.js rewrites → http://backend:8081/api/*
+# Mixed Content 문제 없음 (브라우저는 HTTPS만 사용)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aise2_preview_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aise1234}
+      POSTGRES_DB: ${POSTGRES_DB:-aise}
+    ports:
+      - "5433:5432"
+    volumes:
+      - preview_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aise}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: aise2_preview_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aise}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aise1234}
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - preview_minio_data:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aise2_preview_backend
+    restart: unless-stopped
+    ports:
+      - "8181:8081"
+    env_file:
+      - .env.preview
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aise}:${POSTGRES_PASSWORD:-aise1234}@postgres:5432/${POSTGRES_DB:-aise}
+      ENVIRONMENT: preview
+      CORS_ORIGINS: "https://preview.devbanjang.cloud,http://localhost:4100"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aise}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aise1234}
+      MINIO_BUCKET: ${MINIO_BUCKET:-aise-knowledge}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # 빈 값 → 브라우저가 같은 도메인(/api/*)으로 요청 → rewrites가 프록시
+        NEXT_PUBLIC_API_URL: ""
+        # 서버 사이드 rewrites 대상 (컨테이너 내부 네트워크)
+        BACKEND_URL: "http://backend:8081"
+    container_name: aise2_preview_frontend
+    restart: unless-stopped
+    ports:
+      - "4100:3000"
+    environment:
+      BACKEND_URL: "http://backend:8081"
+    depends_on:
+      - backend
+
+volumes:
+  preview_postgres_data:
+  preview_minio_data:

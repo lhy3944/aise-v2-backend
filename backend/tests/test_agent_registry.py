@@ -13,6 +13,7 @@ from src.agents.registry import (
     get_agent,
     list_agents,
     list_capabilities,
+    load_builtin_agents,
     register_agent,
     try_get_agent,
 )
@@ -20,10 +21,17 @@ from src.agents.registry import (
 
 @pytest.fixture(autouse=True)
 def isolate_registry():
-    """Clear before AND after every test so registrations don't leak."""
+    """Clear before AND after every test so registrations don't leak.
+
+    After each test we re-load the built-in agents (with force_reload, since
+    `clear_registry` removed instances but importlib's module cache means
+    a plain import wouldn't re-fire `@register_agent`). This keeps later
+    test files (e.g. test_orchestration, test_agents_router) green.
+    """
     clear_registry()
     yield
     clear_registry()
+    load_builtin_agents(force_reload=True)
 
 
 def _make_agent(name: str, *, tags: list[str] | None = None):

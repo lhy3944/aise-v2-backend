@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.agents import load_builtin_agents
+from src.agents import list_agents, load_builtin_agents
 from src.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from src.models.project import Project
 from src.orchestration.graph import build_graph, run_chat
@@ -30,7 +30,9 @@ from src.services import embedding_svc, llm_svc, rag_svc
 
 @pytest.fixture(autouse=True)
 def _ensure_builtin_agents():
-    load_builtin_agents()
+    """Force-reload registry — protects against earlier tests that called clear_registry()."""
+    if not list_agents():
+        load_builtin_agents(force_reload=True)
     yield
 
 

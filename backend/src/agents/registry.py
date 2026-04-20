@@ -24,6 +24,7 @@ fire. Call this once on app startup.
 from __future__ import annotations
 
 import importlib
+import sys
 from typing import TYPE_CHECKING, Type
 
 from loguru import logger
@@ -88,16 +89,20 @@ def clear_registry() -> None:
     _REGISTRY.clear()
 
 
-def load_builtin_agents() -> None:
+def load_builtin_agents(*, force_reload: bool = False) -> None:
     """Import every built-in agent module so their @register_agent decorators run.
 
-    Idempotent — re-importing a module is a no-op for registration because the
-    decorator is class-scoped, not instance-scoped, and conflicts are rejected
-    by `register_agent`.
+    By default a no-op when modules are already cached. Pass
+    ``force_reload=True`` (test usage) to re-execute the decorators after a
+    `clear_registry()` call — needed because `import_module` is a cache
+    hit on subsequent imports and the decorator therefore won't fire again.
     """
     for module_path in _BUILTIN_AGENT_MODULES:
         try:
-            importlib.import_module(module_path)
+            if force_reload and module_path in sys.modules:
+                importlib.reload(sys.modules[module_path])
+            else:
+                importlib.import_module(module_path)
         except ImportError as e:
             logger.warning(f"Skipping agent module {module_path}: {e}")
 

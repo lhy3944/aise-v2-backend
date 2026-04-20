@@ -1,16 +1,46 @@
-import os
+"""LLM service — LiteLLM-backed chat completion with provider abstraction.
 
+`chat_completion()` is the public API. Internally it routes through LiteLLM
+(`litellm.acompletion`) so new providers can be added by env alone.
+
+Provider selection
+------------------
+- LLM_PROVIDER=openai → `model` is used as-is (e.g. "gpt-4o"), uses
+  OPENAI_API_KEY.
+- LLM_PROVIDER=azure  → `model` is prefixed with "azure/" and LiteLLM
+  receives the per-client-type (srs|tc) API key, endpoint, and
+  api_version. Two separate Azure deployments are supported
+  (SRS_API_KEY/SRS_ENDPOINT vs TC_API_KEY/TC_ENDPOINT).
+
+Legacy surface
+--------------
+`get_client`, `get_srs_client`, `get_tc_client`, `get_openai_client`,
+`_get_provider`, `_get_default_model` are retained for backward
+compatibility — they still return the raw OpenAI SDK client objects
+used by `services.embedding_svc` and `services.agent_svc`. Those will
+migrate to LiteLLM in a later phase.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+import litellm
+from litellm.exceptions import BadRequestError as LiteLLMBadRequestError
 from loguru import logger
 from openai import AsyncAzureOpenAI, AsyncOpenAI, BadRequestError
 
 from src.core.exceptions import AppException
+
+AZURE_API_VERSION = "2025-03-01-preview"
 
 
 def _get_provider() -> str:
     return os.getenv("LLM_PROVIDER", "azure").lower()
 
 
-# 싱글톤 클라이언트
+# Singleton OpenAI SDK clients (legacy, used by embeddings + legacy agent_svc)
 _openai_client: AsyncOpenAI | None = None
 _srs_client: AsyncAzureOpenAI | None = None
 _tc_client: AsyncAzureOpenAI | None = None
@@ -25,7 +55,7 @@ def _get_default_model(client_type: str = "srs") -> str:
 
 
 def get_openai_client() -> AsyncOpenAI:
-    """개인용 OpenAI 클라이언트"""
+    """Return the singleton OpenAI SDK client (legacy surface)."""
     global _openai_client
     if _openai_client is None:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -36,7 +66,7 @@ def get_openai_client() -> AsyncOpenAI:
 
 
 def get_srs_client() -> AsyncAzureOpenAI:
-    """회사용 Azure OpenAI 클라이언트 (SRS)"""
+    """Return the singleton Azure OpenAI SRS client (legacy surface)."""
     global _srs_client
     if _srs_client is None:
         api_key = os.getenv("SRS_API_KEY")
@@ -46,13 +76,13 @@ def get_srs_client() -> AsyncAzureOpenAI:
         _srs_client = AsyncAzureOpenAI(
             api_key=api_key,
             azure_endpoint=endpoint,
-            api_version="2025-03-01-preview",
+            api_version=AZURE_API_VERSION,
         )
     return _srs_client
 
 
 def get_tc_client() -> AsyncAzureOpenAI:
-    """회사용 Azure OpenAI 클라이언트 (TC)"""
+    """Return the singleton Azure OpenAI TC client (legacy surface)."""
     global _tc_client
     if _tc_client is None:
         api_key = os.getenv("TC_API_KEY")
@@ -62,16 +92,63 @@ def get_tc_client() -> AsyncAzureOpenAI:
         _tc_client = AsyncAzureOpenAI(
             api_key=api_key,
             azure_endpoint=endpoint,
-            api_version="2025-03-01-preview",
+            api_version=AZURE_API_VERSION,
         )
     return _tc_client
 
 
 def get_client(client_type: str = "srs") -> AsyncOpenAI | AsyncAzureOpenAI:
-    """LLM_PROVIDER에 따라 적절한 클라이언트 반환"""
+    """Return a raw SDK client chosen by LLM_PROVIDER (legacy surface)."""
     if _get_provider() == "openai":
         return get_openai_client()
     return get_srs_client() if client_type == "srs" else get_tc_client()
+
+
+# ---------- LiteLLM-backed chat_completion ----------
+
+
+def _litellm_kwargs(client_type: str, model: str | None) -> dict[str, Any]:
+    """Build the provider-specific kwargs for litellm.acompletion."""
+    provider = _get_provider()
+    resolved = model or _get_default_model(client_type)
+
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise AppException(500, "OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+        return {"model": resolved, "api_key": api_key}
+
+    # Azure
+    if client_type == "tc":
+        api_key = os.getenv("TC_API_KEY")
+        api_base = os.getenv("TC_ENDPOINT")
+    else:
+        api_key = os.getenv("SRS_API_KEY")
+        api_base = os.getenv("SRS_ENDPOINT")
+    if not api_key or not api_base:
+        raise AppException(
+            500,
+            f"Azure {client_type.upper()}_API_KEY / {client_type.upper()}_ENDPOINT 환경변수가 설정되지 않았습니다.",
+        )
+    return {
+        "model": f"azure/{resolved}",
+        "api_key": api_key,
+        "api_base": api_base,
+        "api_version": AZURE_API_VERSION,
+    }
+
+
+def _is_azure_content_filter(exc: Exception) -> bool:
+    """Detect Azure's Responsible AI content-filter rejection.
+
+    LiteLLM often wraps provider errors; fall back to stringification.
+    """
+    body = getattr(exc, "body", None) or getattr(exc, "response", None)
+    if isinstance(body, dict):
+        inner = body.get("innererror") or {}
+        if isinstance(inner, dict) and inner.get("code") == "ResponsibleAIPolicyViolation":
+            return True
+    return "ResponsibleAIPolicyViolation" in str(exc)
 
 
 async def chat_completion(
@@ -82,38 +159,31 @@ async def chat_completion(
     temperature: float = 0.3,
     max_completion_tokens: int = 4096,
 ) -> str:
-    """Chat Completion 호출 (OpenAI / Azure OpenAI 자동 전환)"""
-    resolved_model = model or _get_default_model(client_type)
-    client = get_client(client_type)
+    """Chat completion via LiteLLM (preserves legacy signature)."""
+    kwargs = _litellm_kwargs(client_type, model)
     provider = _get_provider()
 
-    logger.debug(f"LLM 호출: provider={provider}, model={resolved_model}, messages={len(messages)}개")
+    logger.debug(
+        f"LLM 호출(LiteLLM): provider={provider}, model={kwargs['model']}, messages={len(messages)}개"
+    )
 
     try:
-        response = await client.chat.completions.create(
-            model=resolved_model,
+        response = await litellm.acompletion(
             messages=messages,
             temperature=temperature,
             max_completion_tokens=max_completion_tokens,
+            **kwargs,
         )
-    except BadRequestError as e:
-        # Azure 콘텐츠 필터 처리
-        if provider == "azure":
-            body = e.body or {}
-            inner = body.get("innererror", {}) if isinstance(body, dict) else {}
-            if inner.get("code") == "ResponsibleAIPolicyViolation":
-                filters = inner.get("content_filter_result", {})
-                triggered = [
-                    k for k, v in filters.items()
-                    if isinstance(v, dict) and v.get("filtered")
-                ]
-                logger.warning(f"Azure 콘텐츠 필터 차단: categories={triggered}")
-                raise AppException(
-                    status_code=422,
-                    detail="콘텐츠 필터에 의해 요청이 차단되었습니다. 입력 내용을 수정 후 다시 시도해주세요.",
-                ) from e
+    except (BadRequestError, LiteLLMBadRequestError) as e:
+        if provider == "azure" and _is_azure_content_filter(e):
+            logger.warning("Azure content filter rejected the request")
+            raise AppException(
+                status_code=422,
+                detail="콘텐츠 필터에 의해 요청이 차단되었습니다. 입력 내용을 수정 후 다시 시도해주세요.",
+            ) from e
         raise
 
+    # LiteLLM's response mirrors OpenAI's: .choices[0].message.content
     content = response.choices[0].message.content or ""
     logger.debug(f"LLM 응답: {len(content)}자")
     return content

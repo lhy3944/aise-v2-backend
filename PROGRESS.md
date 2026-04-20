@@ -75,17 +75,17 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 
 ## Phase 1 착수 전 체크리스트
 
-### 사용자 승인 대기 항목 (MIGRATION_PLAN §5)
-- [ ] D1 코드 이관 방식 (추천: 복사 — **이미 Phase 0에서 복사 이관 완료**)
-- [ ] D2 artifacts 테이블 통합 vs 분리 (추천: 분리 유지 + 뷰)
-- [ ] D3 assist_* 레거시 유지 여부 (추천: 유지)
-- [ ] D4 LiteLLM 도입 시점 (추천: Phase 1)
-- [ ] D5 fetch-event-source 전면 vs 점진 (추천: Phase 1 전면)
-- [ ] D6 라우트 분리 시점 (추천: Phase 4)
-- [ ] D7 체크포인터 Postgres vs Redis (추천: Postgres)
-- [ ] D8 Langfuse 자가호스팅 vs 클라우드 — 논의 필요
-- [ ] D9 deepagents 제거 (추천: Phase 1 즉시)
-- [ ] D10 pnpm-lock vs package-lock 단일화 — 사용자 결정
+### 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
+- [x] D1 복사 이관 (Phase 0 완료)
+- [x] D2 artifacts 도메인별 분리 유지 + 조회 유틸
+- [x] **D3 assist_* 제거** (Phase 1 말~2 초, `docs/legacy/assist-reference/`로 스냅샷 후 삭제)
+- [x] D4 LiteLLM Phase 1
+- [x] D5 fetch-event-source Phase 1 전면
+- [x] D6 라우트 분리 Phase 4
+- [x] D7 PostgresSaver
+- [x] **D8 Langfuse 자가호스팅** (Phase 4, `LANGFUSE_HOST` 환경변수로 감쌈)
+- [x] D9 deepagents Phase 1 즉시 제거
+- [x] **D10 pnpm 단일 유지** (`package-lock.json` 삭제, `packageManager` 필드 명시)
 
 ### Phase 1 시작 시 선행 작업 (MIGRATION_PLAN §2.1)
 - [ ] **SSE 이벤트 스키마 합의 문서** (`docs/events.md`) 작성 후 사용자 검토

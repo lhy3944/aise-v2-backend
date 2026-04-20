@@ -527,22 +527,20 @@ types/agent-events.ts HitlData 확장
 
 ---
 
-## 5. 사전 협의 필요 항목 (승인 대기)
+## 5. 결정 사항 (확정, 2026-04-21)
 
-다음은 MIGRATION_PLAN 내부에서 결정을 보류하고 사용자 승인을 구하는 항목이다:
-
-| # | 결정 사항 | 옵션 | 추천 | 사유 |
-|---|---|---|---|---|
-| **D1** | 프로토타입 코드를 **현 저장소 subdir로 복사** vs **fork 병합** | A: 복사 후 신 저장소에서 개발 / B: 기존 저장소에서 브랜치 분기 | **A (복사)** | 현 저장소가 이미 신규 설계 문서 커밋됨. 이관 기록이 명확 |
-| **D2** | `artifacts` 통합 테이블 vs 도메인별 분리 | A: 통합 (srs/design/tc JSONB) / B: 분리 유지 + 상위 뷰 | **B (분리 유지 + 뷰)** | 기존 `srs_documents`/`srs_sections`가 견고. 도메인별 쿼리 효율 |
-| **D3** | `assist_*` 레거시 엔드포인트 | A: 유지 / B: deprecated 표시 후 Phase 4 제거 | **A (유지)** | 프론트에 레퍼런스 UI가 남아있음. 비용 낮음 |
-| **D4** | LiteLLM 도입 시점 | A: Phase 1 / B: Phase 4 | **A (Phase 1)** | Phase 1에 llm_svc 리팩토링 어차피 필요. 나중에 하면 회귀 범위 확대 |
-| **D5** | `@microsoft/fetch-event-source` 즉시 교체 vs 점진 | A: Phase 1 전면 교체 / B: Phase 1은 인터페이스만, Phase 3에서 전면 | **A (Phase 1 전면)** | 버퍼링 간섭 검증은 초반에 해야 리스크 적음 |
-| **D6** | 라우트 분리 시점 (`/knowledge`, `/glossary`, `/sections`) | A: Phase 2 / B: Phase 4 | **B (Phase 4)** | 핵심 기능 우선. 라우트 분리는 UX 개선에 가까움 |
-| **D7** | LangGraph `PostgresSaver` vs Redis `RedisSaver` | A: Postgres (단순화) / B: Redis (속도) | **A (Postgres)** | DESIGN.md §3 명시. Phase 4에 필요 시 교체 |
-| **D8** | Langfuse 자가 호스팅 vs 클라우드 | 논의 필요 | - | Phase 4 전에 결정 |
-| **D9** | 기존 `deepagents` 패키지 제거 | A: Phase 1 즉시 / B: 경과 관찰 후 | **A (즉시)** | 미사용 확인됨. 유지 이유 없음 |
-| **D10** | `node_modules`, `pnpm-lock.yaml` vs `package-lock.json` 이관 | 프로토타입은 둘 다 존재. pnpm 단일화 권장 | - | 사용자 결정 필요 |
+| # | 결정 사항 | 확정 | 비고 |
+|---|---|---|---|
+| **D1** | 프로토타입 코드 이관 방식 | ✅ **복사 이관** — Phase 0에서 완료 | 현 저장소 `backend/` / `frontend/` 서브디렉토리 |
+| **D2** | `artifacts` 통합 vs 도메인별 분리 | ✅ **분리 유지 + 상위 조회 유틸** | `srs_documents` 등 기존 테이블 보존. Design/TC는 각자 도메인 테이블 유지. 공통 조회는 서비스 레이어에서 |
+| **D3** | `assist_*` 레거시 엔드포인트 | ✅ **제거** (Phase 1/2 경계 작업으로 스케줄) | 참고 가치 있는 프롬프트·로직은 `docs/legacy/assist-reference/`로 스냅샷 후 본 코드에서 삭제. Phase 1 말~Phase 2 초 착수 (작업 M) |
+| **D4** | LiteLLM 도입 시점 | ✅ **Phase 1** | `llm_svc`를 LiteLLM 어댑터로 재감쌈. Azure/OpenAI 동일 인터페이스 |
+| **D5** | `@microsoft/fetch-event-source` 교체 | ✅ **Phase 1 전면 교체** | `useChatStream` 토큰 버퍼링·콜백 인터페이스는 보존. `services/agent-service.ts`의 파서만 교체 |
+| **D6** | 라우트 분리 (`/knowledge`·`/glossary`·`/sections`·`/impact`) | ✅ **Phase 4** | 핵심 기능 우선. UX 개선은 후반 |
+| **D7** | LangGraph 체크포인터 | ✅ **PostgresSaver** | 기존 Postgres 재사용. DESIGN.md §3 명시. Phase 4에 Redis 필요 시 교체 |
+| **D8** | Langfuse | ✅ **자가호스팅** — Phase 4에 `docker-compose.yml`에 컨테이너 추가 | **이유**: 트레이스에 사내 요구사항/SRS/설계문서 포함 → LGE 보안심사 리스크. 이미 Postgres/MinIO 운영 중이라 인프라 추가 비용 미미. Phase 4 전까지는 `LANGFUSE_HOST` 환경변수로 감싸 클라우드/자가호스팅 전환 가능하게 설계 |
+| **D9** | `deepagents` 패키지 | ✅ **Phase 1 즉시 제거** | 미사용 확인. `pyproject.toml`에서 제거 |
+| **D10** | 프론트엔드 패키지 매니저 | ✅ **pnpm 단일 유지** | `package-lock.json` 삭제, `pnpm-lock.yaml`만 유지. `package.json`에 `packageManager: pnpm@...` 명시 |
 
 ---
 

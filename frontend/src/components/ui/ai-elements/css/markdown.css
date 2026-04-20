@@ -1,0 +1,938 @@
+/* ═══════════════════════════════════════════════════════════
+   마크다운 스타일 — Streamdown 렌더링 결과에 적용
+
+   Streamdown은 모든 요소에 data-streamdown 속성을 부여하며,
+   CSS 변수(--border, --muted 등)를 기본으로 참조합니다.
+   globals.css의 CSS 변수가 Streamdown 테마의 기반이 됩니다.
+
+   여기서는 프로젝트 디자인에 맞게 보강/오버라이드합니다.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 컨테이너 ── */
+
+.markdown-body {
+  font-size: calc(var(--md-font-size, 0.875rem) * var(--md-chat-scale, 1));
+  line-height: var(--md-line-height, 1.7);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: var(--color-fg-primary);
+  max-width: 100%;
+}
+
+/* ── Headings ── */
+
+.markdown-body [data-streamdown^='heading-'] {
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-fg-primary);
+}
+
+.markdown-body h1 {
+  font-size: 1.5em;
+}
+.markdown-body h2 {
+  font-size: 1.25em;
+}
+.markdown-body h3 {
+  font-size: 1.125em;
+}
+.markdown-body h4 {
+  font-size: 1em;
+}
+
+.markdown-body [data-streamdown='heading-2'] {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--color-line-primary);
+}
+
+/* ── Paragraphs ── */
+
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 1em;
+  line-height: 1.75;
+}
+
+/* ── Lists ── */
+
+.markdown-body [data-streamdown='ordered-list'],
+.markdown-body [data-streamdown='unordered-list'] {
+  margin-top: 0;
+  margin-bottom: 1em;
+  /* padding-left: 2em; */
+}
+
+.markdown-body [data-streamdown='unordered-list'] {
+  list-style-type: disc;
+}
+.markdown-body [data-streamdown='ordered-list'] {
+  list-style-type: decimal;
+}
+
+.markdown-body [data-streamdown='list-item'] {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+/* 리스트 안 단락 간격 축소 */
+.markdown-body [data-streamdown='list-item'] > p {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+}
+
+.markdown-body [data-streamdown='list-item'] > p:only-child {
+  margin-bottom: 0;
+}
+
+/* 중첩 리스트 */
+.markdown-body [data-streamdown='list-item'] > ul,
+.markdown-body [data-streamdown='list-item'] > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0;
+}
+
+/* ── Blockquote ── */
+
+.markdown-body [data-streamdown='blockquote'] {
+  margin: 0 0 1em;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--color-line-primary);
+  color: var(--color-fg-secondary);
+}
+
+.markdown-body [data-streamdown='blockquote'] > p {
+  margin: 0.25em 0;
+}
+
+/* ── Horizontal Rule ── */
+
+.markdown-body [data-streamdown='horizontal-rule'] {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid var(--color-line-primary);
+}
+
+/* ── Inline Code ── */
+
+.markdown-body [data-streamdown='inline-code'] {
+  padding: 0.2em 0.4em;
+  font-size: 0.85em;
+  border-radius: 6px;
+  background-color: var(--color-canvas-surface);
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ── Links ── */
+
+.markdown-body [data-streamdown='link'] {
+  color: var(--color-accent-primary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.markdown-body [data-streamdown='link']:hover {
+  text-decoration: underline;
+}
+
+/* ── Images ── */
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* ── Strong / Emphasis ── */
+
+.markdown-body [data-streamdown='strong'] {
+  font-weight: 700;
+}
+.markdown-body em {
+  font-style: italic;
+}
+
+/* ── Task List (GFM) ── */
+
+.markdown-body input[type='checkbox'] {
+  margin-right: 0.4em;
+  vertical-align: middle;
+}
+
+.markdown-body ul:has(> li > input[type='checkbox']) {
+  list-style: none;
+  padding-left: 1em;
+}
+
+/* ── Pre/Code block ── */
+
+.markdown-body pre {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 220ms ease;
+}
+
+.markdown-body pre:hover,
+.markdown-body pre:focus-within {
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--color-line-primary) 70%,
+      transparent
+    )
+    transparent;
+}
+
+.markdown-body pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.markdown-body pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-body pre::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  transition: background-color 220ms ease;
+}
+
+.markdown-body pre:hover::-webkit-scrollbar-thumb,
+.markdown-body pre:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in srgb,
+    var(--color-line-primary) 70%,
+    transparent
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Streamdown 컴포넌트 커스터마이징
+   data-streamdown 속성 기반으로 타겟팅
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 코드블록 ── */
+
+/* code-block을 grid로: header(좌) + actions(우)가 한 row, body가 다음 row */
+.markdown-body [data-streamdown='code-block'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  max-width: 100%;
+  position: relative;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* 코드블록 액션 버튼: border 제거 */
+.markdown-body [data-streamdown='code-block-actions'] {
+  border: none !important;
+  box-shadow: none !important;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* 헤더(language): grid row 1 / col 1 */
+.markdown-body [data-streamdown='code-block-header'] {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+  margin: 0 !important;
+  padding: 0 0.75rem !important;
+  line-height: 1.2;
+}
+
+/* 액션 wrapper: grid row 1 / col 2 — header와 동일 row에 배치 */
+.markdown-body
+  [data-streamdown='code-block']
+  > div:has(> [data-streamdown='code-block-actions']) {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  min-height: 2.5rem;
+  margin: 0 !important;
+  padding: 0 0.5rem !important;
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  height: auto !important;
+}
+
+/* body: 전체 col 폭 차지, row 경계선은 body 상단에 그려 양끝까지 맞닿게 */
+.markdown-body [data-streamdown='code-block-body'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  border-top: 1px solid var(--md-code-shell-border, var(--color-line-primary)) !important;
+  min-width: 0;
+  border-radius: 0 !important;
+}
+
+/* ── 테이블 ── */
+
+.markdown-body [data-streamdown='table-wrapper'] {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown-body
+  :is(
+    [data-streamdown='table-block'],
+    [data-streamdown='table-container'],
+    [data-streamdown='table-shell']
+  ) {
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+.markdown-body [data-streamdown='table'] {
+  width: 100%;
+  max-width: 100%;
+  border-spacing: 0;
+  border-collapse: separate;
+  border: 1px solid
+    var(
+      --md-shell-border,
+      var(--md-code-shell-border, var(--color-line-primary))
+    );
+  border-radius: var(--md-shell-radius, 12px);
+  overflow: hidden;
+  font-size: 0.875em;
+  table-layout: fixed;
+}
+
+.markdown-body [data-streamdown='table-header-cell'],
+.markdown-body [data-streamdown='table-cell'] {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid var(--md-table-border, var(--color-line-primary));
+  text-align: left;
+}
+
+.markdown-body [data-streamdown='table-header-cell'] {
+  font-weight: 600;
+  background-color: var(--color-canvas-surface);
+}
+
+.markdown-body [data-streamdown='table-row']:nth-child(even) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 30%,
+    transparent
+  );
+}
+
+.markdown-body
+  [data-streamdown='table-row']:last-child
+  [data-streamdown='table-cell'] {
+  border-bottom: none;
+}
+
+/* 테이블 컨트롤 버튼: border 제거 */
+.markdown-body [data-streamdown='table-wrapper'] button {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ── 머메이드 ── */
+
+.markdown-body [data-streamdown='mermaid'] {
+  padding: 12px 0 !important;
+}
+
+/* 머메이드 액션 버튼: border 제거 */
+.markdown-body [data-streamdown='mermaid-block-actions'] {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ── 인라인 출처 번호 (DOM post-processing) ── */
+
+.citation-inline {
+  color: var(--color-accent-primary);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8em;
+  letter-spacing: 2px;
+  vertical-align: middle;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+/* ── 간격 보정 ── */
+
+.markdown-body > *:first-child {
+  margin-top: 0 !important;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   출처뷰어 마크다운 (ReactMarkdown + remark-gfm)
+   표준 HTML 요소 타겟팅
+   ═══════════════════════════════════════════════════════════ */
+
+.source-markdown {
+  line-height: 1.7;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: var(--color-fg-primary);
+  max-width: 100%;
+}
+
+.source-markdown > *:first-child {
+  margin-top: 0 !important;
+}
+.source-markdown > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Headings */
+.source-markdown h1,
+.source-markdown h2,
+.source-markdown h3,
+.source-markdown h4,
+.source-markdown h5,
+.source-markdown h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-fg-primary);
+}
+
+.source-markdown h1 {
+  font-size: 1.5em;
+}
+.source-markdown h2 {
+  font-size: 1.25em;
+  border-bottom: 1px solid var(--color-line-primary);
+  padding-bottom: 0.3em;
+}
+.source-markdown h3 {
+  font-size: 1.125em;
+}
+.source-markdown h4 {
+  font-size: 1em;
+}
+
+/* Paragraphs */
+.source-markdown p {
+  margin-top: 0;
+  margin-bottom: 1em;
+}
+
+/* Lists */
+.source-markdown ul {
+  list-style-type: disc;
+  margin: 0 0 1em;
+  padding-left: 2em;
+}
+.source-markdown ol {
+  list-style-type: decimal;
+  margin: 0 0 1em;
+  padding-left: 2em;
+}
+.source-markdown li {
+  margin: 0.25em 0;
+}
+.source-markdown li > p {
+  margin-bottom: 0.5em;
+}
+.source-markdown li > p:only-child {
+  margin-bottom: 0;
+}
+
+/* Blockquote */
+.source-markdown blockquote {
+  margin: 0 0 1em;
+  padding: 0.25em 1em;
+  border-left: 3px solid var(--color-line-primary);
+  color: var(--color-fg-secondary);
+}
+
+/* Table */
+.source-markdown table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid
+    var(
+      --md-shell-border,
+      var(--md-code-shell-border, var(--color-line-primary))
+    );
+  border-radius: var(--md-shell-radius, 12px);
+  overflow: hidden;
+  font-size: 0.875em;
+  margin-bottom: 1em;
+}
+
+.source-markdown th,
+.source-markdown td {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid var(--md-table-border, var(--color-line-primary));
+  border-right: 1px solid var(--md-table-border, var(--color-line-primary));
+  text-align: left;
+}
+
+.source-markdown tr:last-child td {
+  border-bottom: none;
+}
+
+.source-markdown :is(th, td):last-child {
+  border-right: none;
+}
+
+.source-markdown th {
+  font-weight: 600;
+  background-color: var(--color-canvas-surface);
+}
+
+.source-markdown tr:nth-child(even) {
+  background-color: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 30%,
+    transparent
+  );
+}
+
+/* Inline Code */
+.source-markdown code {
+  padding: 0.2em 0.4em;
+  font-size: 0.85em;
+  border-radius: 6px;
+  background-color: var(--color-canvas-surface);
+  font-family:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.source-markdown pre code {
+  padding: 0;
+  background-color: transparent;
+}
+
+/* Code Block */
+.source-markdown pre {
+  margin: 0 0 1em;
+  padding: 1em;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background-color: var(--color-canvas-surface);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 220ms ease;
+}
+
+.source-markdown pre:hover,
+.source-markdown pre:focus-within {
+  scrollbar-color: color-mix(
+      in srgb,
+      var(--color-line-primary) 70%,
+      transparent
+    )
+    transparent;
+}
+
+.source-markdown pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.source-markdown pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.source-markdown pre::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  transition: background-color 220ms ease;
+}
+
+.source-markdown pre:hover::-webkit-scrollbar-thumb,
+.source-markdown pre:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in srgb,
+    var(--color-line-primary) 70%,
+    transparent
+  );
+}
+
+/* Links */
+.source-markdown a {
+  color: var(--color-accent-primary);
+  text-decoration: none;
+}
+
+.source-markdown a:hover {
+  text-decoration: underline;
+}
+
+/* Strong / Emphasis */
+.source-markdown strong {
+  font-weight: 700;
+}
+.source-markdown em {
+  font-style: italic;
+}
+
+/* Horizontal Rule */
+.source-markdown hr {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid var(--color-line-primary);
+}
+
+/* Images */
+.source-markdown img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Markdown theme presets
+   - markdown-theme-docs: default docs-like (current default)
+   - markdown-theme-github: neutral GitHub-like
+   - markdown-theme-dense: compact table/report focused
+   -------------------------------------------------------------------------- */
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense) {
+  --md-font-size: 0.875rem; /* tailwind text-sm = 14px @ base 16 */
+  --md-line-height: 1.72;
+  --md-chat-scale: 1;
+  --md-heading-weight: 700;
+  --md-heading-track: -0.01em;
+  --md-heading-color: var(--color-fg-primary);
+  --md-heading-2-border: var(--color-line-primary);
+  --md-paragraph-color: color-mix(
+    in srgb,
+    var(--color-fg-primary) 94%,
+    white 6%
+  );
+  --md-link-color: color-mix(
+    in srgb,
+    var(--color-accent-primary) 88%,
+    white 12%
+  );
+  --md-link-hover: color-mix(
+    in srgb,
+    var(--color-accent-primary) 100%,
+    white 0%
+  );
+  --md-quote-border: color-mix(
+    in srgb,
+    var(--color-accent-primary) 70%,
+    var(--color-line-primary) 30%
+  );
+  --md-quote-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 68%,
+    transparent
+  );
+  --md-quote-color: var(--color-fg-secondary);
+  --md-inline-code-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 84%,
+    transparent
+  );
+  --md-inline-code-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 70%,
+    transparent
+  );
+  --md-inline-code-color: color-mix(
+    in srgb,
+    var(--color-fg-primary) 96%,
+    white 4%
+  );
+  --md-code-shell-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 64%,
+    transparent
+  );
+  --md-code-shell-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 80%,
+    transparent
+  );
+  --md-shell-border: var(--md-code-shell-border);
+  --md-shell-radius: 12px;
+  --md-code-inner-bg: transparent;
+  --md-code-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+  --md-table-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 86%,
+    transparent
+  );
+  --md-table-header-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 92%,
+    transparent
+  );
+  --md-table-row-even: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 42%,
+    transparent
+  );
+  --md-table-row-hover: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 68%,
+    transparent
+  );
+}
+
+.markdown-theme-github {
+  --md-line-height: 1.66;
+  --md-heading-weight: 600;
+  --md-heading-track: 0;
+  --md-quote-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 92%,
+    transparent
+  );
+  --md-quote-bg: transparent;
+  --md-inline-code-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 86%,
+    transparent
+  );
+  --md-inline-code-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 92%,
+    transparent
+  );
+  --md-code-shell-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 72%,
+    transparent
+  );
+  --md-code-shell-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 92%,
+    transparent
+  );
+  --md-code-inner-bg: transparent;
+  --md-code-shadow: none;
+}
+
+.markdown-theme-dense {
+  --md-line-height: 1.58;
+  --md-heading-weight: 650;
+  --md-inline-code-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 88%,
+    transparent
+  );
+  --md-inline-code-border: color-mix(
+    in srgb,
+    var(--color-line-primary) 84%,
+    transparent
+  );
+  --md-table-header-bg: color-mix(
+    in srgb,
+    var(--color-canvas-surface) 96%,
+    transparent
+  );
+}
+
+/* 스케일은 사용자 메시지 Tailwind 클래스(text-xs/sm/base = 12/14/16px)와 일치시킴
+ * 기준: 중간 = text-sm(14px) = --md-font-size(0.875rem) × 1 */
+.chat-font-small {
+  --md-chat-scale: 0.857; /* 14px × 0.857 ≈ 12px (text-xs) */
+}
+
+.chat-font-medium {
+  --md-chat-scale: 1; /* 14px (text-sm) */
+}
+
+.chat-font-large {
+  --md-chat-scale: 1.143; /* 14px × 1.143 ≈ 16px (text-base) */
+}
+
+.markdown-theme-docs,
+.markdown-theme-github,
+.markdown-theme-dense {
+  font-size: calc(var(--md-font-size) * var(--md-chat-scale, 1));
+  line-height: var(--md-line-height);
+  color: var(--md-paragraph-color);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(h1, h2, h3, h4),
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  [data-streamdown^='heading-'] {
+  color: var(--md-heading-color);
+  font-weight: var(--md-heading-weight);
+  letter-spacing: var(--md-heading-track);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(h1, [data-streamdown='heading-1']) {
+  font-size: 1.68em;
+  margin-top: 1.7em;
+  margin-bottom: 0.8em;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(h2, [data-streamdown='heading-2']) {
+  font-size: 1.34em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--md-heading-2-border);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(h3, [data-streamdown='heading-3']) {
+  font-size: 1.12em;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(h4, [data-streamdown='heading-4']) {
+  font-size: 1.03em;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(a, [data-streamdown='link']) {
+  color: var(--md-link-color);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--md-link-color) 44%,
+    transparent
+  );
+  transition:
+    color 0.2s ease,
+    text-decoration-color 0.2s ease;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(a, [data-streamdown='link']):hover {
+  color: var(--md-link-hover);
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--md-link-hover) 82%,
+    transparent
+  );
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(blockquote, [data-streamdown='blockquote']) {
+  background: var(--md-quote-bg);
+  border-left: 3px solid var(--md-quote-border);
+  color: var(--md-quote-color);
+  border-radius: 0 10px 10px 0;
+  padding: 0.5em 1em;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(code:not(pre code), [data-streamdown='inline-code']) {
+  background: var(--md-inline-code-bg);
+  border: 1px solid var(--md-inline-code-border);
+  color: var(--md-inline-code-color);
+  border-radius: 7px;
+  padding: 0.14em 0.38em;
+  font-size: 0.86em;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  [data-streamdown='code-block'] {
+  border: 1px solid var(--md-shell-border);
+  background: var(--md-code-shell-bg);
+  box-shadow: none;
+  border-radius: var(--md-shell-radius);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  [data-streamdown='code-block'] {
+  border-radius: var(--md-shell-radius);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  [data-streamdown='mermaid-block'] {
+  border: 1px solid var(--md-shell-border);
+  border-radius: var(--md-shell-radius);
+  background: var(--md-code-shell-bg);
+  box-shadow: none;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(pre, [data-streamdown='code-block-body']) {
+  border: none !important;
+  background: var(--md-code-inner-bg) !important;
+  box-shadow: none;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  [data-streamdown='code-block-body']
+  pre {
+  background: transparent !important;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(table, [data-streamdown='table']) {
+  table-layout: auto;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--md-shell-border);
+  border-radius: var(--md-shell-radius);
+  overflow: hidden;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(th, [data-streamdown='table-header-cell']) {
+  background: var(--md-table-header-bg);
+  font-weight: 650;
+  color: var(--md-heading-color);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(th, td),
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is([data-streamdown='table-header-cell'], [data-streamdown='table-cell']) {
+  border-color: var(--md-table-border);
+  vertical-align: top;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(tr:nth-child(even), [data-streamdown='table-row']:nth-child(even)) {
+  background: var(--md-table-row-even);
+}
+
+:where(.markdown-theme-docs, .markdown-theme-github, .markdown-theme-dense)
+  :is(tr:hover, [data-streamdown='table-row']:hover) {
+  background: var(--md-table-row-hover);
+}
+
+.markdown-theme-dense :is(td, th) {
+  padding: 0.42em 0.56em;
+}
+
+.markdown-theme-dense
+  :is([data-streamdown='table-cell'], [data-streamdown='table-header-cell']) {
+  padding: 0.4em 0.56em;
+}

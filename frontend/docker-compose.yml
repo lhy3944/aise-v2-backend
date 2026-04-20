@@ -1,0 +1,10 @@
+services:
+  app:
+    image: ghcr.io/lhy3944/next4-starter:latest # GHCR 이미지
+    container_name: nextjs-stater-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0

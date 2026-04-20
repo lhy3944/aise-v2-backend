@@ -23,9 +23,16 @@ async def search_similar_chunks(
 ) -> list[tuple[KnowledgeChunk, float]]:
     """쿼리와 유사한 청크를 검색한다.
 
+    프로젝트 격리(P0): `project_id`는 필수 필터이며, 임베딩이 완료된
+    `is_active=True` + `status='completed'` 문서의 청크만 반환한다.
+    필터 누락은 보안 사고로 간주(REFECTORING.md P0).
+
     Returns:
         (KnowledgeChunk, score) 튜플 리스트. score는 1 - cosine_distance.
     """
+    if project_id is None:
+        raise AppException(400, "project_id는 필수입니다.")
+
     logger.debug(f"유사 청크 검색: project_id={project_id}, top_k={top_k}")
 
     # 쿼리 임베딩 생성
@@ -34,13 +41,18 @@ async def search_similar_chunks(
         return []
     query_embedding = embeddings[0]
 
-    # pgvector cosine distance 검색
+    # pgvector cosine distance 검색.
+    # KnowledgeDocument와 join하여 활성/완료된 문서의 청크만 검색.
     stmt = (
         select(
             KnowledgeChunk,
             KnowledgeChunk.embedding.cosine_distance(query_embedding).label("distance"),
         )
+        .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
         .where(KnowledgeChunk.project_id == project_id)
+        .where(KnowledgeDocument.project_id == project_id)  # 방어적 이중 필터
+        .where(KnowledgeDocument.is_active.is_(True))
+        .where(KnowledgeDocument.status == "completed")
         .where(KnowledgeChunk.embedding.isnot(None))
         .order_by("distance")
         .limit(top_k)

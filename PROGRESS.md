@@ -10,10 +10,10 @@
 | Phase | 구간 | 상태 | 진행률 | 비고 |
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
-| **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | 🟡 대기 | 0% | 시작 전 D1~D10 최종 승인 권장 |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | ⏸ | 0% | P1 선행 |
+| **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 (같은 날 연속 진행) |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟡 대기 | 0% | 시작 신호 대기. assist_* 실제 제거는 이 Phase 말 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
-| **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | |
+| **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
 
 **범례**: ✅ 완료 · 🟢 진행 중 · 🟡 대기 · ⏸ 미시작 · ❌ 블록됨
@@ -45,6 +45,53 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 
 ## 작업 로그
 
+### 2026-04-21 — Phase 1 기반 아키텍처 완료
+
+총 13개 커밋 · 백엔드 117 passed · 프론트 build 성공.
+
+#### 커밋 히스토리 (Phase 1)
+| 커밋 | 단계 | 변경 요약 |
+|---|---|---|
+| `fb75b9d` | A | D1~D10 결정 확정 (MIGRATION_PLAN §5 + PROGRESS 체크리스트) |
+| `aad1598` | B | SSE 이벤트 계약 3파일 동시 작성 (docs/events.md + schemas/events.py + types/agent-events.ts) |
+| `c88d9f1` | C | pnpm 단일화 (package-lock.json 제거, packageManager/preinstall 명시) |
+| `f6e42f3` | D | 백엔드 의존성: deepagents 제거, langgraph/litellm/redis/psycopg 추가, docker-compose에 redis 서비스 |
+| `f045b86` | E | rag_svc P0 fix (project_id 필수 + is_active + status=completed) + 7개 격리 테스트 |
+| `9aadc81` | F | agents/base.py + registry.py (@register_agent, 9개 테스트) |
+| `d8e020f` | G+H | orchestration/{state,supervisor,graph}.py + agents/knowledge_qa.py + 2개 통합 테스트 |
+| `46e1979` | I | routers/agent.py 이중 경로 (USE_LANGGRAPH flag) + routers/agents.py GET /agents/[/{name}] + 3개 테스트 |
+| `ef8017c` | J | llm_svc.chat_completion을 LiteLLM acompletion으로 교체 (시그니처 유지) |
+| `bda4be1` | K | 프론트엔드 SSE 파서를 @microsoft/fetch-event-source로 교체 (신·구 envelope 모두 파싱) |
+| `5fe5701` | L | 프론트엔드 useAgentList/useAgent hook + AgentCapability 타입 |
+| `1012b2e` | M | assist_* 스냅샷(docs/legacy/assist-reference/) + DEPRECATED 마킹 |
+
+#### 핵심 성과
+1. **SSE 계약 단일 원천 확립**: `docs/events.md` ↔ `backend/src/schemas/events.py` ↔ `frontend/src/types/agent-events.ts`. 이후 이벤트 변경은 3파일을 한 PR에서 수정.
+2. **LangGraph 기반 오케스트레이션 뼈대**: Supervisor → KnowledgeQAAgent End-to-End 작동. `/api/v1/agent/chat`이 `USE_LANGGRAPH=true` 시 새 경로로 스트리밍.
+3. **에이전트 레지스트리 패턴**: `@register_agent` 데코레이터만 붙이면 `/api/v1/agents` GET에 자동 노출.
+4. **P0 보안 이슈 해소**: RAG 검색 시 project_id 누락 방지 + 비활성/미완료 문서 필터 + 교차 프로젝트 격리 테스트 강제.
+5. **LLM 프로바이더 추상화**: Azure/OpenAI 자동 라우팅을 LiteLLM으로 이관. 기존 호출자는 시그니처 변경 없음.
+6. **프론트 SSE 라이브러리 교체**: `useChatStream`의 토큰 버퍼링은 그대로 보존, 파서만 `@microsoft/fetch-event-source`로. 신·구 envelope 자동 감지.
+7. **레거시 정리 로드맵 확정**: assist_* 스냅샷 + DEPRECATED 마킹 + Phase 2 말 제거 TODO.
+
+#### 테스트 추이
+| 시점 | 통과 | 증분 |
+|---|---|---|
+| Phase 0 완료 | 96 | — |
+| E (rag_svc P0) | 103 | +7 (isolation) |
+| F (registry) | 112 | +9 (registry) |
+| G+H (orchestration) | 114 | +2 (graph E2E) |
+| I (agents router) | 117 | +3 (GET /agents) |
+| J, K, L, M | 117 | (기존 회귀 보장) |
+
+#### 현재 시스템 동작 모드
+- **기본 (USE_LANGGRAPH=false)**: 기존 `agent_svc.stream_chat` 경로 — 프로토타입 Phase 0 동작과 동일.
+- **새 경로 (USE_LANGGRAPH=true)**: LangGraph Supervisor → KnowledgeQA → SSE 이벤트 신 envelope.
+
+Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
+
+---
+
 ### 2026-04-21 — Phase 0 Lift 완료
 
 #### 선행 작업 (동일 세션)
@@ -73,9 +120,34 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 
 ---
 
-## Phase 1 착수 전 체크리스트
+## Phase 2 착수 전 체크리스트
 
-### 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
+### 선행 조건
+- [x] Phase 1 완료 (LangGraph 뼈대 + SSE 계약 + KnowledgeQA)
+- [ ] `USE_LANGGRAPH=true` 환경에서 수동 smoke test (개발 서버에서 실제 Agent Chat 왕복)
+- [ ] 프론트 `agent-service.ts`의 신 envelope 파싱 UI 수동 확인 (tool_call → AgentInvocationCard 없이는 표시 못함, Phase 2 N1에서 해결)
+
+### Phase 2 우선 작업 (MIGRATION_PLAN §2.2 요약)
+1. 신규 에이전트 등록
+   - `agents/requirement.py` (기존 `record_svc` 래핑)
+   - `agents/srs_generator.py` (기존 `srs_svc` 래핑 + structured output)
+   - `agents/testcase_generator.py` (신규)
+   - `agents/critic.py` (신규)
+2. Supervisor 하이브리드 라우팅
+   - 임베딩 top-5 후보 필터 → LLM 판정 → single / **plan** / clarify
+   - `plan` 액션 실행 노드 (state에 plan 배열 누적, plan_update SSE 발행)
+3. artifacts 통합 라우터 (`routers/artifacts.py`)
+   - GET /projects/{id}/artifacts, GET /artifacts/{id}
+   - PATCH /artifacts/{id}/sections/{sid} · POST /artifacts/{id}/regenerate
+4. 프론트 신규 컴포넌트 (FRONTEND_DESIGN §20)
+   - N1 AgentInvocationCard (toolCalls 인라인 collapse)
+   - N3 PlanProgress
+   - N4 SrsEditor (RecordsArtifact 패턴 차용)
+   - N5 TestCaseList
+5. `USE_LANGGRAPH=true` 기본화 + 레거시 `agent_svc` 제거
+6. **D3 실제 제거**: assist_*(backend + frontend 3 호출부) 삭제 → Requirement Agent 경로로 대체
+
+### 이전 기록용: 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
 - [x] D1 복사 이관 (Phase 0 완료)
 - [x] D2 artifacts 도메인별 분리 유지 + 조회 유틸
 - [x] **D3 assist_* 제거** (Phase 1 말~2 초, `docs/legacy/assist-reference/`로 스냅샷 후 삭제)

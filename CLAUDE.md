@@ -35,5 +35,32 @@
 - 빌드: `cd frontend && pnpm build`
 
 ### 공통
-- 전체 기동: `./start-dev.sh` (작성 예정)
+- 전체 기동: `./start-dev.sh` (backend :9999, frontend :3009)
+- 로컬 대체: `./start-local.sh` (backend :8082, frontend :3009)
 - Docker: `docker-compose up`
+- Preview 배포: `./deploy/preview.sh`
+
+## 저장소 구조 (Phase 0 이관 완료)
+
+```
+aise-v2-backend/
+├── DESIGN.md · FRONTEND_DESIGN.md · ANALYSIS.md · MIGRATION_PLAN.md · CLAUDE.md · PROGRESS.md
+├── backend/          # FastAPI (프로토타입 이관, 96 passed 기준선)
+├── frontend/         # Next.js 16 (프로토타입 이관, build 성공 기준선)
+├── docker-compose.yml · docker-compose.preview.yml
+├── .env.prod.example · .env.preview.example
+├── deploy/ · deploy.sh · start-dev.sh · start-local.sh
+├── .github/workflows/   # Preview/Prod VPS 배포 (secrets 설정 필요)
+├── references/          # 과거 리서치 노트
+├── docs/legacy/         # 프로토타입 원본 문서 (읽기 전용)
+└── .prototype-ref/      # 프로토타입 clone (gitignore, 로컬 참고용)
+```
+
+## 기준선 (Phase 0)
+
+- **Backend**: 96 passed in 23.63s (postgresql+asyncpg, Alembic 16 migrations)
+- **Frontend**: `pnpm build` 성공 (Next.js 16.1.6 Turbopack)
+- **Known gaps** (Phase 1에서 처리):
+  - Frontend lint: 22 problems (8 errors, 14 warnings) — 프로토타입 동일 상태
+  - Backend P0: `rag_svc` project_id 필터 누락, `agent_svc` 프롬프트 의존
+  - LangGraph/LiteLLM/HITL 미도입 — MIGRATION_PLAN.md 참조

@@ -40,7 +40,8 @@ _REGISTRY: dict[str, "BaseAgent"] = {}
 # and so deleting a file doesn't silently change behavior.
 _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "src.agents.knowledge_qa",
-    # Phase 2 will add: requirement, srs_generator, testcase_generator, critic
+    "src.agents.requirement",
+    # Phase 2 will add: srs_generator, testcase_generator, critic
 )
 
 

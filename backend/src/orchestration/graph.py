@@ -168,6 +168,7 @@ def build_graph(
     workflow = StateGraph(AgentState)
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("knowledge_qa", _make_agent_node("knowledge_qa", session_factory))
+    workflow.add_node("requirement", _make_agent_node("requirement", session_factory))
 
     workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
@@ -175,6 +176,7 @@ def build_graph(
         route_after_supervisor,
         {
             "knowledge_qa": "knowledge_qa",
+            "requirement": "requirement",
             # Supervisor may emit `plan`; until increment 2 wires the
             # planner node, we terminate the graph so the fallback
             # clarification path in run_chat still emits a clean stream.
@@ -183,6 +185,7 @@ def build_graph(
         },
     )
     workflow.add_edge("knowledge_qa", END)
+    workflow.add_edge("requirement", END)
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
@@ -252,14 +255,19 @@ async def run_chat(
                 agent=selected,
             )
         )
-        sources_count = len(final_state.get("sources") or [])
+        result_payload: dict[str, Any] = {
+            "sources_count": len(final_state.get("sources") or []),
+        }
+        extracted = final_state.get("records_extracted")
+        if extracted is not None:
+            result_payload["records_count"] = len(extracted)
         yield ToolResultEvent(
             data=ToolResultEventData(
                 tool_call_id=call_id,
                 name=selected,
                 status="success",
                 duration_ms=int((time.perf_counter() - started) * 1000),
-                result={"sources_count": sources_count},
+                result=result_payload,
             )
         )
 

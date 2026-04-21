@@ -62,6 +62,8 @@ class AgentState(TypedDict, total=False):
     # final agent output
     final_answer: str | None
     sources: list[dict[str, Any]] | None
+    # RequirementAgent output: candidate records pending approval.
+    records_extracted: list[dict[str, Any]] | None
 
     # error / control
     error: str | None

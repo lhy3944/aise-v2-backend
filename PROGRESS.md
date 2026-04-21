@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟡 대기 | 0% | Phase 1 게이트 정합 완료. `USE_LANGGRAPH=true` 수동 스모크만 남음. assist_* 실제 제거는 이 Phase 초 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 40% | 증분 1A/1B/2 완료 (Supervisor 3-액션 · RequirementAgent · plan 실행+plan_update). 남은 증분 3~5 + assist_* 실제 제거 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -44,6 +44,31 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-21 — Phase 2 착수 (증분 1A/1B/2)
+
+Phase 1 게이트 정리 + `USE_LANGGRAPH=true` 수동 스모크까지 통과한 뒤 Phase 2 본 작업 착수. 총 3커밋, **131 passed** (5회 연속 full-suite).
+
+| 커밋 | 증분 | 변경 요약 |
+|---|---|---|
+| `13d6084` | 1A · Supervisor LLM 라우팅 | `prompts/supervisor.{md,py}` + `orchestration/supervisor.py` 재작성. LLM 기반 3-액션 분류(single/plan/clarify) + 파싱·검증 실패 시 clarify 폴백. run_chat이 clarify/plan 케이스도 의미 있는 token으로 스트리밍. 5개 단위 테스트 추가. |
+| `744ea16` | 1B · RequirementAgent | `agents/requirement.py` — `record_svc.extract_records` 래핑. AppException → state["error"] 변환으로 AGENT_ERROR 깨끗 발행. `records_extracted` state + `records_count` in tool_result. 4개 테스트(단위 + 그래프 E2E). |
+| `9b6ef7b` | 2 · Plan 실행 + plan_update | `orchestration/graph._execute_plan` async generator — 순차 실행, per-step `plan_update(pending/running/completed)` + tool_call/tool_result 스트리밍, 공유 세션. `routers/agent.py`가 session_factory를 run_chat에 주입. 2-step plan E2E 테스트 추가. **플래키 해결**: per-step 세션 열기 → 단일 세션 공유로 NullPool 경합 제거. |
+
+#### 실 환경 스모크 (OpenAI gpt-4o, `scripts/smoke_langgraph_chat.py`)
+| 질문 | Supervisor 결정 | 결과 |
+|---|---|---|
+| "이 프로젝트의 주요 기능을 한 문장으로 요약해줘" | `single` → `knowledge_qa` | RAG 5-chunk → 106자 요약, 4.55s |
+| "이 프로젝트의 요구사항 후보를 뽑아줘" | `single` → `requirement` | 19 candidates 추출, 18.7s |
+| "먼저 핵심 개념을 정리하고, 그 다음에 요구사항 후보 리스트를 뽑아줘" | `plan` → `[knowledge_qa, requirement]` | plan_update로 진행 상태 스트리밍, 20 candidates, 총 27s |
+
+#### 남은 Phase 2 작업 (MIGRATION_PLAN §2.2)
+- 증분 3 — `agents/srs_generator.py` (srs_svc 래핑) + `agents/testcase_generator.py` + `agents/critic.py`
+- 증분 4 — `routers/artifacts.py` (통합 목록/상세/편집/재생성)
+- 증분 5 — 프론트 N1 AgentInvocationCard / N3 PlanProgress / N4 SrsEditor / N5 TestCaseList (신 envelope UI 확인 포함)
+- 마무리 — `USE_LANGGRAPH=true` 기본화, legacy `agent_svc` 제거, D3 `assist_*` 실제 삭제
+
+---
 
 ### 2026-04-21 — Phase 1 게이트 보강 (Phase 2 진입 전 정합화)
 
@@ -151,25 +176,27 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
   - 결과: `tool_call → tool_result(duration=4552ms, sources=5) → token(106자) → done`, 4.55s 소요
 - [ ] 프론트 `agent-service.ts`의 신 envelope 파싱 UI 수동 확인 (tool_call → AgentInvocationCard 없이는 표시 못함, Phase 2 N1에서 해결)
 
-### Phase 2 우선 작업 (MIGRATION_PLAN §2.2 요약)
+### Phase 2 증분 로드맵 — 진행 상황
+
 1. 신규 에이전트 등록
-   - `agents/requirement.py` (기존 `record_svc` 래핑)
-   - `agents/srs_generator.py` (기존 `srs_svc` 래핑 + structured output)
-   - `agents/testcase_generator.py` (신규)
-   - `agents/critic.py` (신규)
-2. Supervisor 하이브리드 라우팅
-   - 임베딩 top-5 후보 필터 → LLM 판정 → single / **plan** / clarify
-   - `plan` 액션 실행 노드 (state에 plan 배열 누적, plan_update SSE 발행)
-3. artifacts 통합 라우터 (`routers/artifacts.py`)
-   - GET /projects/{id}/artifacts, GET /artifacts/{id}
-   - PATCH /artifacts/{id}/sections/{sid} · POST /artifacts/{id}/regenerate
-4. 프론트 신규 컴포넌트 (FRONTEND_DESIGN §20)
-   - N1 AgentInvocationCard (toolCalls 인라인 collapse)
-   - N3 PlanProgress
-   - N4 SrsEditor (RecordsArtifact 패턴 차용)
-   - N5 TestCaseList
-5. `USE_LANGGRAPH=true` 기본화 + 레거시 `agent_svc` 제거
-6. **D3 실제 제거**: assist_*(backend + frontend 3 호출부) 삭제 → Requirement Agent 경로로 대체
+   - [x] **1A** Supervisor LLM 3-액션 라우팅 (`13d6084`)
+   - [x] **1B** `agents/requirement.py` (`744ea16`)
+   - [ ] **3a** `agents/srs_generator.py` (`srs_svc` 래핑 + structured output)
+   - [ ] **3b** `agents/testcase_generator.py` (신규)
+   - [ ] **3c** `agents/critic.py` (신규)
+2. Plan 실행
+   - [x] **2** 순차 plan 실행 + 실시간 `plan_update` (`9b6ef7b`)
+   - [ ] (옵션) 임베딩 top-K 기반 하이브리드 라우팅 — 현재 Supervisor는 description/triggers 텍스트만 사용
+3. [ ] **4** artifacts 통합 라우터 (`routers/artifacts.py`) — GET 목록/상세, PATCH section, POST regenerate
+4. 프론트 (FRONTEND_DESIGN §20)
+   - [ ] **5a** N1 AgentInvocationCard
+   - [ ] **5b** N3 PlanProgress
+   - [ ] **5c** N4 SrsEditor (RecordsArtifact 패턴)
+   - [ ] **5d** N5 TestCaseList
+5. 마무리
+   - [ ] `USE_LANGGRAPH=true` 기본화 (router 및 env)
+   - [ ] 레거시 `agent_svc` 제거
+   - [ ] **D3 실제 제거**: assist_* (backend router/service + frontend 3 호출부) 삭제 → RequirementAgent 경로로 대체
 
 ### 이전 기록용: 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
 

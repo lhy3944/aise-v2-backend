@@ -175,6 +175,10 @@ def build_graph(
         route_after_supervisor,
         {
             "knowledge_qa": "knowledge_qa",
+            # Supervisor may emit `plan`; until increment 2 wires the
+            # planner node, we terminate the graph so the fallback
+            # clarification path in run_chat still emits a clean stream.
+            "planner": END,
             "end": END,
         },
     )
@@ -233,7 +237,9 @@ async def run_chat(
         return
 
     routing = final_state.get("routing") or {}
-    selected = routing.get("agent")
+    action = routing.get("action")
+    selected = routing.get("agent") if action == "single" else None
+
     if selected:
         # Surface the agent invocation as a single tool_call/tool_result pair so
         # the frontend's AgentInvocationCard can render even in Phase 1.
@@ -257,9 +263,23 @@ async def run_chat(
             )
         )
 
-    answer = final_state.get("final_answer") or ""
-    if answer:
-        yield TokenEvent(data=TokenEventData(text=answer))
+    if action == "clarify":
+        question = routing.get("clarification") or "조금 더 구체적으로 말씀해주시겠어요?"
+        yield TokenEvent(data=TokenEventData(text=question))
+    elif action == "plan" and not final_state.get("final_answer"):
+        # Phase 2 increment 1 does not wire the planner node yet. Surface a
+        # placeholder so the stream still lands on a useful message
+        # instead of just `done`.
+        plan_names = ", ".join(routing.get("plan") or [])
+        yield TokenEvent(
+            data=TokenEventData(
+                text=f"(plan 실행은 아직 준비 중입니다: {plan_names})",
+            )
+        )
+    else:
+        answer = final_state.get("final_answer") or ""
+        if answer:
+            yield TokenEvent(data=TokenEventData(text=answer))
 
     yield DoneEvent(data=DoneEventData(finish_reason="stop"))
 

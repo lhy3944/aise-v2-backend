@@ -22,12 +22,28 @@ async def test_agent_chat_invalid_session_id_returns_422(client):
     assert resp.status_code == 422
 
 
+_ROUTING_JSON = json.dumps(
+    {
+        "action": "single",
+        "agent": "knowledge_qa",
+        "plan": None,
+        "clarification": None,
+        "reasoning": "stub: default single routing",
+    }
+)
+
+
 @pytest.fixture
 def _stub_agent_deps(monkeypatch):
     async def fake_embeddings(texts):
         return [[0.1] * 1536 for _ in texts]
 
     async def fake_chat_completion(messages, **kwargs):
+        # Supervisor calls include the routing prompt headers; return JSON
+        # so the 3-action classifier can validate and pick `single`.
+        last = messages[-1].get("content", "") if messages else ""
+        if "## Decision policy" in last and "## Available agents" in last:
+            return _ROUTING_JSON
         return "Stubbed answer from DI override test."
 
     monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)

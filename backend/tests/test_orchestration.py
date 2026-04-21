@@ -9,6 +9,7 @@ LLM and embeddings are stubbed so the test is hermetic.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -36,18 +37,49 @@ def _ensure_builtin_agents():
     yield
 
 
+def _is_supervisor_prompt(messages: list[dict]) -> bool:
+    """Detect the Supervisor's routing call by looking at the user prompt."""
+    last = messages[-1].get("content", "") if messages else ""
+    return "## Decision policy" in last and "## Available agents" in last
+
+
+def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
+    """Install a shared fake `chat_completion` that disambiguates callers.
+
+    - If the prompt matches the Supervisor template, return the supplied
+      `supervisor_response` (or a default `single`→`knowledge_qa` JSON).
+    - Otherwise, return the canned RAG answer used by the happy-path test.
+
+    We patch the module attribute once; Supervisor and rag_svc both import
+    `llm_svc`, so a single patch covers both.
+    """
+    default_routing = json.dumps(
+        {
+            "action": "single",
+            "agent": "knowledge_qa",
+            "plan": None,
+            "clarification": None,
+            "reasoning": "stub: default single routing",
+        }
+    )
+    routing_payload = supervisor_response if supervisor_response is not None else default_routing
+
+    async def fake_chat_completion(messages, **kwargs):
+        if _is_supervisor_prompt(messages):
+            return routing_payload
+        return "Stubbed answer based on retrieved chunks."
+
+    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
+
+
 @pytest.fixture
 def stub_llm_and_embeddings(monkeypatch):
     async def fake_embeddings(texts: list[str]) -> list[list[float]]:
         return [[0.1] * 1536 for _ in texts]
 
-    async def fake_chat_completion(messages, **kwargs):
-        return "Stubbed answer based on retrieved chunks."
-
     monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
-    # rag_svc imports chat_completion directly into its namespace.
-    monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    _stub_llm(monkeypatch)
 
 
 async def _seed(db, *, project_name: str = "P") -> Project:
@@ -187,3 +219,178 @@ def test_normalise_checkpoint_url_strips_sqlalchemy_dialects():
     }
     for raw, expected in cases.items():
         assert _normalise_checkpoint_url(raw) == expected
+
+
+# ---------- Supervisor routing (Phase 2 increment 1A) ----------
+
+
+async def test_supervisor_single_routes_to_agent(monkeypatch, db):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response=json.dumps(
+            {
+                "action": "single",
+                "agent": "knowledge_qa",
+                "plan": None,
+                "clarification": None,
+                "reasoning": "stub",
+            }
+        ),
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="이 프로젝트의 문서 요약 좀 해줘",
+        )
+    ]
+    types = [type(e).__name__ for e in events]
+    assert types == ["ToolCallEvent", "ToolResultEvent", "TokenEvent", "DoneEvent"]
+
+
+async def test_supervisor_clarify_emits_question_as_token(monkeypatch, db):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response=json.dumps(
+            {
+                "action": "clarify",
+                "agent": None,
+                "plan": None,
+                "clarification": "구체적으로 어떤 기능에 대한 질문인지 알려주세요.",
+                "reasoning": "ambiguous",
+            }
+        ),
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="저거 좀",
+        )
+    ]
+    types = [type(e).__name__ for e in events]
+    assert types == ["TokenEvent", "DoneEvent"]
+    assert "구체적으로" in events[0].data.text
+
+
+async def test_supervisor_plan_emits_placeholder_until_planner_wired(monkeypatch, db):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response=json.dumps(
+            {
+                "action": "plan",
+                "agent": None,
+                "plan": ["knowledge_qa"],
+                "clarification": None,
+                "reasoning": "stub plan",
+            }
+        ),
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="뭐 여러 단계짜리 작업 해줘",
+        )
+    ]
+    types = [type(e).__name__ for e in events]
+    assert types == ["TokenEvent", "DoneEvent"]
+    assert "아직 준비 중" in events[0].data.text
+
+
+async def test_supervisor_invalid_json_falls_back_to_clarify(monkeypatch, db):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response="this is not JSON at all",
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="뭐든",
+        )
+    ]
+    types = [type(e).__name__ for e in events]
+    assert types == ["TokenEvent", "DoneEvent"]
+    # Fallback clarification message includes "다시 말씀해주세요".
+    assert "다시 말씀" in events[0].data.text
+
+
+async def test_supervisor_unknown_agent_falls_back_to_clarify(monkeypatch, db):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response=json.dumps(
+            {
+                "action": "single",
+                "agent": "nonexistent_agent",
+                "plan": None,
+                "clarification": None,
+                "reasoning": "stub",
+            }
+        ),
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="아무거나",
+        )
+    ]
+    types = [type(e).__name__ for e in events]
+    assert types == ["TokenEvent", "DoneEvent"]
+    assert "다시 말씀" in events[0].data.text

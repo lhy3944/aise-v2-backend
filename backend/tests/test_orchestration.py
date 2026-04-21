@@ -130,3 +130,60 @@ async def test_run_chat_invalid_project_id_emits_error(stub_llm_and_embeddings, 
     assert len(events) == 1
     assert type(events[0]).__name__ == "ErrorEvent"
     assert "invalid project_id" in events[0].data.message
+
+
+async def test_get_checkpointer_memory_by_default(monkeypatch):
+    """D7: with no LANGGRAPH_CHECKPOINT_URL set, we get MemorySaver."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from src.orchestration import graph as graph_module
+
+    monkeypatch.delenv("LANGGRAPH_CHECKPOINT_URL", raising=False)
+    checkpointer = await graph_module.get_checkpointer()
+    assert isinstance(checkpointer, MemorySaver)
+
+
+async def test_get_checkpointer_postgres_when_env_set(monkeypatch):
+    """D7: env present → AsyncPostgresSaver branch is taken with the URL
+    threaded through. Uses a stub to avoid opening a real psycopg pool
+    that would outlive the test and interfere with the shared test DB."""
+    from src.orchestration import graph as graph_module
+
+    await graph_module.shutdown_checkpointer()
+    called_with: dict[str, str] = {}
+
+    class _StubSaver:
+        pass
+
+    async def _fake_init(url: str):
+        called_with["url"] = url
+        graph_module._pg_saver = _StubSaver()  # pretend we cached it
+        return graph_module._pg_saver
+
+    monkeypatch.setattr(graph_module, "_init_postgres_checkpointer", _fake_init)
+    monkeypatch.setenv(
+        "LANGGRAPH_CHECKPOINT_URL",
+        "postgresql+asyncpg://aise:aise1234@localhost:5432/aise",
+    )
+    try:
+        checkpointer = await graph_module.get_checkpointer()
+        assert isinstance(checkpointer, _StubSaver)
+        assert called_with["url"] == (
+            "postgresql+asyncpg://aise:aise1234@localhost:5432/aise"
+        )
+    finally:
+        graph_module._pg_saver = None
+        graph_module._pg_pool = None
+
+
+def test_normalise_checkpoint_url_strips_sqlalchemy_dialects():
+    from src.orchestration.graph import _normalise_checkpoint_url
+
+    cases = {
+        "postgresql+asyncpg://u:p@h:5432/db": "postgresql://u:p@h:5432/db",
+        "postgresql+psycopg://u:p@h/db": "postgresql://u:p@h/db",
+        "postgresql+psycopg2://u:p@h/db": "postgresql://u:p@h/db",
+        "postgresql://u:p@h/db": "postgresql://u:p@h/db",
+    }
+    for raw, expected in cases.items():
+        assert _normalise_checkpoint_url(raw) == expected

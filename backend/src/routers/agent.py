@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.core.database import get_db, get_session_factory
 from src.models.session import Session as SessionModel
-from src.orchestration.graph import build_graph, run_chat
+from src.orchestration.graph import build_graph, get_checkpointer, run_chat
 from src.schemas.api.agent import AgentChatRequest
 from src.services import agent_svc
 
@@ -53,12 +53,13 @@ def _use_langgraph() -> bool:
 _graph_cache: dict[int, object] = {}
 
 
-def _get_graph(session_factory: async_sessionmaker[AsyncSession]):
+async def _get_graph(session_factory: async_sessionmaker[AsyncSession]):
     key = id(session_factory)
     graph = _graph_cache.get(key)
     if graph is None:
         logger.info("Compiling LangGraph orchestrator for factory id=%s", key)
-        graph = build_graph(session_factory)
+        checkpointer = await get_checkpointer()
+        graph = build_graph(session_factory, checkpointer=checkpointer)
         _graph_cache[key] = graph
     return graph
 
@@ -90,7 +91,7 @@ async def _langgraph_stream(
             yield f"data: {payload}\n\n"
             return
 
-    graph = _get_graph(session_factory)
+    graph = await _get_graph(session_factory)
     async for event in run_chat(
         graph,
         project_id=project_id,

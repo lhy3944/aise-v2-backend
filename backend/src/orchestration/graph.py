@@ -4,19 +4,32 @@ Phase 1 wiring:
     START -> supervisor -(conditional)-> knowledge_qa -> END
                           \-> end (when routing != single or agent missing)
 
-Checkpointer: MemorySaver in Phase 1 (HITL not yet wired). Switch to
-AsyncPostgresSaver in Phase 3 via the LANGGRAPH_CHECKPOINT_URL env.
+Checkpointer policy (D7):
+    - LANGGRAPH_CHECKPOINT_URL unset (default): `MemorySaver`. Fine for
+      Phase 1 because no node issues `interrupt()` yet, so there is
+      nothing to persist across requests.
+    - LANGGRAPH_CHECKPOINT_URL set: `AsyncPostgresSaver` backed by a
+      `psycopg_pool.AsyncConnectionPool`. The saver's `setup()` runs once
+      (idempotent — creates the checkpoints tables if missing).
+
+Callers who compile graphs ad-hoc (tests, scripts) can pass `checkpointer=`
+directly to `build_graph`. The router path uses `get_checkpointer()` which
+reads the env once and caches the saver for the process lifetime.
 """
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from typing import Any, AsyncGenerator, Callable
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from loguru import logger
+from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.agents import load_builtin_agents
@@ -75,14 +88,80 @@ def _make_agent_node(name: str, session_factory: async_sessionmaker[AsyncSession
     return node
 
 
+# ---------- Checkpointer ----------
+
+
+_pg_pool: AsyncConnectionPool | None = None
+_pg_saver: AsyncPostgresSaver | None = None
+
+
+def _normalise_checkpoint_url(url: str) -> str:
+    """Accept SQLAlchemy-style URLs by stripping the driver dialect suffix.
+
+    `postgresql+asyncpg://...` and `postgresql+psycopg://...` are both
+    commonly pasted from DATABASE_URL; psycopg itself only parses the
+    vanilla `postgresql://...` form.
+    """
+    for dialect in ("+asyncpg", "+psycopg2", "+psycopg"):
+        if dialect in url:
+            return url.replace(dialect, "", 1)
+    return url
+
+
+async def _init_postgres_checkpointer(url: str) -> AsyncPostgresSaver:
+    """Open a shared pool and initialise the checkpoints tables once."""
+    global _pg_pool, _pg_saver
+    if _pg_saver is not None:
+        return _pg_saver
+
+    conninfo = _normalise_checkpoint_url(url)
+    _pg_pool = AsyncConnectionPool(
+        conninfo=conninfo,
+        open=False,
+        max_size=20,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    )
+    await _pg_pool.open()
+    _pg_saver = AsyncPostgresSaver(conn=_pg_pool)
+    await _pg_saver.setup()
+    logger.info("LangGraph checkpointer initialised: AsyncPostgresSaver")
+    return _pg_saver
+
+
+async def get_checkpointer() -> BaseCheckpointSaver:
+    """Return the process-wide checkpointer per D7 policy.
+
+    No env → MemorySaver. Env set → AsyncPostgresSaver (lazy once).
+    """
+    url = os.getenv("LANGGRAPH_CHECKPOINT_URL")
+    if url:
+        return await _init_postgres_checkpointer(url)
+    return MemorySaver()
+
+
+async def shutdown_checkpointer() -> None:
+    """Close the shared pool if one was opened. Safe to call unconditionally."""
+    global _pg_pool, _pg_saver
+    if _pg_pool is not None:
+        await _pg_pool.close()
+    _pg_pool = None
+    _pg_saver = None
+
+
 # ---------- Graph builder ----------
 
 
-def build_graph(session_factory: async_sessionmaker[AsyncSession]):
+def build_graph(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    checkpointer: BaseCheckpointSaver | None = None,
+):
     """Compile the Phase 1 agent graph.
 
     Idempotently loads built-in agents into the registry so node lookups
-    succeed even on first call.
+    succeed even on first call. Pass `checkpointer=` to override the
+    default `MemorySaver`; production callers go through the router's
+    `_get_graph`, which pulls from `get_checkpointer()`.
     """
     load_builtin_agents()
 
@@ -101,7 +180,7 @@ def build_graph(session_factory: async_sessionmaker[AsyncSession]):
     )
     workflow.add_edge("knowledge_qa", END)
 
-    return workflow.compile(checkpointer=MemorySaver())
+    return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
 
 # ---------- SSE driver ----------
@@ -185,4 +264,9 @@ async def run_chat(
     yield DoneEvent(data=DoneEventData(finish_reason="stop"))
 
 
-__all__ = ["build_graph", "run_chat"]
+__all__ = [
+    "build_graph",
+    "get_checkpointer",
+    "run_chat",
+    "shutdown_checkpointer",
+]

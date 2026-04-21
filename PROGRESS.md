@@ -10,8 +10,8 @@
 | Phase | 구간 | 상태 | 진행률 | 비고 |
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
-| **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 (같은 날 연속 진행) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟡 대기 | 0% | 시작 신호 대기. assist_* 실제 제거는 이 Phase 말 |
+| **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟡 대기 | 0% | Phase 1 게이트 정합 완료. `USE_LANGGRAPH=true` 수동 스모크만 남음. assist_* 실제 제거는 이 Phase 초 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -44,6 +44,24 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-21 — Phase 1 게이트 보강 (Phase 2 진입 전 정합화)
+
+코드 리뷰(4건) 결과 문서-코드 불일치 및 테스트 인프라 약점 발견 → Phase 2 착수 전 3개 게이트로 정리. 총 3커밋, **121 passed**.
+
+| 커밋 | Gate | 변경 요약 |
+|---|---|---|
+| `f45dbd8` | C (테스트 인프라) | `scripts/setup_test_db.{py,sh}` 신설(`CREATE DATABASE` + `alembic upgrade head`) + conftest autouse probe가 DB 부재 시 pytest.exit로 친절 에러. 테스트는 DB를 자동 생성하지 않음(팀 정책). |
+| `dcc54d3` | B (DI 경로) | `core.database.get_session_factory()` 추가. `/api/v1/agent/chat` LangGraph 분기가 `Depends(get_session_factory)`로 주입받아 테스트 override 존중. `_get_graph`는 factory id별 캐시. 회귀 테스트(`test_langgraph_path_honors_session_factory_override`) 추가. |
+| `dff384f` | A (체크포인터 env) | `orchestration/graph.get_checkpointer()` — `LANGGRAPH_CHECKPOINT_URL` 없으면 `MemorySaver`, 있으면 공유 `AsyncConnectionPool` + `AsyncPostgresSaver`(+ idempotent `setup()`). `build_graph(..., checkpointer=)` 주입 가능. URL dialect 정규화 유틸 + 3개 신규 테스트. |
+
+#### 발견된 불일치 (해소 완료)
+- **D7 "PostgresSaver 완료" ↔ 코드 `MemorySaver`**: env-switch로 재해석(Phase 1=Memory 기본 / Phase 3 HITL 시 env로 Postgres) → MIGRATION_PLAN/PROGRESS 표기 수정.
+- **D3 "assist_* 제거 완료" ↔ 라우터 여전히 등록**: 결정 확정은 ✅이되 **실제 삭제는 Phase 2 작업 M**임을 명시.
+- **테스트 DB 부재 시 12 errors**: 이제 `pytest.exit`으로 조기 종료 + 부트스트랩 스크립트 안내.
+- **LangGraph 경로 DI 우회**: 테스트 override 불가했던 구조를 해결 + 회귀 테스트로 고정.
+
+---
 
 ### 2026-04-21 — Phase 1 기반 아키텍처 완료
 
@@ -124,6 +142,10 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
 
 ### 선행 조건
 - [x] Phase 1 완료 (LangGraph 뼈대 + SSE 계약 + KnowledgeQA)
+- [x] **필수 게이트 정리** (2026-04-21 보강 — 커밋 `f45dbd8` / `dcc54d3` / `dff384f`)
+  - [x] Gate C: 테스트 DB 부트스트랩 스크립트(`backend/scripts/setup_test_db.{py,sh}`) + conftest fail-fast probe
+  - [x] Gate B: `/api/v1/agent/chat` LangGraph 경로가 `Depends(get_session_factory)` 통해 DI 오버라이드 존중 (테스트 DB 격리 회복)
+  - [x] Gate A: 체크포인터 env 스위치(`LANGGRAPH_CHECKPOINT_URL` → `AsyncPostgresSaver`, 미설정 시 `MemorySaver`)
 - [ ] `USE_LANGGRAPH=true` 환경에서 수동 smoke test (개발 서버에서 실제 Agent Chat 왕복)
 - [ ] 프론트 `agent-service.ts`의 신 envelope 파싱 UI 수동 확인 (tool_call → AgentInvocationCard 없이는 표시 못함, Phase 2 N1에서 해결)
 
@@ -148,16 +170,19 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
 6. **D3 실제 제거**: assist_*(backend + frontend 3 호출부) 삭제 → Requirement Agent 경로로 대체
 
 ### 이전 기록용: 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
-- [x] D1 복사 이관 (Phase 0 완료)
-- [x] D2 artifacts 도메인별 분리 유지 + 조회 유틸
-- [x] **D3 assist_* 제거** (Phase 1 말~2 초, `docs/legacy/assist-reference/`로 스냅샷 후 삭제)
-- [x] D4 LiteLLM Phase 1
-- [x] D5 fetch-event-source Phase 1 전면
-- [x] D6 라우트 분리 Phase 4
-- [x] D7 PostgresSaver
-- [x] **D8 Langfuse 자가호스팅** (Phase 4, `LANGFUSE_HOST` 환경변수로 감쌈)
-- [x] D9 deepagents Phase 1 즉시 제거
-- [x] **D10 pnpm 단일 유지** (`package-lock.json` 삭제, `packageManager` 필드 명시)
+
+체크박스는 **결정 확정 여부**에 대한 것. 실행 상태는 별도 표기.
+
+- [x] D1 복사 이관 (결정·실행 모두 완료, Phase 0)
+- [x] D2 artifacts 도메인별 분리 유지 + 조회 유틸 (결정 확정, 실행은 Phase 2 이후)
+- [x] **D3 assist_* 제거 결정** — 실행 상태: 스냅샷·DEPRECATED 마킹까지만 완료. **라우터/서비스/프론트 실 삭제는 Phase 2 작업 M에서 수행**
+- [x] D4 LiteLLM Phase 1 (결정·실행 모두 완료, 커밋 `ef8017c`)
+- [x] D5 fetch-event-source Phase 1 전면 (결정·실행 모두 완료, 커밋 `bda4be1`)
+- [x] D6 라우트 분리 Phase 4 (결정 확정, 실행은 Phase 4)
+- [x] **D7 PostgresSaver (env-switched)** — 결정·구현 완료(Phase 1, 커밋 `dff384f`). 기본값 Memory, `LANGGRAPH_CHECKPOINT_URL` 설정 시 즉시 Postgres. Phase 3 HITL 도입 시점부터 env로 실사용 전환
+- [x] **D8 Langfuse 자가호스팅** (결정 확정, 실행은 Phase 4, `LANGFUSE_HOST` 환경변수로 감쌈)
+- [x] D9 deepagents Phase 1 즉시 제거 (결정·실행 모두 완료, 커밋 `f6e42f3`)
+- [x] **D10 pnpm 단일 유지** (`package-lock.json` 삭제, `packageManager` 필드 명시, 커밋 `c88d9f1`)
 
 ### Phase 1 시작 시 선행 작업 (MIGRATION_PLAN §2.1)
 - [ ] **SSE 이벤트 스키마 합의 문서** (`docs/events.md`) 작성 후 사용자 검토
@@ -184,4 +209,8 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
 - **로컬 `.prototype-ref/aise-v2/`** 는 분석용 clone, gitignore 처리됨. 참고만.
 - **`docs/legacy/`는 읽기 전용**. 수정 시 활성 문서(루트)로 반영.
 - **DB 컨테이너 상시 실행** 가정 (`aise2_postgres`, `aise2_minio`). 중단 시 `docker compose up -d postgres minio`.
-- **Backend 테스트 실행 전** `DATABASE_URL="postgresql+asyncpg://aise:aise1234@localhost:5432/aise_test" uv run alembic upgrade head` 필요 시 수행.
+- **Backend 테스트 DB 부트스트랩** (최초 1회 또는 DB 재생성 후):
+  ```bash
+  cd backend && bash scripts/setup_test_db.sh
+  ```
+  이후 `uv run pytest tests/`로 실행. 테스트가 DB를 자동 생성하지 않음(팀 정책). 누락 시 conftest가 친절 에러로 조기 종료.

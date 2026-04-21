@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from src.main import app
-from src.core.database import get_db
+from src.core.database import get_db, get_session_factory
 
 TEST_DATABASE_URL = "postgresql+asyncpg://aise:aise1234@localhost:5432/aise_test"
 
@@ -94,7 +94,11 @@ async def db():
         async with TestSession() as session:
             yield session
 
+    def override_get_session_factory():
+        return TestSession
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = override_get_session_factory
 
     # 테스트 본문에서 직접 DB 접근이 필요할 경우를 위한 세션
     async with TestSession() as session:

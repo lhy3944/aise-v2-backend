@@ -1,6 +1,15 @@
 """Agent API 테스트"""
 
+import json
+import uuid
+
 import pytest
+
+from src.agents import list_agents, load_builtin_agents
+from src.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from src.models.project import Project
+from src.models.session import Session as SessionModel
+from src.services import embedding_svc, llm_svc, rag_svc
 
 
 @pytest.mark.asyncio
@@ -11,3 +20,83 @@ async def test_agent_chat_invalid_session_id_returns_422(client):
     )
 
     assert resp.status_code == 422
+
+
+@pytest.fixture
+def _stub_agent_deps(monkeypatch):
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    async def fake_chat_completion(messages, **kwargs):
+        return "Stubbed answer from DI override test."
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+
+    if not list_agents():
+        load_builtin_agents(force_reload=True)
+
+
+@pytest.mark.asyncio
+async def test_langgraph_path_honors_session_factory_override(
+    monkeypatch, _stub_agent_deps, client, db
+):
+    """Gate B regression: the LangGraph path must use the test DB's session
+    factory, not the production `async_session`. Proven by seeding a session
+    in the test DB and confirming the endpoint finds it (vs emitting the
+    SESSION_NOT_FOUND error that the prod DB would yield)."""
+    monkeypatch.setenv("USE_LANGGRAPH", "true")
+    # Bypass the module-level cache so a prior non-override run does not win.
+    from src.routers import agent as agent_router
+
+    agent_router._graph_cache.clear()
+
+    project = Project(name="di-override", description="x")
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    doc = KnowledgeDocument(
+        project_id=project.id,
+        name="seed.md",
+        file_type="md",
+        size_bytes=1,
+        storage_key=f"{uuid.uuid4()}.md",
+        status="completed",
+        chunk_count=1,
+        is_active=True,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+
+    db.add(
+        KnowledgeChunk(
+            document_id=doc.id,
+            project_id=project.id,
+            chunk_index=0,
+            content="hello",
+            token_count=1,
+            embedding=[0.1] * 1536,
+        )
+    )
+    session = SessionModel(project_id=project.id, title="t")
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    resp = await client.post(
+        "/api/v1/agent/chat",
+        json={"session_id": str(session.id), "message": "hi"},
+    )
+    assert resp.status_code == 200
+
+    events = []
+    for line in resp.text.splitlines():
+        if line.startswith("data: "):
+            events.append(json.loads(line[len("data: "):]))
+
+    types = [e["type"] for e in events]
+    assert "error" not in types, f"LangGraph path fell back to prod DB: {events!r}"
+    assert types == ["tool_call", "tool_result", "token", "done"]

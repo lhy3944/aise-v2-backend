@@ -15,9 +15,40 @@ from src.core.database import get_db
 
 TEST_DATABASE_URL = "postgresql+asyncpg://aise:aise1234@localhost:5432/aise_test"
 
+_SETUP_HINT = (
+    "Test database is not initialised. Run `./backend/scripts/setup_test_db.sh` once, "
+    "then retry pytest. (This project does not auto-create the test DB; see "
+    "PROGRESS.md for the policy.)"
+)
+
 # NullPool: 각 요청마다 새 커넥션을 생성하여 "operation in progress" 문제를 방지
 engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 TestSession = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _verify_test_db_ready():
+    """Fail fast with a helpful pointer if the test DB is missing.
+
+    We do NOT create the database — team policy is that this is an explicit
+    one-shot setup step (see `backend/scripts/setup_test_db.sh`). Without this
+    check, every test fails with an opaque `InvalidCatalogNameError`.
+
+    Probe uses the sync psycopg2 driver to stay out of the event loop that
+    pytest-asyncio owns.
+    """
+    import psycopg2
+
+    sync_url = TEST_DATABASE_URL.replace("+asyncpg", "")
+    try:
+        conn = psycopg2.connect(sync_url)
+    except psycopg2.OperationalError as exc:
+        msg = str(exc)
+        if "does not exist" in msg:
+            pytest.exit(f"{_SETUP_HINT}\n  Underlying error: {msg}", returncode=4)
+        raise
+    conn.close()
+    yield
 
 # 테이블 정리 순서 (FK 의존성 고려)
 CLEANUP_TABLES = [

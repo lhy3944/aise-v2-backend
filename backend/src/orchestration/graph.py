@@ -33,7 +33,7 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.agents import load_builtin_agents
-from src.agents.registry import get_agent
+from src.agents.registry import get_agent, try_get_agent
 from src.orchestration.state import AgentContext, AgentState
 from src.orchestration.supervisor import (
     route_after_supervisor,
@@ -44,6 +44,9 @@ from src.schemas.events import (
     DoneEventData,
     ErrorEvent,
     ErrorEventData,
+    PlanStep,
+    PlanUpdateEvent,
+    PlanUpdateEventData,
     TokenEvent,
     TokenEventData,
     ToolCallEvent,
@@ -193,6 +196,207 @@ def build_graph(
 # ---------- SSE driver ----------
 
 
+def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
+    """Derive the `tool_result.result` payload from an agent's state update.
+
+    Includes counters that are present; absent keys stay out of the dict
+    so the frontend's AgentInvocationCard only renders what the agent
+    actually produced.
+    """
+    payload: dict[str, Any] = {}
+    sources = state.get("sources")
+    if sources is not None:
+        payload["sources_count"] = len(sources)
+    extracted = state.get("records_extracted")
+    if extracted is not None:
+        payload["records_count"] = len(extracted)
+    return payload
+
+
+async def _execute_plan(
+    plan_names: list[str],
+    *,
+    initial_state: AgentState,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[Any, None]:
+    """Run a plan sequentially, emitting plan_update + per-step tool events.
+
+    Yielded event sequence per plan:
+        plan_update(all pending)
+        for each step i:
+            plan_update(step i running)
+            tool_call(agent_i)
+            tool_result(agent_i, success|error)
+            plan_update(step i completed|failed)
+            [token with intermediate final_answer] — only if not last step
+        token(final_answer from last successful step)
+
+    Terminates early on the first failed step (remaining steps stay
+    `pending`). The caller (run_chat) emits the DoneEvent after this
+    generator drains.
+    """
+    from datetime import datetime, timezone
+
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    steps: list[PlanStep] = [
+        PlanStep(agent=name, status="pending") for name in plan_names
+    ]
+
+    def _plan_update(current: int | None) -> PlanUpdateEvent:
+        return PlanUpdateEvent(
+            data=PlanUpdateEventData(
+                plan=[s.model_copy() for s in steps],
+                current_step=current,
+            )
+        )
+
+    yield _plan_update(current=None)
+
+    project_id_str = initial_state.get("project_id")
+    session_id_str = initial_state.get("session_id")
+    try:
+        project_id = uuid.UUID(project_id_str) if project_id_str else None
+    except (ValueError, TypeError):
+        project_id = None
+
+    if project_id is None:
+        for step in steps:
+            step.status = "failed"
+            step.result_summary = "invalid project_id"
+        yield _plan_update(current=None)
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=f"invalid project_id: {project_id_str!r}",
+                code="AGENT_ERROR",
+                recoverable=False,
+            )
+        )
+        return
+
+    session_id = (
+        uuid.UUID(session_id_str)
+        if isinstance(session_id_str, str) and session_id_str
+        else None
+    )
+
+    shared_state: dict[str, Any] = dict(initial_state)
+    last_final_answer: str | None = None
+
+    # One session for the whole plan — agents only read, so sharing keeps
+    # connection churn minimal under pytest's NullPool and is consistent
+    # with how _make_agent_node scopes DB access per graph invocation.
+    async with session_factory() as db:
+        ctx = AgentContext(db=db, project_id=project_id, session_id=session_id)
+
+        for idx, name in enumerate(plan_names):
+            step = steps[idx]
+            agent = try_get_agent(name)
+            if agent is None:
+                step.status = "failed"
+                step.completed_at = datetime.now(timezone.utc)
+                step.result_summary = f"unknown agent {name!r}"
+                yield _plan_update(current=idx)
+                yield ErrorEvent(
+                    data=ErrorEventData(
+                        message=f"unknown agent in plan: {name!r}",
+                        code="AGENT_ERROR",
+                        recoverable=False,
+                    )
+                )
+                return
+
+            step.status = "running"
+            step.started_at = datetime.now(timezone.utc)
+            yield _plan_update(current=idx)
+
+            call_id = f"call_{uuid.uuid4().hex[:12]}"
+            step_started = time.perf_counter()
+            yield ToolCallEvent(
+                data=ToolCallEventData(
+                    tool_call_id=call_id,
+                    name=name,
+                    arguments={"user_input": shared_state.get("user_input", "")},
+                    agent=name,
+                )
+            )
+
+            try:
+                update = await agent.run(shared_state, ctx)
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.exception(f"Plan step {name} raised")
+                step.status = "failed"
+                step.completed_at = datetime.now(timezone.utc)
+                step.result_summary = str(exc)[:200]
+                yield ToolResultEvent(
+                    data=ToolResultEventData(
+                        tool_call_id=call_id,
+                        name=name,
+                        status="error",
+                        duration_ms=int((time.perf_counter() - step_started) * 1000),
+                        result={"error": str(exc)[:200]},
+                    )
+                )
+                yield _plan_update(current=idx)
+                yield ErrorEvent(
+                    data=ErrorEventData(
+                        message=str(exc),
+                        code="AGENT_ERROR",
+                        recoverable=False,
+                    )
+                )
+                return
+
+            if update.get("error"):
+                step.status = "failed"
+                step.completed_at = datetime.now(timezone.utc)
+                step.result_summary = update["error"]
+                yield ToolResultEvent(
+                    data=ToolResultEventData(
+                        tool_call_id=call_id,
+                        name=name,
+                        status="error",
+                        duration_ms=int((time.perf_counter() - step_started) * 1000),
+                        result={"error": update["error"]},
+                    )
+                )
+                yield _plan_update(current=idx)
+                yield ErrorEvent(
+                    data=ErrorEventData(
+                        message=update["error"],
+                        code="AGENT_ERROR",
+                        recoverable=False,
+                    )
+                )
+                return
+
+            # Merge the step's output into the shared state so the next
+            # agent sees the accumulated context (e.g. requirement's
+            # records_extracted visible to a downstream srs_generator).
+            shared_state.update(update)
+            last_final_answer = update.get("final_answer") or last_final_answer
+
+            step.status = "completed"
+            step.completed_at = datetime.now(timezone.utc)
+            summary = update.get("final_answer") or ""
+            step.result_summary = summary[:200] if summary else None
+
+            yield ToolResultEvent(
+                data=ToolResultEventData(
+                    tool_call_id=call_id,
+                    name=name,
+                    status="success",
+                    duration_ms=int((time.perf_counter() - step_started) * 1000),
+                    result=_result_payload(update),
+                )
+            )
+            yield _plan_update(current=idx)
+
+    if last_final_answer:
+        yield TokenEvent(data=TokenEventData(text=last_final_answer))
+
+
 async def run_chat(
     graph,
     *,
@@ -200,12 +404,16 @@ async def run_chat(
     session_id: uuid.UUID | str,
     user_input: str,
     history: list[dict[str, Any]] | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> AsyncGenerator[Any, None]:
     """Invoke the graph and yield AgentStreamEvent objects.
 
-    Phase 1 emits a single `token` event with the final answer; real
-    per-token streaming arrives with the LLM streaming integration in
-    later phases. The contract in docs/events.md is honored either way.
+    When the supervisor picks `plan`, we use the supplied
+    `session_factory` to execute agents sequentially outside the graph —
+    this lets us stream `plan_update` events in real time. If no factory
+    is supplied (ad-hoc callers, legacy tests), the plan branch falls
+    back to a short placeholder token so the stream still terminates
+    cleanly.
     """
     initial_state: AgentState = {
         "project_id": str(project_id),
@@ -244,8 +452,6 @@ async def run_chat(
     selected = routing.get("agent") if action == "single" else None
 
     if selected:
-        # Surface the agent invocation as a single tool_call/tool_result pair so
-        # the frontend's AgentInvocationCard can render even in Phase 1.
         call_id = f"call_{uuid.uuid4().hex[:12]}"
         yield ToolCallEvent(
             data=ToolCallEventData(
@@ -255,35 +461,35 @@ async def run_chat(
                 agent=selected,
             )
         )
-        result_payload: dict[str, Any] = {
-            "sources_count": len(final_state.get("sources") or []),
-        }
-        extracted = final_state.get("records_extracted")
-        if extracted is not None:
-            result_payload["records_count"] = len(extracted)
         yield ToolResultEvent(
             data=ToolResultEventData(
                 tool_call_id=call_id,
                 name=selected,
                 status="success",
                 duration_ms=int((time.perf_counter() - started) * 1000),
-                result=result_payload,
+                result=_result_payload(final_state),
             )
         )
 
     if action == "clarify":
         question = routing.get("clarification") or "조금 더 구체적으로 말씀해주시겠어요?"
         yield TokenEvent(data=TokenEventData(text=question))
-    elif action == "plan" and not final_state.get("final_answer"):
-        # Phase 2 increment 1 does not wire the planner node yet. Surface a
-        # placeholder so the stream still lands on a useful message
-        # instead of just `done`.
-        plan_names = ", ".join(routing.get("plan") or [])
-        yield TokenEvent(
-            data=TokenEventData(
-                text=f"(plan 실행은 아직 준비 중입니다: {plan_names})",
+    elif action == "plan":
+        plan_names = routing.get("plan") or []
+        if session_factory is not None and plan_names:
+            async for ev in _execute_plan(
+                plan_names,
+                initial_state=initial_state,
+                session_factory=session_factory,
+            ):
+                yield ev
+        else:
+            # Fallback: no factory available (unit tests, ad-hoc callers).
+            yield TokenEvent(
+                data=TokenEventData(
+                    text=f"(plan 실행은 아직 준비 중입니다: {', '.join(plan_names)})",
+                )
             )
-        )
     else:
         answer = final_state.get("final_answer") or ""
         if answer:

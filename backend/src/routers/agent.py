@@ -97,6 +97,7 @@ async def _langgraph_stream(
         project_id=project_id,
         session_id=session_id,
         user_input=message,
+        session_factory=session_factory,
     ):
         yield f"data: {event.model_dump_json()}\n\n"
 

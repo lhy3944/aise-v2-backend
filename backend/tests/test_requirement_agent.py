@@ -156,5 +156,5 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
     assert types == ["ToolCallEvent", "ToolResultEvent", "TokenEvent", "DoneEvent"]
     tool_call, tool_result, token, _done = events
     assert tool_call.data.name == "requirement"
-    assert tool_result.data.result == {"sources_count": 0, "records_count": 2}
+    assert tool_result.data.result == {"records_count": 2}
     assert "2개의 요구사항 후보" in token.data.text

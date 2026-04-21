@@ -295,7 +295,8 @@ async def test_supervisor_clarify_emits_question_as_token(monkeypatch, db):
     assert "구체적으로" in events[0].data.text
 
 
-async def test_supervisor_plan_emits_placeholder_until_planner_wired(monkeypatch, db):
+async def test_supervisor_plan_placeholder_when_factory_absent(monkeypatch, db):
+    """Without session_factory the plan branch falls back to a token."""
     async def fake_embeddings(texts):
         return [[0.1] * 1536 for _ in texts]
 
@@ -324,11 +325,100 @@ async def test_supervisor_plan_emits_placeholder_until_planner_wired(monkeypatch
             project_id=project.id,
             session_id=uuid.uuid4(),
             user_input="뭐 여러 단계짜리 작업 해줘",
-        )
+        )  # no session_factory
     ]
     types = [type(e).__name__ for e in events]
     assert types == ["TokenEvent", "DoneEvent"]
     assert "아직 준비 중" in events[0].data.text
+
+
+async def test_supervisor_plan_executes_sequentially_with_plan_updates(
+    monkeypatch, db
+):
+    """With session_factory, plan executes each agent in order and the
+    stream carries plan_update + tool_call/tool_result pairs per step."""
+    async def fake_embeddings(texts):
+        return [[0.1] * 1536 for _ in texts]
+
+    monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
+    _stub_llm(
+        monkeypatch,
+        supervisor_response=json.dumps(
+            {
+                "action": "plan",
+                "agent": None,
+                "plan": ["knowledge_qa", "requirement"],
+                "clarification": None,
+                "reasoning": "stub multi-step",
+            }
+        ),
+    )
+
+    # Stub record_svc so requirement step is deterministic.
+    from unittest.mock import AsyncMock, patch
+
+    from src.schemas.api.record import RecordExtractedItem, RecordExtractResponse
+
+    fake_records = RecordExtractResponse(
+        candidates=[
+            RecordExtractedItem(
+                content="one",
+                section_id=None,
+                section_name="FR",
+                source_document_id=None,
+                source_document_name="doc.md",
+                source_location="p.1",
+                confidence_score=0.9,
+            )
+        ]
+    )
+
+    project = await _seed(db)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+
+    with patch(
+        "src.services.record_svc.extract_records",
+        new=AsyncMock(return_value=fake_records),
+    ):
+        events = [
+            ev
+            async for ev in run_chat(
+                graph,
+                project_id=project.id,
+                session_id=uuid.uuid4(),
+                user_input="먼저 검색하고 요구사항까지 뽑아줘",
+                session_factory=session_factory,
+            )
+        ]
+
+    types = [type(e).__name__ for e in events]
+    # Expected sequence:
+    #   PlanUpdate(all pending)
+    #   PlanUpdate(step 0 running), ToolCall, ToolResult, PlanUpdate(step 0 completed)
+    #   PlanUpdate(step 1 running), ToolCall, ToolResult, PlanUpdate(step 1 completed)
+    #   Token(final answer from step 1), Done
+    assert types == [
+        "PlanUpdateEvent",
+        "PlanUpdateEvent",
+        "ToolCallEvent",
+        "ToolResultEvent",
+        "PlanUpdateEvent",
+        "PlanUpdateEvent",
+        "ToolCallEvent",
+        "ToolResultEvent",
+        "PlanUpdateEvent",
+        "TokenEvent",
+        "DoneEvent",
+    ]
+
+    # Final plan_update before the terminating token: both steps completed.
+    final_plan = events[-3]
+    assert [s.agent for s in final_plan.data.plan] == ["knowledge_qa", "requirement"]
+    assert [s.status for s in final_plan.data.plan] == ["completed", "completed"]
+
+    # Last token is the requirement agent's summary.
+    assert "1개의 요구사항 후보" in events[-2].data.text
 
 
 async def test_supervisor_invalid_json_falls_back_to_clarify(monkeypatch, db):

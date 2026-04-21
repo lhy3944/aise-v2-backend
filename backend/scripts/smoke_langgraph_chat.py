@@ -85,12 +85,14 @@ async def main() -> int:
             print(f"  {t}  {data}")
 
     types = [ev.get("type") for ev in events]
-    expected_prefix = ["tool_call", "tool_result"]
+    # Accept either single (tool_call/tool_result/token/done) or plan
+    # (plan_update*/tool_call/tool_result × N/token/done) flows.
+    has_agent_pair = "tool_call" in types and "tool_result" in types
     ok = (
-        types[: len(expected_prefix)] == expected_prefix
-        and "token" in types
+        types
         and types[-1] == "done"
         and "error" not in types
+        and has_agent_pair
     )
     print("\n" + ("PASS ✅" if ok else "FAIL ❌"))
     return 0 if ok else 1

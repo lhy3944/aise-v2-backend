@@ -146,7 +146,9 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
   - [x] Gate C: 테스트 DB 부트스트랩 스크립트(`backend/scripts/setup_test_db.{py,sh}`) + conftest fail-fast probe
   - [x] Gate B: `/api/v1/agent/chat` LangGraph 경로가 `Depends(get_session_factory)` 통해 DI 오버라이드 존중 (테스트 DB 격리 회복)
   - [x] Gate A: 체크포인터 env 스위치(`LANGGRAPH_CHECKPOINT_URL` → `AsyncPostgresSaver`, 미설정 시 `MemorySaver`)
-- [ ] `USE_LANGGRAPH=true` 환경에서 수동 smoke test (개발 서버에서 실제 Agent Chat 왕복)
+- [x] `USE_LANGGRAPH=true` 환경에서 수동 smoke test 통과 (2026-04-21)
+  - 스크립트: `backend/scripts/smoke_langgraph_chat.py` (in-process ASGI, 실제 OpenAI + real RAG)
+  - 결과: `tool_call → tool_result(duration=4552ms, sources=5) → token(106자) → done`, 4.55s 소요
 - [ ] 프론트 `agent-service.ts`의 신 envelope 파싱 UI 수동 확인 (tool_call → AgentInvocationCard 없이는 표시 못함, Phase 2 N1에서 해결)
 
 ### Phase 2 우선 작업 (MIGRATION_PLAN §2.2 요약)

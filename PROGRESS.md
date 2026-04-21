@@ -20,6 +20,42 @@
 
 ---
 
+## 알려진 이슈 / 후속 작업
+
+다음 세션에서 다시 확인·보강할 항목. 긴급도는 `P?` 로 표기(P1 = 빠른 대응 권장, P2 = 여유 있음).
+
+### [P2] RAG 출처(Sources) 표시 일관성 — 2026-04-21 발견
+
+**증상** — 레거시 경로(`USE_LANGGRAPH=false`, `services/agent_svc.stream_chat`)에서 Knowledge Repository 기반 답변 시, **모델마다 출처 리스트가 표시되거나 안 되거나** 편차가 있음. 사용자 수동 테스트 중 확인.
+
+**원인 구조적 진단**
+- 프론트 [MessageRenderer.tsx:58-59](frontend/src/components/chat/MessageRenderer.tsx#L58-L59)는 답변 **본문 안**의 `[SOURCES]...[/SOURCES]` JSON 블록을 정규식으로 파싱해서 `SourceReference` 컴포넌트를 렌더. SSE `sources` 필드는 소비하지 않음.
+- 레거시 프롬프트 [prompts/agent/chat.py:198-208](backend/src/prompts/agent/chat.py#L198-L208)는 `[SOURCES]` 블록 출력을 명시 지시 — 하지만 **LLM 준수도에 전적으로 의존**. 모델별로 따르거나 무시.
+- 새 LangGraph 프롬프트 [prompts/knowledge/chat.py:32](backend/src/prompts/knowledge/chat.py#L32)는 `[번호]` 인용만 지시하고 `[SOURCES]` 블록 지시가 **없음**. SSE `sources`는 [services/rag_svc.py:137-148](backend/src/services/rag_svc.py#L137-L148)에서 항상 반환되지만 프론트가 소비 안 함 → LangGraph 경로에서는 **거의 항상 출처 UI 미표시**.
+
+**권장 설계(대화에서 합의한 방향 — 옵션 D)** — "LLM에게 스키마 강제" 대신 "백엔드가 결정론적 사실 소유".
+
+1. 새 SSE 이벤트 `sources` 추가 ([schemas/events.py](backend/src/schemas/events.py))
+   - payload: `list[{document_id, document_name, chunk_index, content_preview, score}]`
+   - `KnowledgeQAAgent` 또는 `run_chat`에서 retrieval 직후 발행
+2. [types/agent-events.ts](frontend/src/types/agent-events.ts)에 1:1 반영, `useChatStream`에 `onSources` 콜백 추가
+3. [MessageRenderer.tsx](frontend/src/components/chat/MessageRenderer.tsx) 우선순위
+   - 1순위: SSE `sources` 이벤트 데이터
+   - 2순위(레거시 호환): 본문 `[SOURCES]` 블록 파싱
+   - agent_svc 제거 시점에 2순위도 삭제
+4. `prompts/knowledge/chat.py`에서 `[1]`·`[2]` 본문 인용 지시는 유지(보너스 UX), `[SOURCES]` 블록 지시는 추가하지 않음(백엔드가 소유)
+
+**UX 결정 점 (다음 확인 필요)** — 본문 `[1]` 인용이 전혀 없을 때 화면 처리 방식
+- (a) 답변 아래 "참조한 문서: …" 리스트만 — 가장 단순, 권장
+- (b) (a) + 답변 끝에 `[1] [2] …` 자동 뱃지
+- (c) 백엔드 후처리로 인라인 `[1]` 자동 삽입 (매칭 품질이 새 불확실성)
+
+**예상 스코프 & 배치** — 1~2시간, 작은 PR 1~2개. Phase 2 증분 3 직전 또는 증분 5(프론트 N1 AgentInvocationCard) 작업과 묶어 처리 권장. 새 envelope 이벤트 패턴이 이후 SRS/TC artifact_created 이벤트 설계에도 재사용됨.
+
+**부가 이점** — 프롬프트 10여 줄 단축(토큰 비용), LLM 준수도 테스트 불필요(hermetic), Phase 2 증분 3의 Critic 에이전트와 연결 가능("답변의 `[1]` 인용이 실제 sources에 있는지" 검증).
+
+---
+
 ## 기준선 (Phase 0 완료 시점)
 
 ### Backend

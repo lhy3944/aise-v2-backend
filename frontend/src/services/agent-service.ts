@@ -22,6 +22,7 @@ import type {
   InterruptEvent,
   PlanStep,
   PlanUpdateEvent,
+  SourceRef,
 } from '@/types/agent-events';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -62,6 +63,7 @@ export interface StreamCallbacks {
   onPlanUpdate?: (update: { plan: PlanStep[]; current_step?: number }) => void;
   onInterrupt?: (hitl: HitlData) => void;
   onArtifactCreated?: (artifact: ArtifactCreatedEvent['data']) => void;
+  onSources?: (sources: SourceRef[], agent?: string) => void;
 }
 
 function dispatch(event: WireEvent, cb: StreamCallbacks): 'continue' | 'stop' {
@@ -105,6 +107,16 @@ function dispatch(event: WireEvent, cb: StreamCallbacks): 'continue' | 'stop' {
     case 'artifact_created':
       cb.onArtifactCreated?.((event as unknown as ArtifactCreatedEvent).data);
       return 'continue';
+    case 'sources': {
+      const sources = d.sources;
+      if (Array.isArray(sources)) {
+        cb.onSources?.(
+          sources as SourceRef[],
+          typeof d.agent === 'string' ? d.agent : undefined,
+        );
+      }
+      return 'continue';
+    }
     case 'done':
       cb.onDone();
       return 'stop';

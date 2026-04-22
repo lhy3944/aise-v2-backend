@@ -3,6 +3,7 @@
 import { streamAgentChat } from '@/services/agent-service';
 import { streamExtractRecords } from '@/services/record-service';
 import { sessionService } from '@/services/session-service';
+import { srsService } from '@/services/srs-service';
 import { useArtifactStore } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
@@ -27,6 +28,10 @@ function _formatToolResult(name: string, result: Record<string, unknown>): strin
       return `${result.display_id}: ${result.old_status} → ${result.new_status}`;
     case 'search_records':
       return `${result.count}개 레코드 검색됨`;
+    case 'generate_srs':
+      return typeof result.version === 'number'
+        ? `SRS v${result.version} 생성 완료`
+        : 'SRS 생성 완료';
     default:
       return '완료';
   }
@@ -179,6 +184,72 @@ export function useChatStream(sessionId?: string) {
     [setExtracting, setCandidates, setExtractError, setActiveTab, setRightPanelPreset],
   );
 
+  const triggerGenerateSrs = useCallback(
+    (projectId: string, sid: string) => {
+      setActiveTab('srs');
+      setRightPanelPreset(LayoutMode.SPLIT);
+      const updateLast = useChatStore.getState().updateLastAssistantMessage;
+
+      void srsService
+        .generate(projectId)
+        .then((doc) => {
+          updateLast(sid, (msg) => ({
+            ...msg,
+            toolCalls: msg.toolCalls?.map((tc) =>
+              tc.name === 'generate_srs' && tc.state === 'running'
+                ? {
+                    ...tc,
+                    state: 'completed' as const,
+                    result:
+                      typeof doc.version === 'number'
+                        ? `SRS v${doc.version} 생성 완료`
+                        : 'SRS 생성 완료',
+                  }
+                : tc,
+            ),
+          }));
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'SRS 생성에 실패했습니다.';
+          updateLast(sid, (msg) => ({
+            ...msg,
+            toolCalls: msg.toolCalls?.map((tc) =>
+              tc.name === 'generate_srs' && tc.state === 'running'
+                ? {
+                    ...tc,
+                    state: 'error' as const,
+                    error: message,
+                  }
+                : tc,
+            ),
+          }));
+        });
+    },
+    [setActiveTab, setRightPanelPreset],
+  );
+
+  const markToolCallError = useCallback(
+    (sid: string, name: string, message: string) => {
+      const updateLast = useChatStore.getState().updateLastAssistantMessage;
+      updateLast(sid, (msg) => ({
+        ...msg,
+        toolCalls: msg.toolCalls?.map((tc) =>
+          tc.name === name && tc.state === 'running'
+            ? {
+                ...tc,
+                state: 'error' as const,
+                error: message,
+              }
+            : tc,
+        ),
+      }));
+    },
+    [],
+  );
+
   // Records 갱신 트리거
   const bumpRefresh = useRecordStore((s) => s.bumpRefresh);
 
@@ -275,17 +346,24 @@ export function useChatStream(sessionId?: string) {
   // Tool call 실행 디스패처
   const executeToolCall = useCallback(
     (sid: string, name: string, _args: Record<string, unknown>) => {
-      if (!currentProject) return;
+      if (!currentProject) {
+        markToolCallError(
+          sid,
+          name,
+          '프로젝트 정보가 없어 도구를 실행할 수 없습니다.',
+        );
+        return;
+      }
       switch (name) {
         case 'extract_records':
           triggerExtractRecords(currentProject.project_id, sid);
           break;
         case 'generate_srs':
-          // TODO: SRS 생성 연동
+          triggerGenerateSrs(currentProject.project_id, sid);
           break;
       }
     },
-    [currentProject, triggerExtractRecords],
+    [currentProject, markToolCallError, triggerExtractRecords, triggerGenerateSrs],
   );
 
   // 백엔드 도구 실행 결과 처리 (레코드 CUD)
@@ -390,6 +468,12 @@ export function useChatStream(sessionId?: string) {
           },
           onToolResult: (toolResult) => {
             handleToolResult(targetSessionId, toolResult.name, toolResult.result);
+          },
+          onSources: (sources) => {
+            updateLastAssistant(targetSessionId, (msg) => ({
+              ...msg,
+              sources,
+            }));
           },
           onDone: () => {
             requestFinishAfterDrain(targetSessionId, 'done');

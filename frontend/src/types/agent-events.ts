@@ -98,6 +98,24 @@ export interface ArtifactCreatedEvent {
   };
 }
 
+export interface SourceRef {
+  ref: number;
+  document_id: string;
+  document_name: string;
+  chunk_index: number;
+  file_type?: string;
+  content_preview?: string;
+  score?: number;
+}
+
+export interface SourcesEvent {
+  type: 'sources';
+  data: {
+    sources: SourceRef[];
+    agent?: string;
+  };
+}
+
 // ---------- Phase 3 events (HITL) ----------
 
 export interface ClarifyOption {
@@ -169,6 +187,7 @@ export type AgentStreamEvent =
   | PlanUpdateEvent
   | InterruptEvent
   | ArtifactCreatedEvent
+  | SourcesEvent
   | DoneEvent
   | ErrorEvent;
 
@@ -194,6 +213,8 @@ export const isInterruptEvent = (e: AgentStreamEvent): e is InterruptEvent =>
 export const isArtifactCreatedEvent = (
   e: AgentStreamEvent,
 ): e is ArtifactCreatedEvent => e.type === 'artifact_created';
+export const isSourcesEvent = (e: AgentStreamEvent): e is SourcesEvent =>
+  e.type === 'sources';
 export const isDoneEvent = (e: AgentStreamEvent): e is DoneEvent =>
   e.type === 'done';
 export const isErrorEvent = (e: AgentStreamEvent): e is ErrorEvent =>

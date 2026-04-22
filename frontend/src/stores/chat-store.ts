@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { SourceRef } from '@/types/agent-events';
+
 export interface ToolCallData {
   name: string;
   arguments: Record<string, unknown>;
@@ -21,6 +23,8 @@ export interface ChatMessage {
   } | null;
   /** Function Calling 도구 호출 */
   toolCalls?: ToolCallData[];
+  /** RAG 출처 — SSE `sources` 이벤트 수신 시 세팅. 본문 `[N]` 인용 앵커와 매칭. */
+  sources?: SourceRef[];
   createdAt: string;
 }
 

@@ -5,10 +5,7 @@ import {
   Questionnaire,
   type QuestionData,
 } from '@/components/chat/Questionnaire';
-import {
-  SourceReference,
-  type SourceData,
-} from '@/components/chat/SourceReference';
+import { SourceReference } from '@/components/chat/SourceReference';
 import { SuggestionChips } from '@/components/chat/SuggestionChips';
 import {
   Message,
@@ -55,14 +52,11 @@ const REQUIREMENTS_BLOCK_RE =
   /```[\w]*\s*\[REQUIREMENTS\]\s*([\s\S]*?)\s*\[\/REQUIREMENTS\]\s*```|\[REQUIREMENTS\]\s*([\s\S]*?)\s*\[\/REQUIREMENTS\]/g;
 const SUGGESTIONS_BLOCK_RE =
   /```[\w]*\s*\[SUGGESTIONS\]\s*([\s\S]*?)\s*\[\/SUGGESTIONS\]\s*```|\[SUGGESTIONS\]\s*([\s\S]*?)\s*\[\/SUGGESTIONS\]/g;
-const SOURCES_BLOCK_RE =
-  /```[\w]*\s*\[SOURCES\]\s*([\s\S]*?)\s*(?:\[\/SOURCES\]\s*```|\[\/SOURCES\])|\[SOURCES\]\s*([\s\S]*?)\s*(?:\[\/SOURCES\]|$)/g;
 
 interface ParsedBlocks {
   clarifyItems: QuestionData[];
   requirementItems: RequirementData[];
   suggestions: string[];
-  sources: SourceData[];
   cleanContent: string;
 }
 
@@ -70,7 +64,6 @@ function parseStructuredBlocks(content: string): ParsedBlocks {
   const clarifyItems: QuestionData[] = [];
   const requirementItems: RequirementData[] = [];
   const suggestions: string[] = [];
-  const sources: SourceData[] = [];
   let cleanContent = content;
 
   for (const match of content.matchAll(CLARIFY_BLOCK_RE)) {
@@ -114,24 +107,10 @@ function parseStructuredBlocks(content: string): ParsedBlocks {
     cleanContent = cleanContent.replace(match[0], '');
   }
 
-  for (const match of content.matchAll(SOURCES_BLOCK_RE)) {
-    const jsonStr = match[1] ?? match[2];
-    try {
-      const parsed = JSON.parse(jsonStr);
-      if (Array.isArray(parsed)) {
-        sources.push(...(parsed as SourceData[]));
-      }
-    } catch {
-      // ignore partial JSON while streaming
-    }
-    cleanContent = cleanContent.replace(match[0], '');
-  }
-
   return {
     clarifyItems,
     requirementItems,
     suggestions,
-    sources,
     cleanContent: cleanContent.trim(),
   };
 }
@@ -163,13 +142,12 @@ const MessageItem = memo(
           clarifyItems: [],
           requirementItems: [],
           suggestions: [],
-          sources: [],
           cleanContent: message.content,
           hasIncompleteBlock: false,
         };
       if (message.status === 'streaming') {
         // 스트리밍 중: 열린 블록 태그가 있지만 닫는 태그가 없으면 불완전
-        const blockTags = ['CLARIFY', 'REQUIREMENTS', 'SUGGESTIONS', 'SOURCES'];
+        const blockTags = ['CLARIFY', 'REQUIREMENTS', 'SUGGESTIONS'];
         let cleanContent = message.content;
         let hasIncompleteBlock = false;
 
@@ -195,7 +173,6 @@ const MessageItem = memo(
           clarifyItems: [],
           requirementItems: [],
           suggestions: [],
-          sources: [],
           cleanContent: cleanContent.trim(),
           hasIncompleteBlock,
         };
@@ -207,6 +184,7 @@ const MessageItem = memo(
     }, [message.content, message.status, isUser]);
 
     const displayContent = parsed.cleanContent;
+    const sources = message.sources ?? [];
 
     const openSourceViewer = usePanelStore((s) => s.openSourceViewer);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -214,9 +192,9 @@ const MessageItem = memo(
     // 렌더 후 DOM에서 [N] 텍스트를 클릭 가능한 span으로 래핑
     useEffect(() => {
       const el = contentRef.current;
-      if (!el || parsed.sources.length === 0) return;
+      if (!el || sources.length === 0) return;
 
-      const sourceMap = new Map(parsed.sources.map((s) => [s.ref, s]));
+      const sourceMap = new Map(sources.map((s) => [s.ref, s]));
 
       // 이전 래핑 복원 (멱등성 보장)
       el.querySelectorAll('.citation-inline').forEach((span) => {
@@ -263,7 +241,7 @@ const MessageItem = memo(
         }
         textNode.parentNode?.replaceChild(frag, textNode);
       }
-    }, [displayContent, parsed.sources]);
+    }, [displayContent, sources]);
 
     const handleCitationClick = useCallback(
       (e: React.MouseEvent) => {
@@ -272,7 +250,7 @@ const MessageItem = memo(
         );
         if (!span) return;
         const refNum = parseInt(span.dataset.citationRef || '');
-        const source = parsed.sources.find((s) => s.ref === refNum);
+        const source = sources.find((s) => s.ref === refNum);
         if (source) {
           openSourceViewer({
             documentId: source.document_id,
@@ -283,7 +261,7 @@ const MessageItem = memo(
           });
         }
       },
-      [parsed.sources, openSourceViewer],
+      [sources, openSourceViewer],
     );
 
     return (
@@ -318,9 +296,7 @@ const MessageItem = memo(
                 <div
                   ref={contentRef}
                   className="w-full min-w-0"
-                  onClick={
-                    parsed.sources.length > 0 ? handleCitationClick : undefined
-                  }
+                  onClick={sources.length > 0 ? handleCitationClick : undefined}
                 >
                   <MessageResponse
                     streaming={
@@ -381,10 +357,10 @@ const MessageItem = memo(
                 />
               )}
 
-              {/* SOURCES 출처 링크 */}
-              {parsed.sources.length > 0 && (
+              {/* 출처 링크 — SSE `sources` 이벤트 기반 */}
+              {sources.length > 0 && (
                 <div className="w-full min-w-0">
-                  <SourceReference sources={parsed.sources} />
+                  <SourceReference sources={sources} />
                 </div>
               )}
 

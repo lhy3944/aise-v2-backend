@@ -44,15 +44,20 @@ def _is_supervisor_prompt(messages: list[dict]) -> bool:
     return "## Decision policy" in last and "## Available agents" in last
 
 
+_STUB_RAG_ANSWER = "Stubbed answer based on retrieved chunks."
+
+
 def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
-    """Install a shared fake `chat_completion` that disambiguates callers.
+    """Install fakes for both non-streaming and streaming LLM calls.
 
-    - If the prompt matches the Supervisor template, return the supplied
-      `supervisor_response` (or a default `single`→`knowledge_qa` JSON).
-    - Otherwise, return the canned RAG answer used by the happy-path test.
+    - `chat_completion` handles the Supervisor routing prompt (single call)
+      and the non-streaming `rag_svc.chat()` HTTP path (if a test hits it).
+    - `chat_completion_stream` is what `KnowledgeQAAgent.run_stream` uses;
+      we chunk the canned answer into two deltas so tests see ≥2
+      `TokenEvent`s and exercise real streaming ordering.
 
-    We patch the module attribute once; Supervisor and rag_svc both import
-    `llm_svc`, so a single patch covers both.
+    Supervisor and rag_svc/knowledge_qa all import `llm_svc` as a module,
+    so a single `setattr` on the module covers all call sites.
     """
     default_routing = json.dumps(
         {
@@ -68,10 +73,17 @@ def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
     async def fake_chat_completion(messages, **kwargs):
         if _is_supervisor_prompt(messages):
             return routing_payload
-        return "Stubbed answer based on retrieved chunks."
+        return _STUB_RAG_ANSWER
+
+    async def fake_chat_completion_stream(messages, **kwargs):
+        # Split into two deltas so tests can observe streaming.
+        half = len(_STUB_RAG_ANSWER) // 2
+        yield _STUB_RAG_ANSWER[:half]
+        yield _STUB_RAG_ANSWER[half:]
 
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(llm_svc, "chat_completion_stream", fake_chat_completion_stream)
 
 
 @pytest.fixture
@@ -127,29 +139,30 @@ async def test_run_chat_happy_path_emits_contract_events(stub_llm_and_embeddings
         project_id=project.id,
         session_id=uuid.uuid4(),
         user_input="What is in the docs?",
+        session_factory=session_factory,
     ):
         events.append(ev)
 
-    # Sequence: tool_call → tool_result → sources (seeded 1 chunk) → token → done
+    # Streaming sequence: tool_call → sources (seeded 1 chunk) →
+    #                    token × N → tool_result → done.
+    # Stub splits the canned answer into 2 deltas.
     types = [type(ev).__name__ for ev in events]
     assert types == [
         "ToolCallEvent",
-        "ToolResultEvent",
         "SourcesEvent",
         "TokenEvent",
+        "TokenEvent",
+        "ToolResultEvent",
         "DoneEvent",
     ]
 
     tool_call: ToolCallEvent = events[0]
-    tool_result: ToolResultEvent = events[1]
-    sources: SourcesEvent = events[2]
-    token: TokenEvent = events[3]
-    done: DoneEvent = events[4]
+    sources: SourcesEvent = events[1]
+    tool_result: ToolResultEvent = events[4]
+    done: DoneEvent = events[5]
 
     assert tool_call.data.name == "knowledge_qa"
     assert tool_call.data.agent == "knowledge_qa"
-    assert tool_result.data.tool_call_id == tool_call.data.tool_call_id
-    assert tool_result.data.status == "success"
     assert sources.data.agent == "knowledge_qa"
     assert len(sources.data.sources) == 1
     first = sources.data.sources[0]
@@ -157,7 +170,13 @@ async def test_run_chat_happy_path_emits_contract_events(stub_llm_and_embeddings
     assert first.document_name == "seed.md"
     assert first.file_type == "md"
     assert first.chunk_index == 0
-    assert token.data.text == "Stubbed answer based on retrieved chunks."
+    # Tokens reassemble into the full canned answer.
+    token_events = [ev for ev in events if isinstance(ev, TokenEvent)]
+    assert "".join(t.data.text for t in token_events) == (
+        "Stubbed answer based on retrieved chunks."
+    )
+    assert tool_result.data.tool_call_id == tool_call.data.tool_call_id
+    assert tool_result.data.status == "success"
     assert done.data.finish_reason == "stop"
 
 
@@ -171,12 +190,15 @@ async def test_run_chat_invalid_project_id_emits_error(stub_llm_and_embeddings, 
         project_id="not-a-uuid",
         session_id=uuid.uuid4(),
         user_input="anything",
+        session_factory=session_factory,
     ):
         events.append(ev)
 
-    assert len(events) == 1
-    assert type(events[0]).__name__ == "ErrorEvent"
-    assert "invalid project_id" in events[0].data.message
+    # Supervisor runs first and picks `single` → we catch the bad
+    # project_id at the single-path validation gate.
+    assert any(type(e).__name__ == "ErrorEvent" for e in events)
+    err = next(e for e in events if type(e).__name__ == "ErrorEvent")
+    assert "invalid project_id" in err.data.message
 
 
 async def test_get_checkpointer_memory_by_default(monkeypatch):
@@ -268,14 +290,16 @@ async def test_supervisor_single_routes_to_agent(monkeypatch, db):
             project_id=project.id,
             session_id=uuid.uuid4(),
             user_input="이 프로젝트의 문서 요약 좀 해줘",
+            session_factory=session_factory,
         )
     ]
     types = [type(e).__name__ for e in events]
     assert types == [
         "ToolCallEvent",
-        "ToolResultEvent",
         "SourcesEvent",
         "TokenEvent",
+        "TokenEvent",
+        "ToolResultEvent",
         "DoneEvent",
     ]
 
@@ -414,34 +438,39 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
         ]
 
     types = [type(e).__name__ for e in events]
-    # Expected sequence:
+    # Streaming plan sequence:
     #   PlanUpdate(all pending)
-    #   PlanUpdate(step 0 running), ToolCall, ToolResult, Sources, PlanUpdate(step 0 completed)
-    #   PlanUpdate(step 1 running), ToolCall, ToolResult, PlanUpdate(step 1 completed)
-    #   Token(final answer from step 1), Done
-    # Note: step 0 (knowledge_qa) produces sources; step 1 (requirement) does not.
+    #   PlanUpdate(step 0 running), ToolCall, Sources(knowledge_qa),
+    #     [tokens suppressed — not last step],
+    #     ToolResult, PlanUpdate(step 0 completed)
+    #   PlanUpdate(step 1 running), ToolCall,
+    #     Token(requirement final_answer, via default run_stream fallback),
+    #     ToolResult, PlanUpdate(step 1 completed),
+    #   Done
     assert types == [
         "PlanUpdateEvent",
         "PlanUpdateEvent",
         "ToolCallEvent",
-        "ToolResultEvent",
         "SourcesEvent",
+        "ToolResultEvent",
         "PlanUpdateEvent",
         "PlanUpdateEvent",
         "ToolCallEvent",
+        "TokenEvent",
         "ToolResultEvent",
         "PlanUpdateEvent",
-        "TokenEvent",
         "DoneEvent",
     ]
 
-    # Final plan_update before the terminating token: both steps completed.
-    final_plan = events[-3]
+    # Last plan_update before Done: both steps completed.
+    final_plan = events[-2]
     assert [s.agent for s in final_plan.data.plan] == ["knowledge_qa", "requirement"]
     assert [s.status for s in final_plan.data.plan] == ["completed", "completed"]
 
-    # Last token is the requirement agent's summary.
-    assert "1개의 요구사항 후보" in events[-2].data.text
+    # Terminal token is the requirement agent's summary (forwarded because
+    # it's the last step).
+    last_token = next(e for e in reversed(events) if isinstance(e, TokenEvent))
+    assert "1개의 요구사항 후보" in last_token.data.text
 
 
 async def test_supervisor_invalid_json_falls_back_to_clarify(monkeypatch, db):

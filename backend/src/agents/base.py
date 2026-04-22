@@ -8,11 +8,28 @@ DESIGN.md §4. Every agent declares an `AgentCapability` and implements
 The state flows through the LangGraph StateGraph; the context carries
 non-serializable runtime dependencies (DB session, project_id, ...) that
 must NOT live inside the LangGraph state (which is checkpointed).
+
+Streaming
+---------
+Agents that can stream tokens override `run_stream(state, ctx)` to yield
+discriminated events the orchestrator forwards as SSE:
+
+    {"kind": "sources", "sources": list[dict]}  → SourcesEvent
+    {"kind": "token",   "text":    str}          → TokenEvent
+    {"kind": "final",   "update":  dict}         → merged into state;
+                                                    drives `_result_payload`
+                                                    (MUST be the last event)
+
+The default `run_stream` calls `run()` once and surfaces its result as
+`sources?` + a single `token(final_answer)` + `final` — i.e. agents that
+don't care about streaming keep implementing `run()` and get a working
+(albeit non-streaming) stream for free.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, Field
@@ -46,15 +63,18 @@ class BaseAgent(ABC):
 
     Subclasses MUST:
     - declare a class-level `capability: AgentCapability` (not an instance attribute)
-    - implement `async run(state, ctx)` returning a state update dict that
-      LangGraph merges into the global state.
+    - implement `async run(state, ctx)` returning a state update dict.
+
+    Subclasses MAY:
+    - override `async run_stream(state, ctx)` to emit tokens/sources
+      incrementally. Default implementation wraps `run()` once.
     """
 
     capability: ClassVar[AgentCapability]
 
     @abstractmethod
     async def run(self, state: "AgentState", ctx: "AgentContext") -> dict[str, Any]:
-        """Execute the agent.
+        """Execute the agent (non-streaming).
 
         Args:
             state: current LangGraph state (TypedDict; treat as read-only).
@@ -64,6 +84,31 @@ class BaseAgent(ABC):
             Partial state update dict. LangGraph merges with the running state.
         """
         raise NotImplementedError
+
+    async def run_stream(
+        self, state: "AgentState", ctx: "AgentContext"
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream agent output.
+
+        Default: call `run()` once, then surface the result as:
+          - a single `sources` event (if `result["sources"]` is truthy),
+          - a single `token` event (if `result["final_answer"]` is truthy),
+          - a terminal `final` event carrying the whole `result`.
+
+        Agents that talk to a streaming LLM override this to yield tokens
+        as they arrive.
+        """
+        result = await self.run(state, ctx)
+        if result.get("error"):
+            yield {"kind": "final", "update": result}
+            return
+        srcs = result.get("sources")
+        if srcs:
+            yield {"kind": "sources", "sources": srcs}
+        answer = result.get("final_answer") or ""
+        if answer:
+            yield {"kind": "token", "text": answer}
+        yield {"kind": "final", "update": result}
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<{type(self).__name__} name={self.capability.name!r}>"

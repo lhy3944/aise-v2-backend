@@ -1,7 +1,10 @@
 """KnowledgeQAAgent — RAG-based Q&A over project knowledge documents.
 
-Wraps the existing `services.rag_svc.chat()` pipeline (search → context →
-LLM) and exposes it through the BaseAgent contract.
+`run_stream` is the hot path: it splits retrieval (`rag_svc.search_and_prepare`)
+from generation (`llm_svc.chat_completion_stream`) so that sources can be
+emitted immediately and tokens flow through to the SSE stream as they
+arrive. `run()` stays for non-streaming callers and unit tests — internally
+it drains `run_stream`.
 
 Project isolation is enforced inside `rag_svc.search_similar_chunks` (P0
 fix); this agent only forwards `ctx.project_id`.
@@ -9,14 +12,16 @@ fix); this agent only forwards `ctx.project_id`.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from loguru import logger
 
 from src.agents.base import AgentCapability, BaseAgent
 from src.agents.registry import register_agent
+from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext, AgentState
-from src.services import rag_svc
+from src.services import llm_svc, rag_svc
 
 
 @register_agent
@@ -40,24 +45,77 @@ class KnowledgeQAAgent(BaseAgent):
     )
 
     async def run(self, state: AgentState, ctx: AgentContext) -> dict[str, Any]:
+        """Non-streaming convenience wrapper — drains `run_stream`."""
+        final: dict[str, Any] = {}
+        async for ev in self.run_stream(state, ctx):
+            if ev.get("kind") == "final":
+                final = ev.get("update", {}) or {}
+        return final
+
+    async def run_stream(
+        self, state: AgentState, ctx: AgentContext
+    ) -> AsyncGenerator[dict[str, Any], None]:
         query = state.get("user_input", "")
         if not query:
-            return {"error": "user_input is required for knowledge_qa"}
+            yield {
+                "kind": "final",
+                "update": {"error": "user_input is required for knowledge_qa"},
+            }
+            return
 
         logger.info(
-            f"KnowledgeQAAgent run: project={ctx.project_id} query={query[:60]!r}"
+            f"KnowledgeQAAgent run_stream: project={ctx.project_id} query={query[:60]!r}"
         )
 
-        response = await rag_svc.chat(
-            project_id=ctx.project_id,
-            message=query,
-            history=state.get("history", []) or [],
-            top_k=5,
-            db=ctx.db,
-        )
+        try:
+            messages, sources = await rag_svc.search_and_prepare(
+                project_id=ctx.project_id,
+                message=query,
+                history=state.get("history", []) or [],
+                top_k=5,
+                db=ctx.db,
+            )
+        except AppException as exc:
+            yield {"kind": "final", "update": {"error": str(exc.detail)}}
+            return
 
-        sources = [s.model_dump() for s in response.sources]
-        return {"final_answer": response.answer, "sources": sources}
+        source_dicts = [s.model_dump() for s in sources]
+        if source_dicts:
+            yield {"kind": "sources", "sources": source_dicts}
+
+        buffer = ""
+        try:
+            async for delta in llm_svc.chat_completion_stream(
+                messages,
+                client_type="srs",
+                temperature=0.3,
+                max_completion_tokens=2048,
+            ):
+                if not delta:
+                    continue
+                buffer += delta
+                yield {"kind": "token", "text": delta}
+        except AppException as exc:
+            yield {
+                "kind": "final",
+                "update": {"error": str(exc.detail), "sources": source_dicts},
+            }
+            return
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.exception("KnowledgeQAAgent LLM stream failed")
+            yield {
+                "kind": "final",
+                "update": {
+                    "error": "AI 응답 생성에 실패했습니다.",
+                    "sources": source_dicts,
+                },
+            }
+            return
+
+        yield {
+            "kind": "final",
+            "update": {"final_answer": buffer, "sources": source_dicts},
+        }
 
 
 __all__ = ["KnowledgeQAAgent"]

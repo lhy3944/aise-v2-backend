@@ -24,6 +24,7 @@ migrate to LiteLLM in a later phase.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import litellm
@@ -151,6 +152,42 @@ def _is_azure_content_filter(exc: Exception) -> bool:
     return "ResponsibleAIPolicyViolation" in str(exc)
 
 
+def _extract_stream_text(chunk: Any) -> str:
+    """Extract text delta from a LiteLLM/OpenAI-like stream chunk."""
+    choices = getattr(chunk, "choices", None)
+    if choices is None and isinstance(chunk, dict):
+        choices = chunk.get("choices")
+    if not choices:
+        return ""
+
+    first = choices[0]
+    delta = getattr(first, "delta", None)
+    if delta is None and isinstance(first, dict):
+        delta = first.get("delta")
+    if delta is None:
+        return ""
+
+    content = getattr(delta, "content", None)
+    if content is None and isinstance(delta, dict):
+        content = delta.get("content")
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+        return "".join(parts)
+    return ""
+
+
 async def chat_completion(
     messages: list[dict],
     *,
@@ -187,3 +224,42 @@ async def chat_completion(
     content = response.choices[0].message.content or ""
     logger.debug(f"LLM 응답: {len(content)}자")
     return content
+
+
+async def chat_completion_stream(
+    messages: list[dict],
+    *,
+    model: str | None = None,
+    client_type: str = "srs",
+    temperature: float = 0.3,
+    max_completion_tokens: int = 4096,
+) -> AsyncGenerator[str, None]:
+    """Stream text deltas via LiteLLM (token-like chunks)."""
+    kwargs = _litellm_kwargs(client_type, model)
+    provider = _get_provider()
+
+    logger.debug(
+        f"LLM 스트리밍 호출(LiteLLM): provider={provider}, model={kwargs['model']}, messages={len(messages)}개"
+    )
+
+    try:
+        stream = await litellm.acompletion(
+            messages=messages,
+            temperature=temperature,
+            max_completion_tokens=max_completion_tokens,
+            stream=True,
+            **kwargs,
+        )
+    except (BadRequestError, LiteLLMBadRequestError) as e:
+        if provider == "azure" and _is_azure_content_filter(e):
+            logger.warning("Azure content filter rejected the streaming request")
+            raise AppException(
+                status_code=422,
+                detail="콘텐츠 필터에 의해 요청이 차단되었습니다. 입력 내용을 수정 후 다시 시도해주세요.",
+            ) from e
+        raise
+
+    async for chunk in stream:
+        text = _extract_stream_text(chunk)
+        if text:
+            yield text

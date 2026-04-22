@@ -46,9 +46,17 @@ def _stub_agent_deps(monkeypatch):
             return _ROUTING_JSON
         return "Stubbed answer from DI override test."
 
+    async def fake_chat_completion_stream(messages, **kwargs):
+        # Split into two deltas so streaming is observable.
+        answer = "Stubbed answer from DI override test."
+        half = len(answer) // 2
+        yield answer[:half]
+        yield answer[half:]
+
     monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(llm_svc, "chat_completion_stream", fake_chat_completion_stream)
 
     if not list_agents():
         load_builtin_agents(force_reload=True)
@@ -114,4 +122,11 @@ async def test_langgraph_path_honors_session_factory_override(
 
     types = [e["type"] for e in events]
     assert "error" not in types, f"LangGraph path fell back to prod DB: {events!r}"
-    assert types == ["tool_call", "tool_result", "sources", "token", "done"]
+    # Streaming order: tool_call → sources → token × N → tool_result → done.
+    # We don't assert exact N (depends on LLM stub chunking in conftest); just
+    # verify the structural shape and no error events.
+    assert types[0] == "tool_call"
+    assert types[1] == "sources"
+    assert types[-2] == "tool_result"
+    assert types[-1] == "done"
+    assert all(t in {"tool_call", "sources", "token", "tool_result", "done"} for t in types)

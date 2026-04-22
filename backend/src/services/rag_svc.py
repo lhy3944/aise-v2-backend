@@ -67,20 +67,22 @@ async def search_similar_chunks(
     return chunks_with_scores
 
 
-async def chat(
+async def search_and_prepare(
     project_id: uuid.UUID,
     message: str,
     history: list[dict],
     top_k: int,
     db: AsyncSession,
-) -> KnowledgeChatResponse:
-    """Knowledge Repository 기반 RAG 채팅"""
-    logger.info(f"Knowledge 채팅: project_id={project_id}, message={message[:50]}...")
+) -> tuple[list[dict], list[KnowledgeChatSource]]:
+    """Retrieval + glossary + prompt build + sources 반환 (LLM 호출 없음).
 
-    # 1. 유사 청크 검색
+    스트리밍 호출자(`KnowledgeQAAgent.run_stream`)가 이 함수로 준비 단계만
+    수행한 뒤 `llm_svc.chat_completion_stream`으로 토큰을 직접 받아 emit
+    하기 위해 분리. `chat()`은 이 함수 + `chat_completion()`의 합성.
+    """
     chunks_with_scores = await search_similar_chunks(project_id, message, top_k, db)
 
-    # 2. 문서 메타 조회 (청크에서 document_id로 조회)
+    # 문서 메타 조회
     doc_ids = {chunk.document_id for chunk, _ in chunks_with_scores}
     doc_name_map: dict[uuid.UUID, str] = {}
     doc_type_map: dict[uuid.UUID, str] = {}
@@ -93,28 +95,26 @@ async def chat(
             doc_name_map[doc_id] = doc_name
             doc_type_map[doc_id] = file_type
 
-    # 3. 컨텍스트 청크 구성
-    context_chunks = []
-    for chunk, score in chunks_with_scores:
-        context_chunks.append({
+    context_chunks = [
+        {
             "document_name": doc_name_map.get(chunk.document_id, "Unknown"),
             "chunk_index": chunk.chunk_index,
             "content": chunk.content,
-        })
+        }
+        for chunk, _ in chunks_with_scores
+    ]
 
-    # 4. Glossary 조회 (도메인 컨텍스트)
+    # Glossary (도메인 컨텍스트)
     glossary_result = await db.execute(
         select(GlossaryItem)
         .where(GlossaryItem.project_id == project_id)
         .order_by(GlossaryItem.term)
     )
-    glossary_items = glossary_result.scalars().all()
     glossary = [
         {"term": item.term, "definition": item.definition}
-        for item in glossary_items
+        for item in glossary_result.scalars().all()
     ]
 
-    # 5. RAG 프롬프트 빌드
     messages = build_knowledge_chat_prompt(
         query=message,
         context_chunks=context_chunks,
@@ -122,7 +122,32 @@ async def chat(
         history=history,
     )
 
-    # 6. LLM 호출
+    sources = [
+        KnowledgeChatSource(
+            document_id=str(chunk.document_id),
+            document_name=doc_name_map.get(chunk.document_id, "Unknown"),
+            chunk_index=chunk.chunk_index,
+            content=chunk.content[:200],  # 미리보기용 200자
+            score=round(score, 4),
+            file_type=doc_type_map.get(chunk.document_id),
+        )
+        for chunk, score in chunks_with_scores
+    ]
+    return messages, sources
+
+
+async def chat(
+    project_id: uuid.UUID,
+    message: str,
+    history: list[dict],
+    top_k: int,
+    db: AsyncSession,
+) -> KnowledgeChatResponse:
+    """Knowledge Repository 기반 RAG 채팅 (non-streaming, HTTP API용)."""
+    logger.info(f"Knowledge 채팅: project_id={project_id}, message={message[:50]}...")
+
+    messages, sources = await search_and_prepare(project_id, message, history, top_k, db)
+
     try:
         answer = await chat_completion(
             messages,
@@ -135,20 +160,6 @@ async def chat(
     except Exception as e:
         logger.error(f"Knowledge 채팅 LLM 호출 실패: {e}")
         raise AppException(500, "AI 응답 생성에 실패했습니다.")
-
-    # 7. 소스 정보 구성
-    sources = []
-    for chunk, score in chunks_with_scores:
-        sources.append(
-            KnowledgeChatSource(
-                document_id=str(chunk.document_id),
-                document_name=doc_name_map.get(chunk.document_id, "Unknown"),
-                chunk_index=chunk.chunk_index,
-                content=chunk.content[:200],  # 미리보기용 200자
-                score=round(score, 4),
-                file_type=doc_type_map.get(chunk.document_id),
-            )
-        )
 
     logger.info(f"Knowledge 채팅 완료: sources={len(sources)}개")
     return KnowledgeChatResponse(answer=answer, sources=sources)

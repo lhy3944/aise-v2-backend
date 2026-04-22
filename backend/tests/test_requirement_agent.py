@@ -149,12 +149,17 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
                 project_id=project.id,
                 session_id=uuid.uuid4(),
                 user_input="프로젝트의 요구사항을 뽑아줘",
+                session_factory=session_factory,
             )
         ]
 
+    # Requirement agent doesn't override run_stream → default fallback
+    # surfaces its final_answer as a single Token. Streaming order:
+    #   tool_call → token → tool_result → done
+    # (no SourcesEvent; requirement doesn't populate state["sources"])
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "ToolResultEvent", "TokenEvent", "DoneEvent"]
-    tool_call, tool_result, token, _done = events
+    assert types == ["ToolCallEvent", "TokenEvent", "ToolResultEvent", "DoneEvent"]
+    tool_call, token, tool_result, _done = events
     assert tool_call.data.name == "requirement"
     assert tool_result.data.result == {"records_count": 2}
     assert "2개의 요구사항 후보" in token.data.text

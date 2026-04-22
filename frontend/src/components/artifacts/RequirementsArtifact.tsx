@@ -6,25 +6,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListSkeleton } from '@/components/shared/ListSkeleton';
 import { RequirementTable } from '@/components/requirements/RequirementTable';
 import { RequirementInput } from '@/components/requirements/RequirementInput';
-import { RefineCompare } from '@/components/requirements/RefineCompare';
-import { SuggestionPanel } from '@/components/requirements/SuggestionPanel';
 import { ReviewModal } from '@/components/requirements/ReviewModal';
 import { requirementService } from '@/services/requirement-service';
 import { sectionService } from '@/services/section-service';
-import { assistService } from '@/services/assist-service';
 import { useOverlayStore } from '@/stores/overlay-store';
 import { useReview } from '@/hooks/useReview';
 import { ApiError } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { Spinner } from '@/components/ui/spinner';
-import { Save, Sparkles, ClipboardCheck } from 'lucide-react';
-import type {
-  Requirement,
-  RequirementType,
-  RefineResponse,
-  Section,
-  Suggestion,
-} from '@/types/project';
+import { Save, ClipboardCheck } from 'lucide-react';
+import type { Requirement, RequirementType, Section } from '@/types/project';
 
 interface RequirementsArtifactProps {
   projectId: string;
@@ -38,15 +29,6 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  // AI Assist state
-  const [refineResult, setRefineResult] = useState<RefineResponse | null>(null);
-  const [isRefining, setIsRefining] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [isSuggesting, setIsSuggesting] = useState(false);
-
-  const filtered = requirements.filter((r) => r.type === activeTab);
-  const selectedIds = filtered.filter((r) => r.is_selected).map((r) => r.requirement_id);
 
   const fetchRequirements = useCallback(async () => {
     setLoading(true);
@@ -244,75 +226,6 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
     }
   }
 
-  // --- AI Assist ---
-
-  async function handleRefine(text: string) {
-    setIsRefining(true);
-    setRefineResult(null);
-    try {
-      const result = await assistService.refine(projectId, { text, type: activeTab });
-      setRefineResult(result);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'AI 정제에 실패했습니다.';
-      showToast.error(msg);
-    } finally {
-      setIsRefining(false);
-    }
-  }
-
-  async function handleAcceptRefine(result: RefineResponse) {
-    try {
-      const created = await requirementService.create(projectId, {
-        type: result.type,
-        original_text: result.original_text,
-      });
-      const updated = await requirementService.update(projectId, created.requirement_id, {
-        refined_text: result.refined_text,
-      });
-      setRequirements((prev) => [...prev, updated]);
-      setRefineResult(null);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : '요구사항 추가에 실패했습니다.';
-      showToast.error(msg);
-    }
-  }
-
-  async function handleSuggest() {
-    if (selectedIds.length === 0) {
-      showToast.warning('먼저 요구사항을 선택하세요.');
-      return;
-    }
-    setIsSuggesting(true);
-    setSuggestions([]);
-    try {
-      const result = await assistService.suggest(projectId, { requirement_ids: selectedIds });
-      setSuggestions(result.suggestions);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'AI 제안에 실패했습니다.';
-      showToast.error(msg);
-    } finally {
-      setIsSuggesting(false);
-    }
-  }
-
-  async function handleAcceptSuggestion(suggestion: Suggestion) {
-    try {
-      const created = await requirementService.create(projectId, {
-        type: suggestion.type,
-        original_text: suggestion.text,
-      });
-      setRequirements((prev) => [...prev, created]);
-      setSuggestions((prev) => prev.filter((s) => s !== suggestion));
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : '제안 수락에 실패했습니다.';
-      showToast.error(msg);
-    }
-  }
-
-  function handleRejectSuggestion(index: number) {
-    setSuggestions((prev) => prev.filter((_, i) => i !== index));
-  }
-
   // --- Tab labels ---
   const tabCounts = {
     fr: requirements.filter((r) => r.type === 'fr').length,
@@ -374,11 +287,7 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
     <div className='flex h-full flex-col overflow-hidden'>
       <Tabs
         value={activeTab}
-        onValueChange={(v) => {
-          setActiveTab(v as RequirementType);
-          setRefineResult(null);
-          setSuggestions([]);
-        }}
+        onValueChange={(v) => setActiveTab(v as RequirementType)}
         className='flex flex-1 flex-col overflow-hidden'
       >
         {/* Header: Tabs + Actions */}
@@ -407,15 +316,6 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
               <Button
                 size='sm'
                 variant='ghost'
-                onClick={handleSuggest}
-                disabled={selectedIds.length === 0 || isSuggesting}
-                className='h-7 px-2 text-xs'
-              >
-                <Sparkles className='size-3' />
-              </Button>
-              <Button
-                size='sm'
-                variant='ghost'
                 onClick={handleSave}
                 disabled={saving}
                 className='h-7 px-2 text-xs'
@@ -430,36 +330,8 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
         <div className='flex-1 overflow-y-auto px-4 pb-4'>
           {/* Input Area */}
           <div className='mt-3'>
-            <RequirementInput
-              type={activeTab}
-              onAdd={handleAdd}
-              onRefine={handleRefine}
-              isRefining={isRefining}
-            />
+            <RequirementInput type={activeTab} onAdd={handleAdd} />
           </div>
-
-          {/* Refine Compare */}
-          {refineResult && (
-            <div className='mt-3'>
-              <RefineCompare
-                result={refineResult}
-                onAccept={handleAcceptRefine}
-                onReject={() => setRefineResult(null)}
-              />
-            </div>
-          )}
-
-          {/* Suggestion Panel */}
-          {suggestions.length > 0 && (
-            <div className='mt-3'>
-              <SuggestionPanel
-                suggestions={suggestions}
-                onAccept={handleAcceptSuggestion}
-                onReject={handleRejectSuggestion}
-                onClose={() => setSuggestions([])}
-              />
-            </div>
-          )}
 
           {/* Requirement Table */}
           <div className='mt-3'>

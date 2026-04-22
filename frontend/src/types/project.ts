@@ -133,33 +133,6 @@ export interface RequirementSaveResponse {
   saved_at: string;
 }
 
-// --- AI Assist ---
-
-export interface RefineRequest {
-  text: string;
-  type: RequirementType;
-}
-
-export interface RefineResponse {
-  original_text: string;
-  refined_text: string;
-  type: RequirementType;
-}
-
-export interface SuggestRequest {
-  requirement_ids: string[];
-}
-
-export interface Suggestion {
-  type: RequirementType;
-  text: string;
-  reason: string;
-}
-
-export interface SuggestResponse {
-  suggestions: Suggestion[];
-}
-
 // --- Glossary ---
 
 export interface GlossaryItem {
@@ -216,29 +189,6 @@ export interface GlossaryExtractedItem {
 
 export interface GlossaryExtractResponse {
   candidates: GlossaryExtractedItem[];
-}
-
-// --- Chat (대화 모드) ---
-
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface ExtractedRequirement {
-  type: RequirementType;
-  text: string;
-  reason: string;
-}
-
-export interface ChatRequest {
-  message: string;
-  history: ChatMessage[];
-}
-
-export interface ChatResponse {
-  reply: string;
-  extracted_requirements: ExtractedRequirement[];
 }
 
 // --- Review ---

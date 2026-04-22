@@ -25,7 +25,7 @@ from src.core.exceptions import (
 )
 from src.core.logging import setup_logging
 from src.middleware import LoggingMiddleware
-from src.routers import sample_router, dev_chat_router, project_router, requirement_router, glossary_router, assist_router, review_router, section_router, knowledge_router, agent_router, agents_router, record_router, srs_router, session_router
+from src.routers import sample_router, dev_chat_router, project_router, requirement_router, glossary_router, review_router, section_router, knowledge_router, agent_router, agents_router, record_router, srs_router, session_router
 
 # 로깅 초기화 (앱 시작 시점에 명시적으로 실행)
 setup_logging()
@@ -49,7 +49,6 @@ app.include_router(dev_chat_router)
 app.include_router(project_router)
 app.include_router(requirement_router)
 app.include_router(glossary_router)
-app.include_router(assist_router)
 app.include_router(review_router)
 app.include_router(section_router)
 app.include_router(knowledge_router)

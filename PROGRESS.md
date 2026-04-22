@@ -87,6 +87,12 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 
 ## 작업 로그
 
+### 2026-04-22 — `expose_as_tool` 플래그 (general_chat UI 정리)
+
+general_chat에 "도구 호출" 카드가 보이는 게 의미론적으로 틀렸다는 피드백 — **general_chat은 도구가 아니라 에이전트의 직접 응답**. `AgentCapability.expose_as_tool: bool = True` 필드를 추가하고 `GeneralChatAgent`는 `False`로 선언. `run_chat`/`_execute_plan`이 이 플래그를 보고 `tool_call`/`tool_result` SSE를 생략 → 프론트는 이벤트가 안 오니 카드도 안 뜸 (프론트 변경 0). `plan_update`는 영향 없어 plan 내 step 가시성은 유지. 커밋 해시는 다음 커밋.
+
+테스트: `test_supervisor_routes_greeting_to_general_chat` 시퀀스 assertion이 `TokenEvent × 3 → DoneEvent`로 단순화. 120 passed.
+
 ### 2026-04-22 — GeneralChatAgent 추가 (잡담/인사 처리)
 
 Supervisor가 "안녕", "이름이 뭐야?", "뭐 할 수 있어?" 같은 **의도가 명확한 비-RAG 입력**을 `clarify`로 분류해 "어떤 정보를 찾고 계신가요?"로 응답하던 오분류를 해결. clarify는 다시 본래 역할(진짜 모호한 질문)로 축소. 커밋 `f85db72`, **120 passed**.

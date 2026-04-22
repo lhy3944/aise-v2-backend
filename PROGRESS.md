@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 60% | 증분 1A/1B/2 + 마무리(플래그/legacy/assist 제거) + [P2] RAG sources 이벤트 완료. 남은 증분 3~5 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 65% | 증분 1A/1B/2 + 마무리(플래그/legacy/assist 제거) + [P2] sources + 토큰 스트리밍 복원 완료. 남은 증분 3~5 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -86,6 +86,31 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-22 — 토큰 스트리밍 복원 (BaseAgent.run_stream)
+
+sources 이벤트 작업 직후 확인됐던 "SSE `token` 이벤트가 1개 = 최종 답변 전체" 회귀를 해결. Phase 1 때 `graph.ainvoke` + 사후 합성 패턴으로 바꾸면서 legacy `agent_svc`가 제공하던 OpenAI SSE delta 중계가 빠져있었음. 커밋 `410de54`, 117 passed.
+
+#### 복원 구조
+- **`BaseAgent.run_stream(state, ctx)`** — discriminator `kind` 기반 async generator. `{"kind": "sources"}` / `{"kind": "token"}` / `{"kind": "final"}` 세 종류. 기본 구현은 `run()` 한 번 호출 후 sources(?) + 단일 token + final로 래핑해 backward-compatible.
+- **`KnowledgeQAAgent.run_stream`** override — `rag_svc.search_and_prepare()` (retrieval + 프롬프트 빌드 + sources, LLM 호출 없음) → sources emit → `llm_svc.chat_completion_stream()` delta → token emit → final emit. `run()`은 `run_stream`을 드레인해서 호환 surface 유지.
+- **`rag_svc` 분리** — `search_and_prepare()` 신설, 기존 `chat()`은 `search_and_prepare() + chat_completion()` 합성으로 단축 (HTTP API `/knowledge/chat`이 여전히 사용).
+- **`orchestration/graph._drive_agent_stream()`** — agent.run_stream을 consume해서 SSE 모델(`SourcesEvent`/`TokenEvent`)로 재방출. final update는 sentinel dict로 caller에 반환 → caller가 `tool_result` 합성.
+- **`run_chat` single path** — `graph.ainvoke`를 호출하지 않고 `supervisor_node`를 직접 호출한 뒤 선택된 agent를 `_drive_agent_stream`으로 구동. `graph` 매개변수는 호환 유지용(plan 우회 없는 compile 호출자 있음).
+- **`_execute_plan`** — 각 step을 `_drive_agent_stream`으로 호출. **마지막 step만 token forward**, 중간 step의 token은 shared_state에만 누적. sources는 어느 step이든 forward.
+
+#### 새 스트리밍 순서
+| 경로 | 시퀀스 |
+|---|---|
+| single | `tool_call → [sources] → token × N → tool_result → done` |
+| plan | `plan_update(pending) → [per step: plan_update(running) → tool_call → [sources] → token × N (last only) → tool_result → plan_update(completed)] → done` |
+
+프론트 파서는 이미 `onToken`을 여러 번 받아 누적하는 구조라 추가 변경 없음. `tool_result`가 마지막에 오므로 "에이전트 실행 중" 인디케이터가 스트리밍 동안 유지됨 — 자연스런 UX.
+
+#### 테스트
+시퀀스 assertion 3건 업데이트 (`test_orchestration.py` happy path / 2-step plan E2E, `test_requirement_agent.py` graph E2E). stub 공용화 — `chat_completion_stream`을 async generator로 monkey-patch해 canned answer를 2 deltas로 쪼개 방출 → 스트리밍 순서를 테스트에서 관찰.
+
+---
 
 ### 2026-04-22 — [P2] RAG sources SSE 이벤트 (2커밋)
 

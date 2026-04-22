@@ -39,6 +39,7 @@ _REGISTRY: dict[str, "BaseAgent"] = {}
 # Keep the list explicit (not a directory walk) so registration is deterministic
 # and so deleting a file doesn't silently change behavior.
 _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
+    "src.agents.general_chat",
     "src.agents.knowledge_qa",
     "src.agents.requirement",
     # Phase 2 will add: srs_generator, testcase_generator, critic

@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 65% | 증분 1A/1B/2 + 마무리(플래그/legacy/assist 제거) + [P2] sources + 토큰 스트리밍 복원 완료. 남은 증분 3~5 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 70% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent 완료. 남은 증분 3~5 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -86,6 +86,35 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-22 — GeneralChatAgent 추가 (잡담/인사 처리)
+
+Supervisor가 "안녕", "이름이 뭐야?", "뭐 할 수 있어?" 같은 **의도가 명확한 비-RAG 입력**을 `clarify`로 분류해 "어떤 정보를 찾고 계신가요?"로 응답하던 오분류를 해결. clarify는 다시 본래 역할(진짜 모호한 질문)로 축소. 커밋 `f85db72`, **120 passed**.
+
+#### 추가
+- [prompts/general/chat.py](backend/src/prompts/general/chat.py): 짧고 친근한 톤, 프로젝트 지식 상상 금지, 지식 질문은 RAG 경로로 유도, 능력 밖 요청은 한 줄 거절 + 대안 제시
+- [agents/general_chat.py](backend/src/agents/general_chat.py): `BaseAgent` + `@register_agent`. `run_stream`이 `llm_svc.chat_completion_stream`으로 토큰 스트리밍 — RAG 답변과 동일 UX. sources 없음.
+- [agents/registry.py](backend/src/agents/registry.py): `_BUILTIN_AGENT_MODULES`에 `general_chat` 등록. Supervisor 프롬프트는 레지스트리 기반이라 자동 발견.
+- [prompts/supervisor.md](backend/src/prompts/supervisor.md): **Routing precedence** 절 추가 — greeting/self-intro/capability question/thanks/out-of-scope 거절은 `general_chat`, `clarify`는 "진짜로 모호한" 경우로 한정.
+
+#### 테스트
+- `test_general_chat::test_run_stream_emits_tokens_and_final` — 3 deltas → 3 TokenEvents + terminal final, sources 없음
+- `test_general_chat::test_supervisor_routes_greeting_to_general_chat` — E2E: stub supervisor가 general_chat 선택, 시퀀스 `tool_call → token × 3 → tool_result → done`
+- `test_general_chat::test_run_stream_error_produces_final_error` — LLM 실패 시 `final.update.error`로 surfacing
+
+#### 설계 결정
+(B) "Supervisor 프롬프트에 답변 능력 추가" 대신 (A) "전용 에이전트" 선택. 이유:
+- Supervisor completion이 JSON-only라 (B)는 토큰 스트리밍 불가 → 방금 복원한 스트리밍 UX 회귀
+- 레지스트리 + `BaseAgent.run_stream` 패턴 재사용 → 아키텍처 일관성
+- 향후 FAQ/튜토리얼/설정 도우미 같은 보조 에이전트의 참조 구현
+
+### 2026-04-22 — UX 버그픽스: 렌더 순서 + tool_result 상태
+
+스트리밍 복원 직후 실제 트래픽에서 드러난 2건. 커밋 `0b7bd29`.
+
+- **렌더 순서**: `MessageRenderer`가 legacy "답변 → toolCalls → sources"로 하드코딩돼 있어 knowledge_qa 도구 카드가 답변 *아래*에 나타남. SSE 도착 순서(`tool_call → sources → token × N → tool_result`)와 시각적으로 일치하도록 "toolCalls → sources → 답변 텍스트"로 재배열.
+- **"오류" 상태**: `handleToolResult`가 legacy `agent_svc`의 `result.success: bool` 컨벤션을 검사했는데, 새 `_result_payload()`는 카운터만 담음 → `undefined` → falsy → 항상 error. SSE `data.status`를 `onToolResult`로 전달해 우선 판단 기준으로 사용. legacy `result.success === false`는 OR 결합(backward-compat).
+- 덤: `_formatToolResult`에 `knowledge_qa`("문서 N건 참조") / `requirement`("후보 N건 추출") 포맷. `TOOL_DISPLAY_NAMES`에 agent 한글 라벨.
 
 ### 2026-04-22 — 토큰 스트리밍 복원 (BaseAgent.run_stream)
 

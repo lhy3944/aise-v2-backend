@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 55% | 증분 1A/1B/2 + 마무리(USE_LANGGRAPH 플래그/legacy agent_svc/assist_* 실 제거) 완료. 남은 증분 3~5 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 60% | 증분 1A/1B/2 + 마무리(플래그/legacy/assist 제거) + [P2] RAG sources 이벤트 완료. 남은 증분 3~5 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -24,7 +24,13 @@
 
 다음 세션에서 다시 확인·보강할 항목. 긴급도는 `P?` 로 표기(P1 = 빠른 대응 권장, P2 = 여유 있음).
 
-### [P2] RAG 출처(Sources) 표시 일관성 — 2026-04-21 발견
+### [P2-RESOLVED] RAG 출처(Sources) 표시 일관성 — 2026-04-22 해결
+
+커밋 `293ed30` (backend) + `cd9973f` (frontend). 설계 옵션 D (백엔드가 결정론적 사실 소유) + UX 옵션 (a)로 구현. legacy `[SOURCES]` 본문 블록 파서는 제거. 본 섹션은 레퍼런스용으로 남김.
+
+---
+
+### [P2] RAG 출처(Sources) 표시 일관성 — 2026-04-21 발견 (✅ 해결)
 
 **증상** — 레거시 경로(`USE_LANGGRAPH=false`, `services/agent_svc.stream_chat`)에서 Knowledge Repository 기반 답변 시, **모델마다 출처 리스트가 표시되거나 안 되거나** 편차가 있음. 사용자 수동 테스트 중 확인.
 
@@ -80,6 +86,27 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-22 — [P2] RAG sources SSE 이벤트 (2커밋)
+
+`/home/workspace/aise-v3/PROGRESS.md` L27에 기록돼 있던 "RAG 출처 표시 일관성" 이슈를 해결. legacy `agent_svc` 제거 직후라 본문 `[SOURCES]` 블록 파서 fallback도 같이 정리 가능했음. **117 passed** (신규 검증 어설션 포함), 프론트 `tsc --noEmit` 0 error.
+
+| 커밋 | 범위 | 변경 요약 |
+|---|---|---|
+| `293ed30` | backend | 새 SSE 이벤트 `sources` (docs/events.md §2.6). [schemas/events.py](backend/src/schemas/events.py)의 `SourceRef`/`SourcesEventData`/`SourcesEvent` + discriminated union 등재. [KnowledgeChatSource](backend/src/schemas/api/knowledge.py)에 `file_type` 필드 추가 + [rag_svc.py](backend/src/services/rag_svc.py) 문서 메타 조회 확장. [orchestration/graph.py](backend/src/orchestration/graph.py)의 `_sources_event()` 헬퍼 — agent가 state에 올린 `sources` 리스트를 1-based `ref`로 재번호하여 single path(`run_chat`)에선 `tool_result` 뒤 `token(answer)` 앞, plan path(`_execute_plan`)에선 각 step `tool_result` 뒤에 emit. 관련 테스트 3건 시퀀스 업데이트 + sources 어설션. |
+| `cd9973f` | frontend | [types/agent-events.ts](frontend/src/types/agent-events.ts) `SourceRef`/`SourcesEvent`/`isSourcesEvent` 추가. [agent-service.ts](frontend/src/services/agent-service.ts) dispatch + `onSources` 콜백. [chat-store.ts](frontend/src/stores/chat-store.ts) `ChatMessage.sources?: SourceRef[]`. [useChatStream.ts](frontend/src/hooks/useChatStream.ts)는 `onSources`에서 `updateLastAssistant`로 sources를 메시지에 세팅. [MessageRenderer.tsx](frontend/src/components/chat/MessageRenderer.tsx)는 `SOURCES_BLOCK_RE` + 파싱 로직 + 스트리밍 incomplete-tag set에서 'SOURCES' 제거; `message.sources`를 citation-`[N]` DOM wiring과 `SourceReference` 렌더 양쪽에서 소비. |
+
+#### 설계 근거
+- **백엔드 소유 원칙(옵션 D)**: 프롬프트에 `[SOURCES]` 블록 지시 대신 SSE 이벤트로. LLM 준수도 테스트 불필요(hermetic). 프롬프트 토큰 절약(지시 문장 10여 줄 미삭감).
+- **UX 결정 (a)**: 답변 아래 "출처" 리스트만. 별도 인라인 뱃지 자동 삽입은 하지 않음 — `[1]` 본문 인용이 LLM에 의해 드물더라도 출처 리스트는 항상 노출됨.
+- **발행 타이밍**: single path `tool_result` 뒤 → `token(answer)` 앞. 프론트는 답변 스트림이 들어오기 시작하는 시점에 이미 sources 맵을 갖춰 `[N]` 인용을 클릭 가능한 span으로 wiring 가능.
+- **미래 활용**: 증분 3c(Critic 에이전트)가 "답변의 `[N]` 인용이 실제 sources에 있는지"를 검증할 때 동일한 결정론적 채널 재사용.
+
+#### 캐리오버
+- [useChatStream.ts](frontend/src/hooks/useChatStream.ts)에 `generate_srs` 디스패치 + `markToolCallError` + `triggerGenerateSrs` 관련 SRSGeneratorAgent prep 변경이 본 PR에 딸려 들어감 (같은 파일이라 분리 비용 vs 가치 고려). 짝이 되는 백엔드 `agents/srs_generator.py`는 증분 3a에서 완성.
+- [backend/src/services/llm_svc.py](backend/src/services/llm_svc.py)의 `chat_completion_stream()`은 계속 워킹 트리에 남김 — 증분 3a(SRS 토큰 스트리밍)에서 연결.
+
+---
 
 ### 2026-04-22 — Phase 2 마무리 정리 (플래그 · legacy agent_svc · assist_*)
 

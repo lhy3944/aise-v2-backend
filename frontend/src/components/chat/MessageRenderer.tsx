@@ -31,6 +31,7 @@ interface MessageRendererProps {
 }
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  // record CUD / legacy tool-calling loop
   extract_records: '레코드 추출',
   generate_srs: 'SRS 문서 생성',
   create_record: '레코드 생성',
@@ -38,6 +39,12 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   delete_record: '레코드 삭제',
   update_record_status: '상태 변경',
   search_records: '레코드 검색',
+  // LangGraph agent invocations (tool_call.name == agent name)
+  knowledge_qa: '지식 검색',
+  requirement: '요구사항 추출',
+  srs_generator: 'SRS 생성',
+  testcase_generator: '테스트케이스 생성',
+  critic: '검토',
 };
 
 interface RequirementData {
@@ -291,25 +298,7 @@ const MessageItem = memo(
                 </div>
               )}
 
-              {/* 텍스트 응답 (마크다운) — 인라인 출처 클릭 지원 */}
-              {displayContent && (
-                <div
-                  ref={contentRef}
-                  className="w-full min-w-0"
-                  onClick={sources.length > 0 ? handleCitationClick : undefined}
-                >
-                  <MessageResponse
-                    streaming={
-                      message.status === 'streaming' && !!displayContent
-                    }
-                    className="w-full"
-                  >
-                    {displayContent}
-                  </MessageResponse>
-                </div>
-              )}
-
-              {/* Tool Calls */}
+              {/* Tool Calls — SSE 도착 순서상 token보다 먼저 오므로 상단 */}
               {message.toolCalls && message.toolCalls.length > 0 && (
                 <div className="w-full min-w-0">
                   {message.toolCalls.map((tc, i) => (
@@ -326,6 +315,24 @@ const MessageItem = memo(
                       error={tc.error}
                     />
                   ))}
+                </div>
+              )}
+
+              {/* 텍스트 응답 (마크다운) — 인라인 출처 클릭 지원 */}
+              {displayContent && (
+                <div
+                  ref={contentRef}
+                  className="w-full min-w-0"
+                  onClick={sources.length > 0 ? handleCitationClick : undefined}
+                >
+                  <MessageResponse
+                    streaming={
+                      message.status === 'streaming' && !!displayContent
+                    }
+                    className="w-full"
+                  >
+                    {displayContent}
+                  </MessageResponse>
                 </div>
               )}
 

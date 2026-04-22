@@ -32,6 +32,14 @@ function _formatToolResult(name: string, result: Record<string, unknown>): strin
       return typeof result.version === 'number'
         ? `SRS v${result.version} 생성 완료`
         : 'SRS 생성 완료';
+    case 'knowledge_qa': {
+      const count = result.sources_count;
+      return typeof count === 'number' ? `문서 ${count}건 참조` : '완료';
+    }
+    case 'requirement': {
+      const count = result.records_count;
+      return typeof count === 'number' ? `후보 ${count}건 추출` : '완료';
+    }
     default:
       return '완료';
   }
@@ -366,9 +374,14 @@ export function useChatStream(sessionId?: string) {
     [currentProject, markToolCallError, triggerExtractRecords, triggerGenerateSrs],
   );
 
-  // 백엔드 도구 실행 결과 처리 (레코드 CUD)
+  // 백엔드 도구 실행 결과 처리 (레코드 CUD + agent 호출)
   const handleToolResult = useCallback(
-    (sid: string, name: string, result: Record<string, unknown>) => {
+    (
+      sid: string,
+      name: string,
+      result: Record<string, unknown>,
+      status?: 'success' | 'error',
+    ) => {
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
       // 레코드 CUD 도구 결과 → Records 탭 갱신
@@ -376,9 +389,10 @@ export function useChatStream(sessionId?: string) {
         bumpRefresh();
       }
 
-      // tool call 상태를 completed로 업데이트
-      const success = result.success as boolean;
-      const newState: 'completed' | 'error' = success ? 'completed' : 'error';
+      // SSE `tool_result.status`를 우선. legacy agent_svc 결과 모양
+      // (`result.success: false`)은 backward-compat를 위해 OR 결합.
+      const isError = status === 'error' || result.success === false;
+      const newState: 'completed' | 'error' = isError ? 'error' : 'completed';
       updateLast(sid, (msg) => ({
         ...msg,
         toolCalls: msg.toolCalls?.map((tc) =>
@@ -386,8 +400,8 @@ export function useChatStream(sessionId?: string) {
             ? {
                 ...tc,
                 state: newState,
-                result: success ? _formatToolResult(name, result) : undefined,
-                error: success ? undefined : (result.error as string),
+                result: isError ? undefined : _formatToolResult(name, result),
+                error: isError ? (result.error as string | undefined) : undefined,
               }
             : tc,
         ),
@@ -467,7 +481,12 @@ export function useChatStream(sessionId?: string) {
             executeToolCall(targetSessionId, toolCall.name, toolCall.arguments);
           },
           onToolResult: (toolResult) => {
-            handleToolResult(targetSessionId, toolResult.name, toolResult.result);
+            handleToolResult(
+              targetSessionId,
+              toolResult.name,
+              toolResult.result,
+              toolResult.status,
+            );
           },
           onSources: (sources) => {
             updateLastAssistant(targetSessionId, (msg) => ({

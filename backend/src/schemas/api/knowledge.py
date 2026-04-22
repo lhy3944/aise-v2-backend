@@ -55,6 +55,7 @@ class KnowledgeChatSource(BaseModel):
     chunk_index: int
     content: str
     score: float
+    file_type: str | None = None
 
 
 class KnowledgeChatResponse(BaseModel):

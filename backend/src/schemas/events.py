@@ -117,6 +117,28 @@ class ArtifactCreatedEvent(BaseModel):
     data: ArtifactCreatedEventData
 
 
+class SourceRef(BaseModel):
+    """1:1 with frontend SourceData."""
+
+    ref: int
+    document_id: str
+    document_name: str
+    chunk_index: int
+    file_type: str | None = None
+    content_preview: str | None = None
+    score: float | None = None
+
+
+class SourcesEventData(BaseModel):
+    sources: list[SourceRef]
+    agent: str | None = None
+
+
+class SourcesEvent(BaseModel):
+    type: Literal["sources"] = "sources"
+    data: SourcesEventData
+
+
 # ---------- Phase 3 events (HITL) ----------
 
 
@@ -196,6 +218,7 @@ AgentStreamEvent = Annotated[
         PlanUpdateEvent,
         InterruptEvent,
         ArtifactCreatedEvent,
+        SourcesEvent,
         DoneEvent,
         ErrorEvent,
     ],
@@ -238,6 +261,9 @@ __all__ = [
     "PlanUpdateEvent",
     "PlanUpdateEventData",
     "ResumeRequest",
+    "SourceRef",
+    "SourcesEvent",
+    "SourcesEventData",
     "TokenEvent",
     "TokenEventData",
     "ToolCallEvent",

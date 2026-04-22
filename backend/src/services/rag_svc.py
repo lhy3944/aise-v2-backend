@@ -80,16 +80,18 @@ async def chat(
     # 1. 유사 청크 검색
     chunks_with_scores = await search_similar_chunks(project_id, message, top_k, db)
 
-    # 2. 문서 이름 조회 (청크에서 document_id로 조회)
+    # 2. 문서 메타 조회 (청크에서 document_id로 조회)
     doc_ids = {chunk.document_id for chunk, _ in chunks_with_scores}
     doc_name_map: dict[uuid.UUID, str] = {}
+    doc_type_map: dict[uuid.UUID, str] = {}
     if doc_ids:
         doc_result = await db.execute(
-            select(KnowledgeDocument.id, KnowledgeDocument.name)
+            select(KnowledgeDocument.id, KnowledgeDocument.name, KnowledgeDocument.file_type)
             .where(KnowledgeDocument.id.in_(doc_ids))
         )
-        for doc_id, doc_name in doc_result.all():
+        for doc_id, doc_name, file_type in doc_result.all():
             doc_name_map[doc_id] = doc_name
+            doc_type_map[doc_id] = file_type
 
     # 3. 컨텍스트 청크 구성
     context_chunks = []
@@ -144,6 +146,7 @@ async def chat(
                 chunk_index=chunk.chunk_index,
                 content=chunk.content[:200],  # 미리보기용 200자
                 score=round(score, 4),
+                file_type=doc_type_map.get(chunk.document_id),
             )
         )
 

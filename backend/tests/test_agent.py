@@ -114,4 +114,4 @@ async def test_langgraph_path_honors_session_factory_override(
 
     types = [e["type"] for e in events]
     assert "error" not in types, f"LangGraph path fell back to prod DB: {events!r}"
-    assert types == ["tool_call", "tool_result", "token", "done"]
+    assert types == ["tool_call", "tool_result", "sources", "token", "done"]

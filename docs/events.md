@@ -16,6 +16,7 @@
 | `tool_call` | 에이전트가 도구(또는 하위 에이전트)를 호출 시작 | Phase 1 |
 | `tool_result` | 도구 실행 완료 (성공 또는 실패) | Phase 1 |
 | `plan_update` | Supervisor가 plan을 수립/갱신하거나 step 상태 변화 | Phase 2 |
+| `sources` | 에이전트가 참조한 RAG chunk 목록 (본문 `[N]` 인용 앵커) | Phase 2 |
 | `interrupt` | HITL — 사용자 응답 대기 (`interrupt()` 호출) | Phase 3 |
 | `artifact_created` | SRS/Design/TC/Requirement 등 산출물 저장 완료 | Phase 2 |
 | `done` | 스트리밍 종료 (정상/이유 포함) | Phase 1 |
@@ -176,7 +177,42 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 
 공통 필수: `interrupt_id` (resume body의 `interrupt_id`와 매칭), `kind`.
 
-### 2.6 `artifact_created` (Phase 2)
+### 2.6 `sources` (Phase 2)
+
+```json
+{
+  "type": "sources",
+  "data": {
+    "agent": "knowledge_qa",
+    "sources": [
+      {
+        "ref": 1,
+        "document_id": "uuid-...",
+        "document_name": "요구사항_v3.pdf",
+        "chunk_index": 4,
+        "file_type": "pdf",
+        "content_preview": "…",
+        "score": 0.8712
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `data.sources[].ref` | int (1-based) | ✅ | 본문의 `[N]` 인용 앵커와 매칭 |
+| `data.sources[].document_id` | UUID str | ✅ | |
+| `data.sources[].document_name` | string | ✅ | |
+| `data.sources[].chunk_index` | int | ✅ | |
+| `data.sources[].file_type` | string | 선택 | `pdf` / `md` / `txt` |
+| `data.sources[].content_preview` | string | 선택 | 청크 본문 앞 200자 |
+| `data.sources[].score` | float | 선택 | 1 − cosine distance |
+| `data.agent` | string | 선택 | 산출 에이전트 (plan 실행 시 step 매칭용) |
+
+**발행 타이밍**: single 경로는 `tool_result` 뒤, `token`(답변) 앞에서 1회. plan 경로는 sources를 산출한 step의 `tool_result` 직후에 emit.
+
+### 2.7 `artifact_created` (Phase 2)
 
 ```json
 {
@@ -199,7 +235,7 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 | `data.project_id` | UUID | ✅ | |
 | `data.version` | string | 선택 | `"1.0"` 등 |
 
-### 2.7 `done` (Phase 1)
+### 2.8 `done` (Phase 1)
 
 ```json
 { "type": "done", "data": { "finish_reason": "stop" } }
@@ -209,7 +245,7 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 |---|---|---|---|
 | `data.finish_reason` | `"stop" \| "tool_calls" \| "length" \| "content_filter" \| "interrupt" \| "error"` | ✅ | 종료 사유 |
 
-### 2.8 `error` (Phase 1)
+### 2.9 `error` (Phase 1)
 
 ```json
 {
@@ -228,10 +264,11 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 
 ## 3. 시퀀스 규약
 
-### 3.1 단일 RAG 질의 (Phase 1)
+### 3.1 단일 RAG 질의 (Phase 2)
 ```
-token × N → done(finish_reason=stop)
+tool_call → tool_result → sources → token × N → done(stop)
 ```
+`sources`가 앞서 오므로 프론트는 답변 본문의 `[N]` 인용을 바로 링크로 매핑할 수 있다.
 
 ### 3.2 도구 호출 포함
 ```
@@ -242,7 +279,7 @@ token × N → tool_call → tool_result → token × M → done(stop)
 ```
 plan_update(current_step=0, status=pending) →
 plan_update(current_step=0, status=running) →
-  tool_call → token → tool_result →
+  tool_call → tool_result → [sources if any] →
 plan_update(current_step=0, status=completed; current_step=1, status=running) →
   ...
 plan_update(all completed) →
@@ -285,3 +322,4 @@ token × M → done(stop)
 | 버전 | 날짜 | 변경 |
 |---|---|---|
 | 1.0 | 2026-04-21 | 초기 계약: token/tool_call/tool_result/done/error (Phase 1 구현), plan_update/interrupt/artifact_created (Phase 2~3 도입 예정) |
+| 1.1 | 2026-04-22 | `sources` 이벤트 추가 — 본문 `[N]` 인용의 백엔드 소유 메타데이터 채널 (ref/document_id/name/chunk_index + optional file_type/content_preview/score). legacy `[SOURCES]` 블록 프롬프트 의존 제거를 위함. |

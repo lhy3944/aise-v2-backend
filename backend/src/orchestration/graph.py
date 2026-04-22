@@ -47,6 +47,9 @@ from src.schemas.events import (
     PlanStep,
     PlanUpdateEvent,
     PlanUpdateEventData,
+    SourceRef,
+    SourcesEvent,
+    SourcesEventData,
     TokenEvent,
     TokenEventData,
     ToolCallEvent,
@@ -211,6 +214,43 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
     if extracted is not None:
         payload["records_count"] = len(extracted)
     return payload
+
+
+def _sources_event(raw: Any, *, agent: str | None) -> SourcesEvent | None:
+    """Build a SourcesEvent from the `sources` list an agent stored in state.
+
+    Agents emit `rag_svc`-style dicts (document_id, document_name,
+    chunk_index, content, score, file_type?); we renumber them into the
+    frontend's 1-based `ref` contract and forward the preview/metadata.
+    Returns None when the list is empty or malformed so the caller can
+    just skip the yield.
+    """
+    if not raw or not isinstance(raw, list):
+        return None
+    refs: list[SourceRef] = []
+    for idx, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            continue
+        doc_id = item.get("document_id")
+        doc_name = item.get("document_name")
+        chunk_index = item.get("chunk_index")
+        if doc_id is None or doc_name is None or chunk_index is None:
+            continue
+        content = item.get("content")
+        refs.append(
+            SourceRef(
+                ref=idx,
+                document_id=str(doc_id),
+                document_name=str(doc_name),
+                chunk_index=int(chunk_index),
+                file_type=item.get("file_type"),
+                content_preview=str(content) if isinstance(content, str) else None,
+                score=item.get("score") if isinstance(item.get("score"), (int, float)) else None,
+            )
+        )
+    if not refs:
+        return None
+    return SourcesEvent(data=SourcesEventData(sources=refs, agent=agent))
 
 
 async def _execute_plan(
@@ -391,6 +431,9 @@ async def _execute_plan(
                     result=_result_payload(update),
                 )
             )
+            sources_ev = _sources_event(update.get("sources"), agent=name)
+            if sources_ev is not None:
+                yield sources_ev
             yield _plan_update(current=idx)
 
     if last_final_answer:
@@ -470,6 +513,9 @@ async def run_chat(
                 result=_result_payload(final_state),
             )
         )
+        sources_ev = _sources_event(final_state.get("sources"), agent=selected)
+        if sources_ev is not None:
+            yield sources_ev
 
     if action == "clarify":
         question = routing.get("clarification") or "조금 더 구체적으로 말씀해주시겠어요?"

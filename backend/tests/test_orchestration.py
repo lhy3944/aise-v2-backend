@@ -22,6 +22,7 @@ from src.models.project import Project
 from src.orchestration.graph import build_graph, run_chat
 from src.schemas.events import (
     DoneEvent,
+    SourcesEvent,
     TokenEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -129,19 +130,33 @@ async def test_run_chat_happy_path_emits_contract_events(stub_llm_and_embeddings
     ):
         events.append(ev)
 
-    # Sequence must be: tool_call, tool_result, token, done
+    # Sequence: tool_call → tool_result → sources (seeded 1 chunk) → token → done
     types = [type(ev).__name__ for ev in events]
-    assert types == ["ToolCallEvent", "ToolResultEvent", "TokenEvent", "DoneEvent"]
+    assert types == [
+        "ToolCallEvent",
+        "ToolResultEvent",
+        "SourcesEvent",
+        "TokenEvent",
+        "DoneEvent",
+    ]
 
     tool_call: ToolCallEvent = events[0]
     tool_result: ToolResultEvent = events[1]
-    token: TokenEvent = events[2]
-    done: DoneEvent = events[3]
+    sources: SourcesEvent = events[2]
+    token: TokenEvent = events[3]
+    done: DoneEvent = events[4]
 
     assert tool_call.data.name == "knowledge_qa"
     assert tool_call.data.agent == "knowledge_qa"
     assert tool_result.data.tool_call_id == tool_call.data.tool_call_id
     assert tool_result.data.status == "success"
+    assert sources.data.agent == "knowledge_qa"
+    assert len(sources.data.sources) == 1
+    first = sources.data.sources[0]
+    assert first.ref == 1
+    assert first.document_name == "seed.md"
+    assert first.file_type == "md"
+    assert first.chunk_index == 0
     assert token.data.text == "Stubbed answer based on retrieved chunks."
     assert done.data.finish_reason == "stop"
 
@@ -256,7 +271,13 @@ async def test_supervisor_single_routes_to_agent(monkeypatch, db):
         )
     ]
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "ToolResultEvent", "TokenEvent", "DoneEvent"]
+    assert types == [
+        "ToolCallEvent",
+        "ToolResultEvent",
+        "SourcesEvent",
+        "TokenEvent",
+        "DoneEvent",
+    ]
 
 
 async def test_supervisor_clarify_emits_question_as_token(monkeypatch, db):
@@ -395,14 +416,16 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
     types = [type(e).__name__ for e in events]
     # Expected sequence:
     #   PlanUpdate(all pending)
-    #   PlanUpdate(step 0 running), ToolCall, ToolResult, PlanUpdate(step 0 completed)
+    #   PlanUpdate(step 0 running), ToolCall, ToolResult, Sources, PlanUpdate(step 0 completed)
     #   PlanUpdate(step 1 running), ToolCall, ToolResult, PlanUpdate(step 1 completed)
     #   Token(final answer from step 1), Done
+    # Note: step 0 (knowledge_qa) produces sources; step 1 (requirement) does not.
     assert types == [
         "PlanUpdateEvent",
         "PlanUpdateEvent",
         "ToolCallEvent",
         "ToolResultEvent",
+        "SourcesEvent",
         "PlanUpdateEvent",
         "PlanUpdateEvent",
         "ToolCallEvent",

@@ -56,6 +56,17 @@ class AgentCapability(BaseModel):
     requires_hitl: bool = False
     estimated_tokens: int = Field(default=2000, description="Rough budget hint for cost prediction")
     tags: list[str] = Field(default_factory=list, description="e.g. ['rag', 'generation']")
+    expose_as_tool: bool = Field(
+        default=True,
+        description=(
+            "When True (default), the orchestrator emits tool_call + "
+            "tool_result SSE events around the agent run so the UI renders "
+            "a visible invocation card. Set False for conversational "
+            "agents whose output IS the response (e.g. general_chat) — "
+            "only token/sources/done events are emitted and the chat UI "
+            "shows just the streamed answer without a tool card."
+        ),
+    )
 
 
 class BaseAgent(ABC):

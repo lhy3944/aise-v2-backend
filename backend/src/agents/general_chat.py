@@ -50,6 +50,10 @@ class GeneralChatAgent(BaseAgent):
         output_schema={"final_answer": "str"},
         tags=["chat", "general"],
         estimated_tokens=400,
+        # Conversational agent — the streamed answer IS the response.
+        # Suppress tool_call/tool_result SSE so the UI doesn't render an
+        # invocation card for small talk.
+        expose_as_tool=False,
     )
 
     async def run(self, state: AgentState, ctx: AgentContext) -> dict[str, Any]:

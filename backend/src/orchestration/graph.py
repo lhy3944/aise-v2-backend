@@ -378,16 +378,21 @@ async def _execute_plan(
             step.started_at = datetime.now(timezone.utc)
             yield _plan_update(current=idx)
 
+            # Conversational agents are step-visible via plan_update but
+            # don't render their own tool invocation card.
+            expose = getattr(agent.capability, "expose_as_tool", True)
+
             call_id = f"call_{uuid.uuid4().hex[:12]}"
             step_started = time.perf_counter()
-            yield ToolCallEvent(
-                data=ToolCallEventData(
-                    tool_call_id=call_id,
-                    name=name,
-                    arguments={"user_input": shared_state.get("user_input", "")},
-                    agent=name,
+            if expose:
+                yield ToolCallEvent(
+                    data=ToolCallEventData(
+                        tool_call_id=call_id,
+                        name=name,
+                        arguments={"user_input": shared_state.get("user_input", "")},
+                        agent=name,
+                    )
                 )
-            )
 
             is_last = idx == len(plan_names) - 1
             step_update: dict[str, Any] = {}
@@ -408,15 +413,16 @@ async def _execute_plan(
                 step.status = "failed"
                 step.completed_at = datetime.now(timezone.utc)
                 step.result_summary = str(exc)[:200]
-                yield ToolResultEvent(
-                    data=ToolResultEventData(
-                        tool_call_id=call_id,
-                        name=name,
-                        status="error",
-                        duration_ms=int((time.perf_counter() - step_started) * 1000),
-                        result={"error": str(exc)[:200]},
+                if expose:
+                    yield ToolResultEvent(
+                        data=ToolResultEventData(
+                            tool_call_id=call_id,
+                            name=name,
+                            status="error",
+                            duration_ms=int((time.perf_counter() - step_started) * 1000),
+                            result={"error": str(exc)[:200]},
+                        )
                     )
-                )
                 yield _plan_update(current=idx)
                 yield ErrorEvent(
                     data=ErrorEventData(
@@ -431,15 +437,16 @@ async def _execute_plan(
                 step.status = "failed"
                 step.completed_at = datetime.now(timezone.utc)
                 step.result_summary = str(step_update["error"])[:200]
-                yield ToolResultEvent(
-                    data=ToolResultEventData(
-                        tool_call_id=call_id,
-                        name=name,
-                        status="error",
-                        duration_ms=int((time.perf_counter() - step_started) * 1000),
-                        result={"error": str(step_update["error"])[:200]},
+                if expose:
+                    yield ToolResultEvent(
+                        data=ToolResultEventData(
+                            tool_call_id=call_id,
+                            name=name,
+                            status="error",
+                            duration_ms=int((time.perf_counter() - step_started) * 1000),
+                            result={"error": str(step_update["error"])[:200]},
+                        )
                     )
-                )
                 yield _plan_update(current=idx)
                 yield ErrorEvent(
                     data=ErrorEventData(
@@ -460,15 +467,16 @@ async def _execute_plan(
             summary = step_update.get("final_answer") or ""
             step.result_summary = summary[:200] if summary else None
 
-            yield ToolResultEvent(
-                data=ToolResultEventData(
-                    tool_call_id=call_id,
-                    name=name,
-                    status="success",
-                    duration_ms=int((time.perf_counter() - step_started) * 1000),
-                    result=_result_payload(step_update),
+            if expose:
+                yield ToolResultEvent(
+                    data=ToolResultEventData(
+                        tool_call_id=call_id,
+                        name=name,
+                        status="success",
+                        duration_ms=int((time.perf_counter() - step_started) * 1000),
+                        result=_result_payload(step_update),
+                    )
                 )
-            )
             yield _plan_update(current=idx)
 
 
@@ -596,15 +604,21 @@ async def run_chat(
     except (ValueError, TypeError):
         session_uuid = None
 
+    # Conversational agents (capability.expose_as_tool=False) are "the
+    # agent IS the response" — suppress tool_call/tool_result SSE so the
+    # UI doesn't render a bogus invocation card around plain answers.
+    expose = getattr(agent.capability, "expose_as_tool", True)
+
     call_id = f"call_{uuid.uuid4().hex[:12]}"
-    yield ToolCallEvent(
-        data=ToolCallEventData(
-            tool_call_id=call_id,
-            name=selected,
-            arguments={"user_input": user_input},
-            agent=selected,
+    if expose:
+        yield ToolCallEvent(
+            data=ToolCallEventData(
+                tool_call_id=call_id,
+                name=selected,
+                arguments={"user_input": user_input},
+                agent=selected,
+            )
         )
-    )
 
     started = time.perf_counter()
     final_update: dict[str, Any] = {}
@@ -626,15 +640,16 @@ async def run_chat(
                     yield ev
     except Exception as exc:
         logger.exception(f"{selected}.run_stream failed")
-        yield ToolResultEvent(
-            data=ToolResultEventData(
-                tool_call_id=call_id,
-                name=selected,
-                status="error",
-                duration_ms=int((time.perf_counter() - started) * 1000),
-                result={"error": str(exc)[:200]},
+        if expose:
+            yield ToolResultEvent(
+                data=ToolResultEventData(
+                    tool_call_id=call_id,
+                    name=selected,
+                    status="error",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    result={"error": str(exc)[:200]},
+                )
             )
-        )
         yield ErrorEvent(
             data=ErrorEventData(
                 message=str(exc),
@@ -645,15 +660,16 @@ async def run_chat(
         return
 
     if final_update.get("error"):
-        yield ToolResultEvent(
-            data=ToolResultEventData(
-                tool_call_id=call_id,
-                name=selected,
-                status="error",
-                duration_ms=int((time.perf_counter() - started) * 1000),
-                result={"error": str(final_update["error"])[:200]},
+        if expose:
+            yield ToolResultEvent(
+                data=ToolResultEventData(
+                    tool_call_id=call_id,
+                    name=selected,
+                    status="error",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    result={"error": str(final_update["error"])[:200]},
+                )
             )
-        )
         yield ErrorEvent(
             data=ErrorEventData(
                 message=str(final_update["error"]),
@@ -663,15 +679,16 @@ async def run_chat(
         )
         return
 
-    yield ToolResultEvent(
-        data=ToolResultEventData(
-            tool_call_id=call_id,
-            name=selected,
-            status="success",
-            duration_ms=int((time.perf_counter() - started) * 1000),
-            result=_result_payload(final_update),
+    if expose:
+        yield ToolResultEvent(
+            data=ToolResultEventData(
+                tool_call_id=call_id,
+                name=selected,
+                status="success",
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                result=_result_payload(final_update),
+            )
         )
-    )
     yield DoneEvent(data=DoneEventData(finish_reason="stop"))
 
 

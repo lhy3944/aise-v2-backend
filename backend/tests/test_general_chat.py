@@ -133,28 +133,17 @@ async def test_supervisor_routes_greeting_to_general_chat(monkeypatch, db):
     ]
 
     types = [type(e).__name__ for e in events]
-    # Streaming shape: tool_call → token × 3 → tool_result → done.
-    # No sources because general_chat doesn't retrieve.
-    assert types[0] == "ToolCallEvent"
-    assert types[-1] == "DoneEvent"
-    assert types[-2] == "ToolResultEvent"
+    # general_chat declares expose_as_tool=False — no tool_call/tool_result,
+    # no sources. Just token stream + done.
+    assert types == ["TokenEvent", "TokenEvent", "TokenEvent", "DoneEvent"]
+    assert "ToolCallEvent" not in types
+    assert "ToolResultEvent" not in types
     assert "SourcesEvent" not in types
-    assert types.count("TokenEvent") == 3
-
-    tool_call = events[0]
-    assert isinstance(tool_call, ToolCallEvent)
-    assert tool_call.data.name == "general_chat"
-    assert tool_call.data.agent == "general_chat"
 
     assembled = "".join(
         e.data.text for e in events if isinstance(e, TokenEvent)
     )
     assert assembled == canned
-
-    tool_result = next(e for e in events if isinstance(e, ToolResultEvent))
-    assert tool_result.data.status == "success"
-    # general_chat has neither sources_count nor records_count.
-    assert tool_result.data.result == {}
 
 
 @pytest.mark.asyncio

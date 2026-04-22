@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 40% | 증분 1A/1B/2 완료 (Supervisor 3-액션 · RequirementAgent · plan 실행+plan_update). 남은 증분 3~5 + assist_* 실제 제거 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 55% | 증분 1A/1B/2 + 마무리(USE_LANGGRAPH 플래그/legacy agent_svc/assist_* 실 제거) 완료. 남은 증분 3~5 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -80,6 +80,21 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-22 — Phase 2 마무리 정리 (플래그 · legacy agent_svc · assist_*)
+
+Phase 2 증분 로드맵의 "마무리" 3종 세트를 묶어 제거. MIGRATION_PLAN §5 D3 실행 포함. **117 passed** (이전 131 − test_assist.py 14개 = 117, 예상대로 감소). 프론트 `tsc --noEmit` 0 에러.
+
+| 커밋 | 범위 | 변경 요약 |
+|---|---|---|
+| 1 | `refactor: remove USE_LANGGRAPH flag and legacy agent_svc` | [routers/agent.py](backend/src/routers/agent.py) 단일 경로로 재작성(`_use_langgraph()` · legacy 분기 · `agent_svc` import 전부 제거). [services/agent_svc.py](backend/src/services/agent_svc.py) + [prompts/agent/](backend/src/prompts/agent/) 디렉토리 삭제. `.env.*.example`, [start-dev.sh](start-dev.sh)/[start-local.sh](start-local.sh), [test_agent.py](backend/tests/test_agent.py), [smoke 스크립트](backend/scripts/smoke_langgraph_chat.py)에서 `USE_LANGGRAPH` 전부 삭제. 프론트 [agent-service.ts](frontend/src/services/agent-service.ts) dispatch를 신 envelope 전용으로 단순화(legacy flat envelope 분기 + `SSEEvent` export 제거). 부차적으로 start-dev.sh가 호스트 DB를 가정하도록 postgres docker 섹션 주석 + pnpm 전환. |
+| 2 | `refactor(assist): remove deprecated endpoints and UI (D3)` | 백엔드: [routers/assist.py](backend/src/routers/assist.py), [services/assist_svc.py](backend/src/services/assist_svc.py), [schemas/api/assist.py](backend/src/schemas/api/assist.py), [prompts/assist/](backend/src/prompts/assist/), [tests/test_assist.py](backend/tests/test_assist.py) 전부 삭제 + [routers/__init__.py](backend/src/routers/__init__.py), [main.py](backend/src/main.py)에서 `assist_router` 언와이어. 프론트: [assist-service.ts](frontend/src/services/assist-service.ts), `ChatPanel.tsx`, `RefineCompare.tsx`, `SuggestionPanel.tsx`, `ExtractedRequirementList.tsx`, `ExtractedRequirementCard.tsx` 삭제. [RequirementInput.tsx](frontend/src/components/requirements/RequirementInput.tsx) `onRefine`/`isRefining` prop + AI 정제 버튼 제거. [RequirementsArtifact.tsx](frontend/src/components/artifacts/RequirementsArtifact.tsx)에서 refine/suggest UI 전체 제거. [requirements/page.tsx](frontend/src/app/\(main\)/projects/\[id\]/requirements/page.tsx)에서 mode toggle(구조화/대화) + ChatPanel + refine/suggest 전체 제거 — "요구사항 다듬기는 메인 Agent 채팅으로 일원화" UX 정책으로 통일. [types/project.ts](frontend/src/types/project.ts)에서 `RefineRequest/Response`, `SuggestRequest/Response`, `Suggestion`, `ChatMessage`(project.ts 것), `ChatRequest/Response`, `ExtractedRequirement` 타입 제거. |
+| 3 | `docs(progress): log flag/legacy/assist removal` | 본 로그 엔트리 + 상태 테이블 Phase 2 진행률 40% → 55%. |
+
+#### 설계 근거
+- **왜 지금**: Phase 1 스모크 + 증분 1A/1B/2 실환경 테스트 통과 → 롤백 보험료가 테스트 매트릭스 2배화 비용을 넘었음. CLAUDE.md "Don't use feature flags or backwards-compatibility shims when you can just change the code" 원칙과 일치.
+- **왜 한 PR**: 세 정리가 논리적으로 얽혀있음 — 플래그를 제거하면 legacy `agent_svc` 호출자가 사라지고, assist_*는 legacy OpenAI Function Calling loop에 연결돼 있던 옵션 기능이었으므로. 분리하면 "중간 상태에 잠시 머무는 어정쩡함"이 생김.
+- **UX 정책 변경**: assist_*의 refine/suggest 버튼 + 대화 모드 패널은 "요구사항 다듬기는 메인 Agent 채팅(RequirementAgent)으로 일원화"로 대체. 별도 보조 버튼/서브 채팅을 유지하면 또 정리 대상이 되므로 과감히 삭제. MIGRATION_PLAN §5 D3에서 합의한 방향.
 
 ### 2026-04-21 — Phase 2 착수 (증분 1A/1B/2)
 
@@ -230,9 +245,9 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
    - [ ] **5c** N4 SrsEditor (RecordsArtifact 패턴)
    - [ ] **5d** N5 TestCaseList
 5. 마무리
-   - [ ] `USE_LANGGRAPH=true` 기본화 (router 및 env)
-   - [ ] 레거시 `agent_svc` 제거
-   - [ ] **D3 실제 제거**: assist_* (backend router/service + frontend 3 호출부) 삭제 → RequirementAgent 경로로 대체
+   - [x] `USE_LANGGRAPH` 플래그 완전 제거 (2026-04-22, 단일 LangGraph 경로로 확정)
+   - [x] 레거시 `agent_svc` 제거 (2026-04-22)
+   - [x] **D3 실제 제거**: assist_* (backend router/service + frontend 3 호출부) 삭제 → 메인 Agent 채팅으로 일원화 (2026-04-22)
 
 ### 이전 기록용: 결정 확정 (2026-04-21, MIGRATION_PLAN §5)
 
@@ -240,7 +255,7 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
 
 - [x] D1 복사 이관 (결정·실행 모두 완료, Phase 0)
 - [x] D2 artifacts 도메인별 분리 유지 + 조회 유틸 (결정 확정, 실행은 Phase 2 이후)
-- [x] **D3 assist_* 제거 결정** — 실행 상태: 스냅샷·DEPRECATED 마킹까지만 완료. **라우터/서비스/프론트 실 삭제는 Phase 2 작업 M에서 수행**
+- [x] **D3 assist_* 제거 결정 + 실행 완료** (2026-04-22) — 라우터/서비스/프론트 3 호출부 모두 삭제. 메인 Agent 채팅(RequirementAgent)으로 일원화
 - [x] D4 LiteLLM Phase 1 (결정·실행 모두 완료, 커밋 `ef8017c`)
 - [x] D5 fetch-event-source Phase 1 전면 (결정·실행 모두 완료, 커밋 `bda4be1`)
 - [x] D6 라우트 분리 Phase 4 (결정 확정, 실행은 Phase 4)

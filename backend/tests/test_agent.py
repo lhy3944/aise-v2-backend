@@ -56,13 +56,12 @@ def _stub_agent_deps(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_langgraph_path_honors_session_factory_override(
-    monkeypatch, _stub_agent_deps, client, db
+    _stub_agent_deps, client, db
 ):
-    """Gate B regression: the LangGraph path must use the test DB's session
+    """Gate B regression: the agent route must use the test DB's session
     factory, not the production `async_session`. Proven by seeding a session
     in the test DB and confirming the endpoint finds it (vs emitting the
     SESSION_NOT_FOUND error that the prod DB would yield)."""
-    monkeypatch.setenv("USE_LANGGRAPH", "true")
     # Bypass the module-level cache so a prior non-override run does not win.
     from src.routers import agent as agent_router
 

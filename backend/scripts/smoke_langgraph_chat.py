@@ -1,12 +1,12 @@
-"""Phase 1 USE_LANGGRAPH=true smoke test.
+"""LangGraph agent chat smoke test.
 
 Hits POST /api/v1/agent/chat against a real seeded project+session in the
 dev DB using the in-process ASGI transport (no uvicorn needed). Confirms
-the LangGraph path produces the contract SSE sequence with real LLM
-+ real embeddings + real RAG retrieval.
+the route produces the contract SSE sequence with real LLM + real
+embeddings + real RAG retrieval.
 
 Usage (from backend/):
-    USE_LANGGRAPH=true uv run python scripts/smoke_langgraph_chat.py \
+    uv run python scripts/smoke_langgraph_chat.py \
         --session-id <uuid> --message "질문"
 
 Override defaults via flags if the seeded data changes.
@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 
 import httpx
@@ -44,12 +43,6 @@ async def main() -> int:
     parser.add_argument("--message", default=DEFAULT_MESSAGE)
     args = parser.parse_args()
 
-    if os.getenv("USE_LANGGRAPH", "false").lower() not in {"1", "true", "yes", "on"}:
-        print("ERROR: USE_LANGGRAPH must be true for this smoke. Re-run with:")
-        print('  USE_LANGGRAPH=true uv run python scripts/smoke_langgraph_chat.py ...')
-        return 2
-
-    # Import after env is set so any module-level reads see it.
     from src.main import app  # noqa: E402
 
     transport = httpx.ASGITransport(app=app)

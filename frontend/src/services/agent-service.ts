@@ -4,11 +4,7 @@
  * Transport: @microsoft/fetch-event-source (POST + custom headers + better
  * error/reconnect handling than the raw fetch+ReadableStream loop).
  *
- * Envelope handling: the frontend understands BOTH envelopes during Phase 1:
- *   - New (docs/events.md):   {"type": "...", "data": {...}}
- *   - Legacy (prototype):     {"type": "...", "content": "...", "name": "...", ...}
- * Selection is automatic per-event (presence of `data`). Phase 2 drops the
- * legacy branch once USE_LANGGRAPH=true is the default.
+ * Envelope: AgentStreamEvent per docs/events.md — `{"type": "...", "data": {...}}`.
  *
  * Token buffering and mobile chunking stay in useChatStream.ts — this module
  * only parses the wire format and invokes callbacks.
@@ -35,7 +31,6 @@ export interface AgentChatRequest {
   message: string;
 }
 
-// Kept for backwards compatibility with existing useChatStream consumers.
 export interface ToolCallEvent {
   name: string;
   arguments: Record<string, unknown>;
@@ -52,15 +47,8 @@ export interface ToolResultEvent {
   duration_ms?: number;
 }
 
-/** Union of both envelope shapes observed on the wire. */
 interface WireEvent {
   type: string;
-  // legacy flat fields
-  content?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  // new envelope
   data?: Record<string, unknown>;
 }
 
@@ -71,100 +59,60 @@ export interface StreamCallbacks {
   onDone: () => void;
   onError: (error: string) => void;
 
-  // Phase 2+ — optional. Only fire on the new envelope.
   onPlanUpdate?: (update: { plan: PlanStep[]; current_step?: number }) => void;
   onInterrupt?: (hitl: HitlData) => void;
   onArtifactCreated?: (artifact: ArtifactCreatedEvent['data']) => void;
 }
 
-/** Dispatch a parsed event to the provided callbacks. */
 function dispatch(event: WireEvent, cb: StreamCallbacks): 'continue' | 'stop' {
-  // New envelope: prefer event.data when present.
-  if (event.data && typeof event.data === 'object') {
-    const d = event.data as Record<string, unknown>;
-    switch (event.type as AgentStreamEvent['type']) {
-      case 'token': {
-        const text = d.text;
-        if (typeof text === 'string' && text.length > 0) cb.onToken(text);
-        return 'continue';
-      }
-      case 'tool_call': {
-        const name = typeof d.name === 'string' ? d.name : '';
-        if (!name) return 'continue';
-        cb.onToolCall({
-          name,
-          arguments: (d.arguments as Record<string, unknown>) ?? {},
-          tool_call_id: typeof d.tool_call_id === 'string' ? d.tool_call_id : undefined,
-          agent: typeof d.agent === 'string' ? d.agent : undefined,
-        });
-        return 'continue';
-      }
-      case 'tool_result': {
-        const name = typeof d.name === 'string' ? d.name : '';
-        if (!name || !cb.onToolResult) return 'continue';
-        cb.onToolResult({
-          name,
-          arguments: {},
-          result: (d.result as Record<string, unknown>) ?? {},
-          tool_call_id: typeof d.tool_call_id === 'string' ? d.tool_call_id : undefined,
-          status: d.status === 'error' ? 'error' : 'success',
-          duration_ms:
-            typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
-        });
-        return 'continue';
-      }
-      case 'plan_update':
-        cb.onPlanUpdate?.((event as unknown as PlanUpdateEvent).data);
-        return 'continue';
-      case 'interrupt':
-        cb.onInterrupt?.((event as unknown as InterruptEvent).data);
-        return 'continue';
-      case 'artifact_created':
-        cb.onArtifactCreated?.(
-          (event as unknown as ArtifactCreatedEvent).data,
-        );
-        return 'continue';
-      case 'done':
-        cb.onDone();
-        return 'stop';
-      case 'error': {
-        const message = typeof d.message === 'string' ? d.message : '알 수 없는 오류';
-        cb.onError(message);
-        return 'stop';
-      }
-      default:
-        return 'continue';
+  const d = (event.data ?? {}) as Record<string, unknown>;
+  switch (event.type as AgentStreamEvent['type']) {
+    case 'token': {
+      const text = d.text;
+      if (typeof text === 'string' && text.length > 0) cb.onToken(text);
+      return 'continue';
     }
-  }
-
-  // Legacy flat envelope — preserves the prototype's agent_svc output.
-  switch (event.type) {
-    case 'token':
-      if (event.content) cb.onToken(event.content);
+    case 'tool_call': {
+      const name = typeof d.name === 'string' ? d.name : '';
+      if (!name) return 'continue';
+      cb.onToolCall({
+        name,
+        arguments: (d.arguments as Record<string, unknown>) ?? {},
+        tool_call_id: typeof d.tool_call_id === 'string' ? d.tool_call_id : undefined,
+        agent: typeof d.agent === 'string' ? d.agent : undefined,
+      });
       return 'continue';
-    case 'tool_call':
-      if (event.name) {
-        cb.onToolCall({
-          name: event.name,
-          arguments: event.arguments ?? {},
-        });
-      }
+    }
+    case 'tool_result': {
+      const name = typeof d.name === 'string' ? d.name : '';
+      if (!name || !cb.onToolResult) return 'continue';
+      cb.onToolResult({
+        name,
+        arguments: {},
+        result: (d.result as Record<string, unknown>) ?? {},
+        tool_call_id: typeof d.tool_call_id === 'string' ? d.tool_call_id : undefined,
+        status: d.status === 'error' ? 'error' : 'success',
+        duration_ms: typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
+      });
       return 'continue';
-    case 'tool_result':
-      if (event.name && cb.onToolResult) {
-        cb.onToolResult({
-          name: event.name,
-          arguments: event.arguments ?? {},
-          result: event.result ?? {},
-        });
-      }
+    }
+    case 'plan_update':
+      cb.onPlanUpdate?.((event as unknown as PlanUpdateEvent).data);
+      return 'continue';
+    case 'interrupt':
+      cb.onInterrupt?.((event as unknown as InterruptEvent).data);
+      return 'continue';
+    case 'artifact_created':
+      cb.onArtifactCreated?.((event as unknown as ArtifactCreatedEvent).data);
       return 'continue';
     case 'done':
       cb.onDone();
       return 'stop';
-    case 'error':
-      cb.onError(event.content ?? '알 수 없는 오류');
+    case 'error': {
+      const message = typeof d.message === 'string' ? d.message : '알 수 없는 오류';
+      cb.onError(message);
       return 'stop';
+    }
     default:
       return 'continue';
   }
@@ -253,7 +201,3 @@ export function streamAgentChat(
 
   return close;
 }
-
-// Legacy shape re-export — some call sites still import SSEEvent directly.
-// Kept as a loose superset of both envelopes.
-export type SSEEvent = WireEvent;

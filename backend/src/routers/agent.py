@@ -1,22 +1,11 @@
 """Agent Chat API 라우터.
 
-Phase 1: feature-flag based dual path.
-
-- USE_LANGGRAPH=false (default): legacy path through services.agent_svc
-  (the prototype's OpenAI Function Calling loop). Emits the legacy SSE
-  envelope `{"type": "...", "content": "...", ...}` (flat).
-
-- USE_LANGGRAPH=true: new path through orchestration.run_chat. Emits the
-  AgentStreamEvent envelope `{"type": "...", "data": {...}}` per
-  docs/events.md.
-
-The two paths share the same endpoint URL so the frontend's USE_LANGGRAPH
-choice can be made by env. Phase 2 will retire the legacy path.
+LangGraph-only: orchestration.run_chat 기반. SSE AgentStreamEvent envelope
+`{"type": "...", "data": {...}}` per docs/events.md.
 """
 
 from __future__ import annotations
 
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +18,6 @@ from src.core.database import get_db, get_session_factory
 from src.models.session import Session as SessionModel
 from src.orchestration.graph import build_graph, get_checkpointer, run_chat
 from src.schemas.api.agent import AgentChatRequest
-from src.services import agent_svc
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -39,10 +27,6 @@ _SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
-
-
-def _use_langgraph() -> bool:
-    return os.getenv("USE_LANGGRAPH", "false").lower() in {"1", "true", "yes", "on"}
 
 
 # Lazy per-factory graph cache. Compiling a LangGraph StateGraph captures
@@ -74,12 +58,12 @@ async def _resolve_project_id(session_id: uuid.UUID, db: AsyncSession) -> uuid.U
     return project_id
 
 
-async def _langgraph_stream(
+async def _stream_chat(
     session_id: uuid.UUID,
     message: str,
     session_factory: async_sessionmaker[AsyncSession],
 ):
-    """SSE generator using the new event envelope per docs/events.md."""
+    """SSE generator using the AgentStreamEvent envelope per docs/events.md."""
     async with session_factory() as db:
         try:
             project_id = await _resolve_project_id(session_id, db)
@@ -107,23 +91,10 @@ async def agent_chat(
     body: AgentChatRequest,
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ):
-    """Agent Chat SSE 엔드포인트.
-
-    Path is chosen at request time by USE_LANGGRAPH env var so a single
-    deployment can flip between legacy and new orchestrator without
-    restart (when the env file is reloaded).
-    """
-    if _use_langgraph():
-        logger.info(f"agent/chat: LangGraph path session={body.session_id}")
-        return StreamingResponse(
-            _langgraph_stream(body.session_id, body.message, session_factory),
-            media_type="text/event-stream",
-            headers=_SSE_HEADERS,
-        )
-
-    logger.info(f"agent/chat: legacy agent_svc path session={body.session_id}")
+    """Agent Chat SSE 엔드포인트."""
+    logger.info(f"agent/chat: session={body.session_id}")
     return StreamingResponse(
-        agent_svc.stream_chat(body.session_id, body.message),
+        _stream_chat(body.session_id, body.message, session_factory),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

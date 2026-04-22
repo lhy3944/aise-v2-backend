@@ -37,33 +37,33 @@ kill_port $BACKEND_PORT
 kill_port $FRONTEND_PORT
 
 # --- PostgreSQL (Docker) ---
-log "PostgreSQL 시작 중..."
-cd "$ROOT_DIR"
-docker compose up -d postgres
+# log "PostgreSQL 시작 중..."
+# cd "$ROOT_DIR"
+# docker compose up -d postgres
 
-log "PostgreSQL 준비 대기 중..."
-until docker compose exec -T postgres pg_isready -U ${POSTGRES_USER:-aise} -d ${POSTGRES_DB:-aise} > /dev/null 2>&1; do
-    sleep 1
-done
-log "PostgreSQL 준비 완료"
+# log "PostgreSQL 준비 대기 중..."
+# until docker compose exec -T postgres pg_isready -U ${POSTGRES_USER:-aise} -d ${POSTGRES_DB:-aise} > /dev/null 2>&1; do
+#     sleep 1
+# done
+# log "PostgreSQL 준비 완료"
 
 # --- Backend ---
 log "Backend 의존성 동기화 중..."
 cd "$ROOT_DIR/backend"
 uv sync
 log "Backend 시작 중... (port: $BACKEND_PORT)"
-uv run uvicorn src.main:app --port=$BACKEND_PORT --reload --host 0.0.0.0 &
+env PYTHONUNBUFFERED=1 uv run uvicorn src.main:app --port=$BACKEND_PORT --reload --host 0.0.0.0 &
 BACKEND_PID=$!
 
 # --- Frontend ---
 log "Frontend 의존성 확인 중..."
 cd "$ROOT_DIR/frontend"
 if [ ! -d "node_modules" ]; then
-    log "node_modules 없음 — npm install 실행"
-    npm install
+    log "node_modules 없음 — pnpm install 실행"
+    pnpm install
 fi
 log "Frontend 시작 중... (port: $FRONTEND_PORT)"
-npx next dev --hostname 0.0.0.0 --port $FRONTEND_PORT &
+pnpm exec next dev --hostname 0.0.0.0 --port $FRONTEND_PORT &
 FRONTEND_PID=$!
 
 # --- 완료 ---

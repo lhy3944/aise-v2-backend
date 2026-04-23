@@ -381,6 +381,7 @@ export function useChatStream(sessionId?: string) {
       name: string,
       result: Record<string, unknown>,
       status?: 'success' | 'error',
+      durationMs?: number,
     ) => {
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
@@ -402,6 +403,7 @@ export function useChatStream(sessionId?: string) {
                 state: newState,
                 result: isError ? undefined : _formatToolResult(name, result),
                 error: isError ? (result.error as string | undefined) : undefined,
+                durationMs: durationMs ?? tc.durationMs,
               }
             : tc,
         ),
@@ -473,6 +475,7 @@ export function useChatStream(sessionId?: string) {
               name: toolCall.name,
               arguments: toolCall.arguments,
               state: 'running',
+              startedAt: Date.now(),
             };
             updateLastAssistant(targetSessionId, (msg) => ({
               ...msg,
@@ -486,6 +489,7 @@ export function useChatStream(sessionId?: string) {
               toolResult.name,
               toolResult.result,
               toolResult.status,
+              toolResult.durationMs,
             );
           },
           onSources: (sources) => {

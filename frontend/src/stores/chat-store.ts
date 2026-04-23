@@ -8,6 +8,11 @@ export interface ToolCallData {
   state: 'running' | 'completed' | 'error';
   result?: string;
   error?: string;
+  /** Unix ms — when the tool_call SSE arrived (for live elapsed timer) */
+  startedAt?: number;
+  /** Backend-measured duration from tool_result SSE (preferred over
+   *  client-side elapsed once tool_result arrives) */
+  durationMs?: number;
 }
 
 export interface ChatMessage {

@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ChevronDown, CheckCircle2, Loader2, AlertCircle, Clock, Wrench } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export type ToolCallState =
   | 'pending'
@@ -25,6 +25,31 @@ interface ToolCallProps {
   output?: string;
   error?: string;
   defaultOpen?: boolean;
+  /** Unix ms — when the tool_call SSE arrived. Powers the live elapsed
+   *  timer while `state === 'running'`. */
+  startedAt?: number;
+  /** Backend-measured duration (ms) from tool_result SSE. Preferred over
+   *  client-side elapsed once the result arrives. */
+  durationMs?: number;
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}초`;
+  const mins = Math.floor(ms / 60_000);
+  const secs = Math.floor((ms % 60_000) / 1000);
+  return `${mins}분 ${secs}초`;
+}
+
+function useElapsed(startedAt: number | undefined, running: boolean): number | null {
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!running || startedAt === undefined) return;
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [running, startedAt]);
+  if (startedAt === undefined) return null;
+  return Math.max(0, now - startedAt);
 }
 
 export function ToolCall({
@@ -34,10 +59,22 @@ export function ToolCall({
   output,
   error,
   defaultOpen = false,
+  startedAt,
+  durationMs,
 }: ToolCallProps) {
   const [open, setOpen] = useState(defaultOpen);
   const config = STATE_CONFIG[state];
   const StatusIcon = config.icon;
+
+  const liveElapsed = useElapsed(startedAt, state === 'running');
+  // While running: show live client-side elapsed.
+  // After completion/error: prefer backend duration_ms; if missing, fall
+  //   back to client-measured elapsed (stream may have aborted before
+  //   tool_result arrived).
+  const displayMs =
+    state === 'running'
+      ? liveElapsed
+      : durationMs ?? (startedAt !== undefined ? Date.now() - startedAt : null);
 
   return (
     <div className='border-line-primary my-2 min-w-0 overflow-hidden rounded-lg border'>
@@ -48,6 +85,11 @@ export function ToolCall({
       >
         <Wrench className='text-fg-muted size-3.5 shrink-0' />
         <span className='text-fg-primary min-w-0 flex-1 truncate text-xs font-medium'>{name}</span>
+        {displayMs !== null && displayMs >= 0 && (
+          <span className='text-fg-muted shrink-0 text-[10px] tabular-nums'>
+            {formatElapsed(displayMs)}
+          </span>
+        )}
         <Badge variant='outline' className={cn('shrink-0 gap-1 text-[10px] [&>svg]:size-3', config.color)}>
           <StatusIcon className={cn(state === 'running' && 'animate-spin')} />
           {config.label}

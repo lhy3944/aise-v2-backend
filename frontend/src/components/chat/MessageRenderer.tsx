@@ -313,12 +313,18 @@ const MessageItem = memo(
                       }
                       output={tc.result}
                       error={tc.error}
+                      startedAt={tc.startedAt}
+                      durationMs={tc.durationMs}
                     />
                   ))}
                 </div>
               )}
 
-              {/* 텍스트 응답 (마크다운) — 인라인 출처 클릭 지원 */}
+              {/* 텍스트 응답 (마크다운) — 인라인 출처 클릭 지원.
+                  sources 데이터는 스트리밍 중에도 message.sources에 세팅돼
+                  있어 [N] 클릭 wiring은 즉시 동작. 아래 SourceReference
+                  카드는 스트리밍 완료 후에만 렌더 → 답변이 먼저 타이핑되고
+                  출처 리스트는 뒤따라 나타남. */}
               {displayContent && (
                 <div
                   ref={contentRef}
@@ -333,6 +339,13 @@ const MessageItem = memo(
                   >
                     {displayContent}
                   </MessageResponse>
+                </div>
+              )}
+
+              {/* 출처 링크 — 스트리밍 완료 후에만 렌더 */}
+              {!showCursor && sources.length > 0 && (
+                <div className="w-full min-w-0">
+                  <SourceReference sources={sources} />
                 </div>
               )}
 
@@ -362,13 +375,6 @@ const MessageItem = memo(
                   questions={parsed.clarifyItems}
                   onSubmit={onSendMessage}
                 />
-              )}
-
-              {/* 출처 링크 — SSE `sources` 이벤트 기반 */}
-              {sources.length > 0 && (
-                <div className="w-full min-w-0">
-                  <SourceReference sources={sources} />
-                </div>
               )}
 
               {/* SUGGESTIONS 추천 질문 — 마지막 메시지에서만 표시 */}

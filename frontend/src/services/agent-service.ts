@@ -45,7 +45,7 @@ export interface ToolResultEvent {
   result: Record<string, unknown>;
   tool_call_id?: string;
   status?: 'success' | 'error';
-  duration_ms?: number;
+  durationMs?: number;
 }
 
 interface WireEvent {
@@ -94,7 +94,7 @@ function dispatch(event: WireEvent, cb: StreamCallbacks): 'continue' | 'stop' {
         result: (d.result as Record<string, unknown>) ?? {},
         tool_call_id: typeof d.tool_call_id === 'string' ? d.tool_call_id : undefined,
         status: d.status === 'error' ? 'error' : 'success',
-        duration_ms: typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
+        durationMs: typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
       });
       return 'continue';
     }

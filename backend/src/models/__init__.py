@@ -3,9 +3,15 @@ from src.models.requirement import Requirement, RequirementVersion, RequirementS
 from src.models.glossary import GlossaryItem
 from src.models.review import RequirementReview
 from src.models.knowledge import KnowledgeDocument, KnowledgeChunk
-from src.models.record import Record
 from src.models.srs import SrsDocument, SrsSection
 from src.models.session import Session, SessionMessage
+from src.models.artifact import (
+    Artifact,
+    ArtifactVersion,
+    PullRequest,
+    ChangeEvent,
+    ArtifactDependency,
+)
 
 __all__ = [
     "Project",
@@ -17,9 +23,13 @@ __all__ = [
     "RequirementReview",
     "KnowledgeDocument",
     "KnowledgeChunk",
-    "Record",
     "SrsDocument",
     "SrsSection",
     "Session",
     "SessionMessage",
+    "Artifact",
+    "ArtifactVersion",
+    "PullRequest",
+    "ChangeEvent",
+    "ArtifactDependency",
 ]

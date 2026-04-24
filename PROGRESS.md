@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 90% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent + Artifact Governance + Retrieval Gate/Rewriter + DiffViewer + SrsGenerator/TestCaseGenerator/Critic 에이전트 완료. 남은: 프론트 N1~N5 UI (AgentInvocationCard / PlanProgress / SrsEditor / TestCaseList) |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | ✅ 완료 | 100% | 2026-04-24 — N1/N3 이어 N4 SrsEditor + N5 TestCaseList 완성. 단, staging/PR 워크플로우는 record-only (ChangesWorkspaceModal 제네릭화 후속). |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -86,6 +86,25 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-24 — N4 SrsEditor + N5 TestCaseList (Phase 2 → 100%)
+
+`ffc934f` (project-scoped drafts) 위에 Phase 2 마지막 남은 프론트 UI 2종을 구현.
+placeholder 상태였던 SrsArtifact / TestCaseArtifact 를 실동작 컴포넌트로 교체.
+**프론트 `tsc --noEmit` 0 error**.
+
+| 커밋 | 범위 | 요약 |
+|---|---|---|
+| `f62d894` | frontend/artifact | N4 SrsEditor. 상단 버전 select + 상태 chip + 재생성 버튼, 본문 섹션 카드(MessageResponse markdown), 호버시 편집 버튼 → modal (Textarea 16 rows) → PUT `/srs/{id}/sections/{section_id}`. srsService 5 메서드 기존 자산 소비. 빈 상태에서 SRS 생성 버튼. |
+| `953913c` | frontend/artifact | N5 TestCaseList. `types/testcase.ts` 신설(TestCaseContent/Priority/Type — 백엔드 `schemas/api/artifact_testcase.py` 1:1 동기). artifactService.list(projectId, {artifact_type:'testcase'}) 로 조회, display_id numeric sort. 카드: priority tone + type chip + title + 사전/스텝 ol/기대결과. 편집 에디터: title/priority/type select + 스텝 useFieldArray add/remove, zod 검증. 필터 드롭다운(priority × type 다중). |
+
+#### 설계 결정
+- **staging/PR 미통합**: ChangesWorkspaceModal 이 현재 record-specific (content payload 구조가 `{text, section_id, source_document_id, …}` 하드코딩) → SRS/TC 에 바로 재사용 불가. 이번 증분은 직접 저장(`artifactService.update` / `srsService.updateSection`) 방식. **후속 과제**: ChangesWorkspaceModal artifact_type 제네릭화.
+- **srsService.regenerate 는 srs_id 를 무시하고 generate_srs 를 재호출** (백엔드 동작 그대로) — 프론트에서 "재생성" 버튼은 UX 명확성 용도로 유지하되 내부적으로 generate 와 동등.
+- **TestCase staging 미지원**: memo 에선 staging-store 재사용 가능하다고 적었으나 실제 content 가 JsonObject 인 TC 와 string 인 record 는 타입 불일치. 별도 genericize 없이는 재사용 불가 — 후속 작업.
+
+#### Phase 3 진입 조건
+Phase 2 종료 — HITL (interrupt + resume + 컴포넌트 3종) 착수 가능. MIGRATION_PLAN §2.3 참조.
 
 ### 2026-04-24 — DiffViewer + SRS/TestCase/Critic 에이전트 5커밋
 
@@ -374,18 +393,18 @@ Phase 2 착수 시 기본값을 true로 전환 + 레거시 경로 제거 PR.
 1. 신규 에이전트 등록
    - [x] **1A** Supervisor LLM 3-액션 라우팅 (`13d6084`)
    - [x] **1B** `agents/requirement.py` (`744ea16`)
-   - [ ] **3a** `agents/srs_generator.py` (`srs_svc` 래핑 + structured output)
-   - [ ] **3b** `agents/testcase_generator.py` (신규)
-   - [ ] **3c** `agents/critic.py` (신규)
+   - [x] **3a** `agents/srs_generator.py` (`25e2fc4`)
+   - [x] **3b** `agents/testcase_generator.py` (`cf83190`)
+   - [x] **3c** `agents/critic.py` (`31fd98e`)
 2. Plan 실행
    - [x] **2** 순차 plan 실행 + 실시간 `plan_update` (`9b6ef7b`)
    - [ ] (옵션) 임베딩 top-K 기반 하이브리드 라우팅 — 현재 Supervisor는 description/triggers 텍스트만 사용
 3. [ ] **4** artifacts 통합 라우터 (`routers/artifacts.py`) — GET 목록/상세, PATCH section, POST regenerate
 4. 프론트 (FRONTEND_DESIGN §20)
-   - [ ] **5a** N1 AgentInvocationCard
-   - [ ] **5b** N3 PlanProgress
-   - [ ] **5c** N4 SrsEditor (RecordsArtifact 패턴)
-   - [ ] **5d** N5 TestCaseList
+   - [x] **5a** N1 AgentInvocationCard (`4435403`)
+   - [x] **5b** N3 PlanProgress (`4435403`)
+   - [x] **5c** N4 SrsEditor (`f62d894`, 2026-04-24)
+   - [x] **5d** N5 TestCaseList (`953913c`, 2026-04-24)
 5. 마무리
    - [x] `USE_LANGGRAPH` 플래그 완전 제거 (2026-04-22, 단일 LangGraph 경로로 확정)
    - [x] 레거시 `agent_svc` 제거 (2026-04-22)

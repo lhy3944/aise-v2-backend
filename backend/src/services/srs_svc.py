@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.core.exceptions import AppException
+from src.models.artifact import Artifact
 from src.models.glossary import GlossaryItem
 from src.models.knowledge import KnowledgeDocument
-from src.models.record import Record
 from src.models.requirement import RequirementSection
 from src.models.srs import SrsDocument, SrsSection
 from src.prompts.srs.generate import build_srs_section_prompt
@@ -61,15 +61,20 @@ async def generate_srs(
     if not sections:
         raise AppException(400, "활성 섹션이 없습니다.")
 
-    # 2. 승인된 레코드 조회
+    # 2. 레코드 Artifact 조회 — lifecycle_status active 이면 SRS 에 포함.
+    #    PR workflow(clean) 도입 후에는 working_status='clean' 으로 좁힐 예정.
     records = (await db.execute(
-        select(Record)
-        .where(Record.project_id == project_id, Record.status == "approved")
-        .order_by(Record.order_index)
+        select(Artifact)
+        .where(
+            Artifact.project_id == project_id,
+            Artifact.artifact_type == "record",
+            Artifact.lifecycle_status == "active",
+        )
+        .order_by(Artifact.created_at.asc())
     )).scalars().all()
 
     if not records:
-        raise AppException(400, "승인된 레코드가 없습니다. 먼저 레코드를 추출하고 승인하세요.")
+        raise AppException(400, "레코드가 없습니다. 먼저 레코드를 추출하세요.")
 
     # 3. 용어 사전
     glossary = (await db.execute(
@@ -78,8 +83,12 @@ async def generate_srs(
     )).scalars().all()
     glossary_dicts = [{"term": g.term, "definition": g.definition} for g in glossary]
 
-    # 4. 기반 문서 목록
-    doc_ids = {str(r.source_document_id) for r in records if r.source_document_id}
+    # 4. 기반 문서 목록 — Artifact.content 의 source_document_id 참조
+    doc_ids = {
+        r.content["source_document_id"]
+        for r in records
+        if isinstance(r.content, dict) and r.content.get("source_document_id")
+    }
     doc_names = []
     if doc_ids:
         docs = (await db.execute(
@@ -99,7 +108,7 @@ async def generate_srs(
         project_id=project_id,
         version=new_version,
         status="generating",
-        based_on_records={"record_ids": [str(r.id) for r in records]},
+        based_on_records={"artifact_ids": [str(r.id) for r in records]},
         based_on_documents={"documents": doc_names},
     )
     db.add(srs_doc)
@@ -108,10 +117,14 @@ async def generate_srs(
     # 7. 섹션별 LLM 생성
     record_map: dict[str, list[dict]] = {}
     for r in records:
-        key = str(r.section_id) if r.section_id else "none"
+        payload = r.content if isinstance(r.content, dict) else {}
+        section_id = payload.get("section_id")
+        key = str(section_id) if section_id else "none"
         if key not in record_map:
             record_map[key] = []
-        record_map[key].append({"display_id": r.display_id, "content": r.content})
+        record_map[key].append(
+            {"display_id": r.display_id, "content": payload.get("text", "")}
+        )
 
     full_content_parts = []
     for i, section in enumerate(sections):

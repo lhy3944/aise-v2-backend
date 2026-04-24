@@ -9,10 +9,10 @@ from loguru import logger
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.artifact import Artifact
 from src.models.glossary import GlossaryItem
 from src.models.knowledge import KnowledgeDocument
 from src.models.project import Project
-from src.models.record import Record
 from src.models.requirement import RequirementSection
 from src.services.llm_svc import chat_completion
 from src.utils.json_parser import parse_llm_json
@@ -124,17 +124,20 @@ async def _gather_project_context(
     )
     sections = [{"name": n, "type": t} for n, t in section_result.all()]
 
-    # 레코드 현황 + 최신 변경 시점
+    # 레코드 Artifact 현황 + 최신 변경 시점 (PR workflow 상태별 집계)
     record_result = await db.execute(
-        select(Record.status, func.count(Record.id)).where(
-            Record.project_id == project_id,
-        ).group_by(Record.status)
+        select(Artifact.working_status, func.count(Artifact.id)).where(
+            Artifact.project_id == project_id,
+            Artifact.artifact_type == "record",
+            Artifact.lifecycle_status == "active",
+        ).group_by(Artifact.working_status)
     )
     record_stats = {status: count for status, count in record_result.all()}
 
     record_latest_result = await db.execute(
-        select(func.max(Record.updated_at)).where(
-            Record.project_id == project_id,
+        select(func.max(Artifact.updated_at)).where(
+            Artifact.project_id == project_id,
+            Artifact.artifact_type == "record",
         )
     )
     record_latest = str(record_latest_result.scalar() or "")

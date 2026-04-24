@@ -16,7 +16,7 @@ def _get_client() -> Minio:
     """MinIO 클라이언트 싱글톤 (lazy init)"""
     global _client
     if _client is None:
-        endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9100")
+        endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
         access_key = os.getenv("MINIO_ACCESS_KEY", "aise")
         secret_key = os.getenv("MINIO_SECRET_KEY", "aise1234")
         _client = Minio(

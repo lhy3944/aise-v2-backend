@@ -43,6 +43,31 @@ function formatToolResult(name: string, result: Record<string, unknown>): string
       const count = result.records_count;
       return typeof count === 'number' ? `후보 ${count}건 추출` : '완료';
     }
+    case 'srs_generator': {
+      const v = result.srs_version;
+      const sections = result.section_count;
+      if (typeof v === 'number' && typeof sections === 'number') {
+        return `SRS v${v} · ${sections}개 섹션`;
+      }
+      return typeof v === 'number' ? `SRS v${v} 생성` : 'SRS 생성 완료';
+    }
+    case 'testcase_generator': {
+      const count = result.testcase_count;
+      const v = result.srs_version;
+      if (typeof count === 'number' && typeof v === 'number') {
+        return `TC ${count}건 · SRS v${v}`;
+      }
+      return typeof count === 'number' ? `TC ${count}건 생성` : 'TC 생성 완료';
+    }
+    case 'critic': {
+      const passed = result.critic_passed;
+      const checked = result.checked_citations;
+      if (typeof checked === 'number') {
+        const status = passed === false ? '실패' : '통과';
+        return `검증 ${status} · 인용 ${checked}건`;
+      }
+      return passed === false ? '검증 실패' : '검증 통과';
+    }
     default:
       return '완료';
   }
@@ -537,6 +562,13 @@ export function useChatStream(sessionId?: string) {
             updateLastAssistant(targetSessionId, (msg) => ({
               ...msg,
               sources,
+            }));
+          },
+          onPlanUpdate: ({ plan, current_step }) => {
+            updateLastAssistant(targetSessionId, (msg) => ({
+              ...msg,
+              plan,
+              currentPlanStep: current_step,
             }));
           },
           onDone: () => {

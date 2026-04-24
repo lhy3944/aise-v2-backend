@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { SourceRef } from '@/types/agent-events';
+import type { PlanStep, SourceRef } from '@/types/agent-events';
 
 export interface ToolCallData {
   name: string;
@@ -30,6 +30,10 @@ export interface ChatMessage {
   toolCalls?: ToolCallData[];
   /** RAG 출처 — SSE `sources` 이벤트 수신 시 세팅. 본문 `[N]` 인용 앵커와 매칭. */
   sources?: SourceRef[];
+  /** Supervisor 가 plan 실행을 결정한 경우 step 진행 상태. plan_update SSE 누적. */
+  plan?: PlanStep[];
+  /** plan 내 현재 실행 중 step 인덱스 (0-based). */
+  currentPlanStep?: number;
   createdAt: string;
 }
 

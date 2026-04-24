@@ -3,6 +3,7 @@
 import { CitationAwareSpan } from '@/components/chat/CitationAwareSpan';
 import { CitationSourcesContext } from '@/components/chat/CitationContext';
 import { ExtractedRequirements } from '@/components/chat/ExtractedRequirements';
+import { PlanProgress } from '@/components/chat/PlanProgress';
 import {
   Questionnaire,
   type QuestionData,
@@ -258,6 +259,17 @@ const MessageItem = memo(
                     )}
                   </>
                 )}
+
+              {/* Plan Progress — supervisor 가 plan 을 결정했을 때만 등장.
+                  tool_call 보다 먼저 도착하므로 최상단. */}
+              {message.plan && message.plan.length > 0 && (
+                <div className='w-full min-w-0'>
+                  <PlanProgress
+                    plan={message.plan}
+                    currentStep={message.currentPlanStep}
+                  />
+                </div>
+              )}
 
               {/* Tool Calls — SSE 도착 순서상 token보다 먼저 오므로 상단 */}
               {message.toolCalls && message.toolCalls.length > 0 && (

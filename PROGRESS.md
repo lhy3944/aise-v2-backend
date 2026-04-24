@@ -24,6 +24,19 @@
 
 다음 세션에서 다시 확인·보강할 항목. 긴급도는 `P?` 로 표기(P1 = 빠른 대응 권장, P2 = 여유 있음).
 
+### [P3] SRS PDF 다운로드 — 방식 미결정 (2026-04-24 오픈)
+
+**맥락** — 2026-04-24 SrsArtifact 에 Markdown 다운로드 구현(`2660cd2` 이후 후속 커밋). PDF 는 사용자 요청으로 일단 보류. MD 파일에는 섹션 타이틀을 포함하지 않음 — content 자체에 헤딩이 이미 들어 있어 중복 방지.
+
+**결정 필요 옵션**:
+1. **Print CSS** — `@media print { ... }` 규칙으로 SRS 카드만 남기고 body 나머지 hidden. `window.print()` 경유, 프론트 30~50줄. 번들 영향 0, 구현 단순. 단점: 페이지 나누기/머리글·바닥글 제어 제한.
+2. **백엔드 export 엔드포인트** — `GET /api/v1/projects/{id}/srs/{srs_id}/export?format=pdf`, WeasyPrint(Python→HTML→PDF). 한글 폰트 임베딩/페이지 제어/헤더풋터 완전 제어. 단점: cairo/pango 시스템 의존성 → Docker 이미지 재빌드, 프론트는 GET 호출만.
+3. **클라이언트 PDF 라이브러리** — jsPDF + html2canvas 또는 react-pdf. 한글 폰트 임베딩 필요(+2~3MB 번들). 비추천.
+
+**권장**: 2번(백엔드) 이 장기적으로 옳으나 **1번(Print CSS) 로 저비용 시작 → 피드백 후 2번으로 업그레이드** 경로. 다른 artifact 타입(TC/Design) 도 같은 결정 재사용 가능.
+
+---
+
 ### [P2-RESOLVED] RAG 출처(Sources) 표시 일관성 — 2026-04-22 해결
 
 커밋 `293ed30` (backend) + `cd9973f` (frontend). 설계 옵션 D (백엔드가 결정론적 사실 소유) + UX 옵션 (a)로 구현. legacy `[SOURCES]` 본문 블록 파서는 제거. 본 섹션은 레퍼런스용으로 남김.

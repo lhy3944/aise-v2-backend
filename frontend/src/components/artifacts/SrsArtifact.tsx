@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  Download,
-  FileText,
-  Pencil,
-  RefreshCw,
-  Sparkles,
-} from 'lucide-react';
+import { Download, FileText, Pencil, RefreshCw, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -16,12 +10,6 @@ import {
 } from '@/components/artifacts/workspace/editor/SrsSectionEditor';
 import { MessageResponse } from '@/components/ui/ai-elements/message';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -39,9 +27,9 @@ import { useProjectStore } from '@/stores/project-store';
 import type { SrsDocument, SrsSection } from '@/types/project';
 
 const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
-  completed: { label: '완료', tone: 'bg-green-500/10 text-green-600' },
-  generating: { label: '생성중', tone: 'bg-amber-500/10 text-amber-600' },
-  failed: { label: '실패', tone: 'bg-red-500/10 text-red-600' },
+  completed: { label: '완료', tone: 'bg-green-600 text-white' },
+  generating: { label: '생성중', tone: 'bg-amber-600 text-white' },
+  failed: { label: '실패', tone: 'bg-red-600 text-white' },
 };
 
 function StatusChip({ status }: { status: string }) {
@@ -52,7 +40,7 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        'rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap',
+        'rounded px-2 py-0.5 text-[10px] font-medium whitespace-nowrap',
         cfg.tone,
       )}
     >
@@ -62,18 +50,12 @@ function StatusChip({ status }: { status: string }) {
 }
 
 function toMarkdown(doc: SrsDocument): string {
-  const lines: string[] = [
-    `# SRS v${doc.version}`,
-    '',
-    `생성일: ${formatCreatedAt(doc.created_at)}`,
-    `상태: ${STATUS_LABEL[doc.status]?.label ?? doc.status}`,
-    '',
-  ];
+  // 섹션 content 자체에 이미 헤딩(#/##) 이 포함되어 있으므로 '## title' 미추가.
+  const parts: string[] = [];
   for (const section of doc.sections) {
-    lines.push(`## ${section.title}`, '');
-    if (section.content) lines.push(section.content, '');
+    if (section.content) parts.push(section.content.trim());
   }
-  return lines.join('\n');
+  return parts.join('\n\n') + '\n';
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -243,12 +225,6 @@ export function SrsArtifact() {
     downloadBlob(blob, `SRS-v${selectedDoc.version}.md`);
   };
 
-  const handleDownloadPdf = () => {
-    // 브라우저 인쇄 대화상자로 우회 — "PDF로 저장" 옵션 선택 시 결과물.
-    // 장기적으로는 백엔드 export 엔드포인트로 교체 예정.
-    window.print();
-  };
-
   return (
     <div className='flex h-full flex-col'>
       {/* Header */}
@@ -300,30 +276,16 @@ export function SrsArtifact() {
           </Select>
         </div>
         <div className='flex items-center gap-1.5'>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant='outline'
-                size='sm'
-                className='h-7 gap-1.5 text-xs'
-                disabled={!selectedDoc}
-              >
-                <Download className='size-3' />
-                다운로드
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='end' className='w-44 text-xs'>
-              <DropdownMenuItem
-                className='text-xs'
-                onClick={handleDownloadMarkdown}
-              >
-                Markdown (.md)
-              </DropdownMenuItem>
-              <DropdownMenuItem className='text-xs' onClick={handleDownloadPdf}>
-                PDF — 인쇄로 저장
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-7 gap-1.5 text-xs'
+            disabled={!selectedDoc}
+            onClick={handleDownloadMarkdown}
+          >
+            <Download className='size-3' />
+            Markdown 다운로드
+          </Button>
           <Button
             variant='outline'
             size='sm'

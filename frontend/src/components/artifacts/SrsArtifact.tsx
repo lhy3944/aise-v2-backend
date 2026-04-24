@@ -1,6 +1,12 @@
 'use client';
 
-import { FileText, Pencil, RefreshCw, Sparkles } from 'lucide-react';
+import {
+  Download,
+  FileText,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -10,6 +16,12 @@ import {
 } from '@/components/artifacts/workspace/editor/SrsSectionEditor';
 import { MessageResponse } from '@/components/ui/ai-elements/message';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -27,10 +39,53 @@ import { useProjectStore } from '@/stores/project-store';
 import type { SrsDocument, SrsSection } from '@/types/project';
 
 const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
-  completed: { label: '완료', tone: 'text-green-600' },
-  generating: { label: '생성중', tone: 'text-amber-600' },
-  failed: { label: '실패', tone: 'text-red-500' },
+  completed: { label: '완료', tone: 'bg-green-500/10 text-green-600' },
+  generating: { label: '생성중', tone: 'bg-amber-500/10 text-amber-600' },
+  failed: { label: '실패', tone: 'bg-red-500/10 text-red-600' },
 };
+
+function StatusChip({ status }: { status: string }) {
+  const cfg = STATUS_LABEL[status] ?? {
+    label: status,
+    tone: 'bg-canvas-primary text-fg-muted',
+  };
+  return (
+    <span
+      className={cn(
+        'rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap',
+        cfg.tone,
+      )}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+function toMarkdown(doc: SrsDocument): string {
+  const lines: string[] = [
+    `# SRS v${doc.version}`,
+    '',
+    `생성일: ${formatCreatedAt(doc.created_at)}`,
+    `상태: ${STATUS_LABEL[doc.status]?.label ?? doc.status}`,
+    '',
+  ];
+  for (const section of doc.sections) {
+    lines.push(`## ${section.title}`, '');
+    if (section.content) lines.push(section.content, '');
+  }
+  return lines.join('\n');
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function formatCreatedAt(value: string) {
   try {
@@ -181,12 +236,18 @@ export function SrsArtifact() {
     );
   }
 
-  const statusCfg = selectedDoc
-    ? STATUS_LABEL[selectedDoc.status] ?? {
-        label: selectedDoc.status,
-        tone: 'text-fg-muted',
-      }
-    : null;
+  const handleDownloadMarkdown = () => {
+    if (!selectedDoc) return;
+    const md = toMarkdown(selectedDoc);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    downloadBlob(blob, `SRS-v${selectedDoc.version}.md`);
+  };
+
+  const handleDownloadPdf = () => {
+    // 브라우저 인쇄 대화상자로 우회 — "PDF로 저장" 옵션 선택 시 결과물.
+    // 장기적으로는 백엔드 export 엔드포인트로 교체 예정.
+    window.print();
+  };
 
   return (
     <div className='flex h-full flex-col'>
@@ -197,40 +258,87 @@ export function SrsArtifact() {
             value={selectedSrsId ?? undefined}
             onValueChange={(v) => setSelectedSrsId(v)}
           >
-            <SelectTrigger size='sm' className='h-7 w-[180px] text-xs'>
-              <SelectValue placeholder='버전 선택' />
+            <SelectTrigger
+              size='sm'
+              className='h-7 w-auto min-w-[220px] gap-2 text-xs'
+            >
+              <SelectValue placeholder='버전 선택'>
+                {selectedDoc && (
+                  <span className='flex items-center gap-2'>
+                    <span className='text-fg-primary font-medium'>
+                      v{selectedDoc.version}
+                    </span>
+                    <span className='text-fg-muted whitespace-nowrap'>
+                      {formatCreatedAt(selectedDoc.created_at)}
+                    </span>
+                    <StatusChip status={selectedDoc.status} />
+                  </span>
+                )}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className='min-w-[260px]'>
               {documents.map((doc) => (
-                <SelectItem key={doc.srs_id} value={doc.srs_id} className='text-xs'>
-                  <span className='font-medium'>v{doc.version}</span>
-                  <span className='text-fg-muted ml-2'>
-                    {formatCreatedAt(doc.created_at)}
+                <SelectItem
+                  key={doc.srs_id}
+                  value={doc.srs_id}
+                  className='text-xs'
+                >
+                  <span className='flex w-full items-center gap-2'>
+                    <span className='text-fg-primary font-medium'>
+                      v{doc.version}
+                    </span>
+                    <span className='text-fg-muted whitespace-nowrap'>
+                      {formatCreatedAt(doc.created_at)}
+                    </span>
+                    <span className='ml-auto'>
+                      <StatusChip status={doc.status} />
+                    </span>
                   </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {statusCfg && (
-            <span className={cn('text-[11px] font-medium', statusCfg.tone)}>
-              {statusCfg.label}
-            </span>
-          )}
         </div>
-        <Button
-          variant='outline'
-          size='sm'
-          className='h-7 gap-1.5 text-xs'
-          onClick={handleGenerate}
-          disabled={generating}
-        >
-          {generating ? (
-            <Spinner size='size-3' />
-          ) : (
-            <RefreshCw className='size-3' />
-          )}
-          재생성
-        </Button>
+        <div className='flex items-center gap-1.5'>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant='outline'
+                size='sm'
+                className='h-7 gap-1.5 text-xs'
+                disabled={!selectedDoc}
+              >
+                <Download className='size-3' />
+                다운로드
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' className='w-44 text-xs'>
+              <DropdownMenuItem
+                className='text-xs'
+                onClick={handleDownloadMarkdown}
+              >
+                Markdown (.md)
+              </DropdownMenuItem>
+              <DropdownMenuItem className='text-xs' onClick={handleDownloadPdf}>
+                PDF — 인쇄로 저장
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-7 gap-1.5 text-xs'
+            onClick={handleGenerate}
+            disabled={generating}
+          >
+            {generating ? (
+              <Spinner size='size-3' />
+            ) : (
+              <RefreshCw className='size-3' />
+            )}
+            재생성
+          </Button>
+        </div>
       </div>
 
       {/* Body */}
@@ -273,7 +381,9 @@ export function SrsArtifact() {
             </section>
           ))}
           {selectedDoc && selectedDoc.sections.length === 0 && (
-            <p className='text-fg-muted text-center text-xs'>섹션이 없습니다.</p>
+            <p className='text-fg-muted text-center text-xs'>
+              섹션이 없습니다.
+            </p>
           )}
         </div>
       </ScrollArea>

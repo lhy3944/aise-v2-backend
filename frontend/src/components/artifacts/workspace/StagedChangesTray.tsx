@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import type { PullRequest } from '@/types/project';
 import type { ArtifactDraft } from '@/stores/staging-store';
+import type { PullRequest } from '@/types/project';
 import {
   Check,
   FileDiff,
@@ -128,7 +128,11 @@ export function StagedChangesTray({
             icon={GitBranch}
             trailing={
               staged.length > 0 ? (
-                <Button size='sm' className='h-6 text-[10px]' onClick={onCreatePR}>
+                <Button
+                  size='sm'
+                  className='h-6 text-[10px]'
+                  onClick={onCreatePR}
+                >
                   <GitPullRequest className='size-3' />
                   PR 생성
                 </Button>
@@ -166,7 +170,11 @@ export function StagedChangesTray({
           </Section>
 
           {/* Open PRs */}
-          <Section title='Open PRs' count={openPRs.length} icon={GitPullRequest}>
+          <Section
+            title='Open PRs'
+            count={openPRs.length}
+            icon={GitPullRequest}
+          >
             {prsLoading ? (
               <div className='flex justify-center py-2'>
                 <Spinner size='size-4' className='text-fg-muted' />
@@ -228,7 +236,7 @@ export function StagedChangesTray({
                       onClick={() => onMergePR(pr.pr_id)}
                     >
                       <GitMerge className='size-3' />
-                      머지
+                      Merge
                     </Button>
                   </div>
                 </div>
@@ -251,7 +259,13 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
-function Section({ title, count, icon: Icon, trailing, children }: SectionProps) {
+function Section({
+  title,
+  count,
+  icon: Icon,
+  trailing,
+  children,
+}: SectionProps) {
   return (
     <section className='flex flex-col gap-1.5'>
       <div className='flex items-center gap-1.5'>
@@ -259,7 +273,9 @@ function Section({ title, count, icon: Icon, trailing, children }: SectionProps)
         <span className='text-fg-secondary text-[10px] font-semibold tracking-wider uppercase'>
           {title}
         </span>
-        <span className='text-fg-muted text-[10px] tabular-nums'>({count})</span>
+        <span className='text-fg-muted text-[10px] tabular-nums'>
+          ({count})
+        </span>
         <div className='ml-auto'>{trailing}</div>
       </div>
       <div className='flex flex-col gap-1.5'>{children}</div>
@@ -281,7 +297,13 @@ interface DraftRowProps {
   actions?: React.ReactNode;
 }
 
-function DraftRow({ label, content, originalContent, tone, actions }: DraftRowProps) {
+function DraftRow({
+  label,
+  content,
+  originalContent,
+  tone,
+  actions,
+}: DraftRowProps) {
   const toneCls =
     tone === 'amber'
       ? 'border-amber-500/40 bg-amber-500/5'
@@ -294,7 +316,9 @@ function DraftRow({ label, content, originalContent, tone, actions }: DraftRowPr
         </span>
         <div className='ml-auto flex items-center gap-0.5'>{actions}</div>
       </div>
-      <p className='text-fg-primary line-clamp-2 text-xs leading-snug'>{content}</p>
+      <p className='text-fg-primary line-clamp-2 text-xs leading-snug'>
+        {content}
+      </p>
       {originalContent && originalContent !== content && (
         <p className='text-fg-muted mt-1 line-clamp-1 text-[10px] line-through'>
           {originalContent}
@@ -322,7 +346,9 @@ function IconButton({
       onClick={onClick}
       className={cn(
         'text-fg-muted inline-flex size-5 items-center justify-center rounded transition-colors',
-        destructive ? 'hover:bg-red-500/10 hover:text-red-500' : 'hover:bg-canvas-primary hover:text-fg-primary',
+        destructive
+          ? 'hover:bg-red-500/10 hover:text-red-500'
+          : 'hover:bg-canvas-primary hover:text-fg-primary',
       )}
     >
       <Icon className='size-3' />

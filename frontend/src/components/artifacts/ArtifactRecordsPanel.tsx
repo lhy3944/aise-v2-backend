@@ -1,11 +1,11 @@
 'use client';
 
+import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import {
   ArtifactRecordEditor,
   ArtifactRecordEditorActions,
   type ArtifactRecordEditorValues,
 } from '@/components/artifacts/workspace/editor/ArtifactRecordEditor';
-import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import { WorkspaceStatusBar } from '@/components/artifacts/workspace/WorkspaceStatusBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,7 +79,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const extractError = useArtifactRecordStore((s) => s.extractError);
   const clearCandidates = useArtifactRecordStore((s) => s.clearCandidates);
   const refreshNonce = useArtifactRecordStore((s) => s.refreshNonce);
-  const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(new Set());
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(
+    new Set(),
+  );
   const [approving, setApproving] = useState(false);
 
   // 프로젝트별 bucket — 카운트 및 레코드 편집 UI 용으로만 구독.
@@ -155,14 +157,19 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const filteredRecords =
     sectionFilters.length === 0
       ? records
-      : records.filter((r) => r.section_id && sectionFilters.includes(r.section_id));
+      : records.filter(
+          (r) => r.section_id && sectionFilters.includes(r.section_id),
+        );
 
-  const grouped = filteredRecords.reduce<Record<string, ArtifactRecord[]>>((acc, r) => {
-    const key = r.section_name || '미분류';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(r);
-    return acc;
-  }, {});
+  const grouped = filteredRecords.reduce<Record<string, ArtifactRecord[]>>(
+    (acc, r) => {
+      const key = r.section_name || '미분류';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(r);
+      return acc;
+    },
+    {},
+  );
 
   const handleStatusChange = useCallback(
     async (record: ArtifactRecord, status: ArtifactRecordStatus) => {
@@ -173,7 +180,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
           status,
         );
         setRecords((prev) =>
-          prev.map((r) => (r.artifact_id === updated.artifact_id ? updated : r)),
+          prev.map((r) =>
+            r.artifact_id === updated.artifact_id ? updated : r,
+          ),
         );
       } catch {
         // 글로벌 핸들링
@@ -251,7 +260,6 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const openChangesModal = useCallback(() => {
     overlay.modal({
       title: '변경 내역',
-      description: 'Unstaged · Staged · Open PR 을 한곳에서 관리합니다.',
       size: 'xl',
       content: <ChangesWorkspaceModal projectId={projectId} />,
     });
@@ -278,15 +286,17 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const handleApproveCandidates = useCallback(async () => {
     if (selectedCandidates.size === 0) return;
     setApproving(true);
-    const items: ArtifactRecordCreate[] = Array.from(selectedCandidates).map((idx) => {
-      const c = candidates[idx];
-      return {
-        content: c.content,
-        section_id: c.section_id ?? undefined,
-        source_document_id: c.source_document_id ?? undefined,
-        source_location: c.source_location ?? undefined,
-      };
-    });
+    const items: ArtifactRecordCreate[] = Array.from(selectedCandidates).map(
+      (idx) => {
+        const c = candidates[idx];
+        return {
+          content: c.content,
+          section_id: c.section_id ?? undefined,
+          source_document_id: c.source_document_id ?? undefined,
+          source_location: c.source_location ?? undefined,
+        };
+      },
+    );
 
     try {
       await artifactRecordService.approve(projectId, items);
@@ -298,7 +308,13 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     } finally {
       setApproving(false);
     }
-  }, [projectId, selectedCandidates, candidates, clearCandidates, fetchRecords]);
+  }, [
+    projectId,
+    selectedCandidates,
+    candidates,
+    clearCandidates,
+    fetchRecords,
+  ]);
 
   // 후보가 도착하면 전체 선택 — 렌더 중 setState 패턴으로 cascading render 회피
   const [prevCandidates, setPrevCandidates] = useState(candidates);
@@ -324,8 +340,12 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       return (
         <div className='flex h-full flex-col items-center justify-center p-6 text-center'>
           <Spinner size='size-10' className='text-accent-primary mb-3' />
-          <p className='text-fg-primary text-sm font-medium'>레코드 추출 중...</p>
-          <p className='text-fg-muted mt-1 text-xs'>지식 문서를 분석하고 있습니다</p>
+          <p className='text-fg-primary text-sm font-medium'>
+            레코드 추출 중...
+          </p>
+          <p className='text-fg-muted mt-1 text-xs'>
+            지식 문서를 분석하고 있습니다
+          </p>
         </div>
       );
     }
@@ -348,9 +368,12 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       return (
         <div className='flex h-full flex-col items-center justify-center p-6 text-center'>
           <FileText className='text-fg-muted mb-3 size-10' />
-          <p className='text-fg-secondary text-sm font-medium'>레코드가 없습니다</p>
+          <p className='text-fg-secondary text-sm font-medium'>
+            레코드가 없습니다
+          </p>
           <p className='text-fg-muted mt-1 text-xs'>
-            채팅에서 &quot;레코드 추출&quot;을 실행하면 지식 문서에서 자동으로 추출됩니다.
+            채팅에서 &quot;레코드 추출&quot;을 실행하면 지식 문서에서 자동으로
+            추출됩니다.
           </p>
         </div>
       );
@@ -361,101 +384,117 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
 
   const renderCandidates = () => (
     <div className='flex h-full flex-col'>
-        {/* Header */}
-        <div className='border-line-primary flex items-center justify-between border-b px-4 py-2'>
-          <div className='flex items-center gap-2'>
-            <Database className='text-accent-primary size-4' />
-            <span className='text-fg-primary text-xs font-semibold'>
-              {candidates.length}개 후보 추출됨
-            </span>
-          </div>
-          <div className='flex items-center gap-2'>
-            <Button variant='ghost' size='sm' className='h-7 text-xs' onClick={toggleAllCandidates}>
-              {selectedCandidates.size === candidates.length ? '전체 해제' : '전체 선택'}
-            </Button>
-            <Button
-              size='sm'
-              className='h-7 text-xs'
-              onClick={handleApproveCandidates}
-              disabled={selectedCandidates.size === 0 || approving}
-            >
-              {approving ? <Spinner size='size-3' className='mr-1' /> : null}
-              {selectedCandidates.size}개 승인
-            </Button>
-            <Button
-              variant='ghost'
-              size='sm'
-              className='h-7 text-xs text-red-500'
-              onClick={clearCandidates}
-            >
-              취소
-            </Button>
-          </div>
+      {/* Header */}
+      <div className='border-line-primary flex items-center justify-between border-b px-4 py-2'>
+        <div className='flex items-center gap-2'>
+          <Database className='text-accent-primary size-4' />
+          <span className='text-fg-primary text-xs font-semibold'>
+            {candidates.length}개 후보 추출됨
+          </span>
         </div>
+        <div className='flex items-center gap-2'>
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-7 text-xs'
+            onClick={toggleAllCandidates}
+          >
+            {selectedCandidates.size === candidates.length
+              ? '전체 해제'
+              : '전체 선택'}
+          </Button>
+          <Button
+            size='sm'
+            className='h-7 text-xs'
+            onClick={handleApproveCandidates}
+            disabled={selectedCandidates.size === 0 || approving}
+          >
+            {approving ? <Spinner size='size-3' className='mr-1' /> : null}
+            {selectedCandidates.size}개 승인
+          </Button>
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-7 text-xs text-red-500'
+            onClick={clearCandidates}
+          >
+            취소
+          </Button>
+        </div>
+      </div>
 
-        {/* Candidate list */}
-        <ScrollArea className='min-h-0 flex-1'>
-          <div className='flex flex-col gap-1.5 p-3 pb-4'>
-            {candidates.map((candidate, idx) => {
-              const selected = selectedCandidates.has(idx);
-              return (
-                <button
-                  key={idx}
-                  onClick={() => toggleCandidate(idx)}
+      {/* Candidate list */}
+      <ScrollArea className='min-h-0 flex-1'>
+        <div className='flex flex-col gap-1.5 p-3 pb-4'>
+          {candidates.map((candidate, idx) => {
+            const selected = selectedCandidates.has(idx);
+            return (
+              <button
+                key={idx}
+                onClick={() => toggleCandidate(idx)}
+                className={cn(
+                  'group flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors',
+                  selected
+                    ? 'border-fg-primary/30 bg-canvas-primary/60'
+                    : 'border-line-primary hover:border-fg-muted/50 hover:bg-canvas-primary/30',
+                )}
+              >
+                <div
                   className={cn(
-                    'group flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors',
+                    'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
                     selected
-                      ? 'border-fg-primary/30 bg-canvas-primary/60'
-                      : 'border-line-primary hover:border-fg-muted/50 hover:bg-canvas-primary/30',
+                      ? 'border-fg-primary bg-fg-primary text-canvas-primary'
+                      : 'border-fg-muted/50 group-hover:border-fg-muted',
                   )}
                 >
-                  <div
-                    className={cn(
-                      'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
-                      selected
-                        ? 'border-fg-primary bg-fg-primary text-canvas-primary'
-                        : 'border-fg-muted/50 group-hover:border-fg-muted',
-                    )}
-                  >
-                    {selected && <Check className='size-3' strokeWidth={3} />}
-                  </div>
-                  <div className='min-w-0 flex-1 space-y-1.5'>
-                    {(candidate.section_name || candidate.confidence_score != null) && (
-                      <div className='text-fg-muted flex items-center gap-2 text-[11px]'>
-                        {candidate.section_name && (
-                          <span className='text-fg-secondary font-medium'>
-                            {candidate.section_name}
-                          </span>
-                        )}
-                        {candidate.section_name && candidate.confidence_score != null && (
+                  {selected && <Check className='size-3' strokeWidth={3} />}
+                </div>
+                <div className='min-w-0 flex-1 space-y-1.5'>
+                  {(candidate.section_name ||
+                    candidate.confidence_score != null) && (
+                    <div className='text-fg-muted flex items-center gap-2 text-[11px]'>
+                      {candidate.section_name && (
+                        <span className='text-fg-secondary font-medium'>
+                          {candidate.section_name}
+                        </span>
+                      )}
+                      {candidate.section_name &&
+                        candidate.confidence_score != null && (
                           <span className='opacity-40'>·</span>
                         )}
-                        <ConfidenceIndicator score={candidate.confidence_score} />
-                      </div>
-                    )}
-                    <p className='text-fg-primary text-sm leading-relaxed'>{candidate.content}</p>
-                    {candidate.source_document_name && (
-                      <p className='text-fg-muted truncate text-[11px]'>
-                        {candidate.source_document_name}
-                        {candidate.source_location && (
-                          <span className='opacity-70'> · {candidate.source_location}</span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </div>
+                      <ConfidenceIndicator score={candidate.confidence_score} />
+                    </div>
+                  )}
+                  <p className='text-fg-primary text-sm leading-relaxed'>
+                    {candidate.content}
+                  </p>
+                  {candidate.source_document_name && (
+                    <p className='text-fg-muted truncate text-[11px]'>
+                      {candidate.source_document_name}
+                      {candidate.source_location && (
+                        <span className='opacity-70'>
+                          {' '}
+                          · {candidate.source_location}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </ScrollArea>
+    </div>
   );
 
   const renderRecordList = () => (
     <div className='flex h-full flex-col'>
       {/* Header */}
       <div className='border-line-primary flex items-center justify-between border-b px-4 py-2'>
-        <span className='text-fg-primary text-xs font-semibold'>{records.length}개 레코드</span>
+        <span className='text-fg-primary text-xs font-semibold'>
+          {records.length}개 레코드
+        </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant='ghost' size='sm' className='h-7 gap-1.5 text-xs'>
@@ -533,7 +572,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                         {record.confidence_score != null && (
                           <>
                             <span className='opacity-40'>·</span>
-                            <ConfidenceIndicator score={record.confidence_score} />
+                            <ConfidenceIndicator
+                              score={record.confidence_score}
+                            />
                           </>
                         )}
                         <span
@@ -548,14 +589,19 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                       </div>
 
                       {/* Content (드래프트가 있으면 로컬 편집본 우선 표시) */}
-                      <p className='text-fg-primary text-sm leading-relaxed'>{displayContent}</p>
+                      <p className='text-fg-primary text-sm leading-relaxed'>
+                        {displayContent}
+                      </p>
 
                       {/* Source */}
                       {record.source_document_name && (
                         <p className='text-fg-muted truncate text-[11px]'>
                           {record.source_document_name}
                           {record.source_location && (
-                            <span className='opacity-70'> · {record.source_location}</span>
+                            <span className='opacity-70'>
+                              {' '}
+                              · {record.source_location}
+                            </span>
                           )}
                         </p>
                       )}
@@ -576,7 +622,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                             variant='ghost'
                             size='sm'
                             className='h-6 gap-1 px-2 text-[10px] text-green-600'
-                            onClick={() => handleStatusChange(record, 'approved')}
+                            onClick={() =>
+                              handleStatusChange(record, 'approved')
+                            }
                           >
                             <CheckCircle2 className='size-3' />
                             승인
@@ -587,7 +635,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                             variant='ghost'
                             size='sm'
                             className='h-6 gap-1 px-2 text-[10px] text-amber-600'
-                            onClick={() => handleStatusChange(record, 'excluded')}
+                            onClick={() =>
+                              handleStatusChange(record, 'excluded')
+                            }
                           >
                             <XCircle className='size-3' />
                             제외

@@ -76,6 +76,14 @@ class AgentState(TypedDict, total=False):
     # SrsGeneratorAgent output: {srs_id, version, section_count,
     # based_on_records_count}
     srs_generated: dict[str, Any] | None
+    # CriticAgent output: citation integrity + sanity checks
+    # {
+    #   "passed": bool,
+    #   "issues": list[str],
+    #   "checked_citations": int,
+    #   "valid_citations": int,
+    # }
+    critic_report: dict[str, Any] | None
 
     # error / control
     error: str | None

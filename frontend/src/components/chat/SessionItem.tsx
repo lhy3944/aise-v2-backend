@@ -7,6 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useOverlay } from '@/hooks/useOverlay';
 import { cn } from '@/lib/utils';
 import type { SessionResponse } from '@/services/session-service';
 import {
@@ -34,12 +35,21 @@ export function SessionItem({
   onRename,
 }: SessionItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const overlay = useOverlay();
 
   const handleRename = () => {
-    const newTitle = prompt('새 이름을 입력하세요', session.title);
-    if (newTitle && newTitle !== session.title) {
-      onRename?.(newTitle);
-    }
+    overlay.prompt({
+      title: '세션 이름 변경',
+      label: '새 이름',
+      placeholder: '새 이름을 입력하세요',
+      defaultValue: session.title,
+      requiredMessage: '이름을 입력하세요',
+      maxLength: 100,
+      confirmLabel: '변경',
+      onConfirm: (value) => {
+        if (value !== session.title) onRename?.(value);
+      },
+    });
   };
 
   return (

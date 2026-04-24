@@ -1,12 +1,12 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { streamExtractRecords } from '@/services/record-service';
+import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
+import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import { usePanelStore, LayoutMode } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useReadinessStore } from '@/stores/readiness-store';
-import { useRecordStore } from '@/stores/record-store';
 import { BookOpen, Database, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -21,10 +21,10 @@ interface ActionContext {
 export function ActionCards({ onAction }: ActionCardsProps) {
   const currentProject = useProjectStore((s) => s.currentProject);
   const readiness = useReadinessStore((s) => s.data);
-  const extracting = useRecordStore((s) => s.extracting);
-  const setExtracting = useRecordStore((s) => s.setExtracting);
-  const setCandidates = useRecordStore((s) => s.setCandidates);
-  const setExtractError = useRecordStore((s) => s.setExtractError);
+  const extracting = useArtifactRecordStore((s) => s.extracting);
+  const setExtracting = useArtifactRecordStore((s) => s.setExtracting);
+  const setCandidates = useArtifactRecordStore((s) => s.setCandidates);
+  const setExtractError = useArtifactRecordStore((s) => s.setExtractError);
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
   const setRightPanelPreset = usePanelStore((s) => s.setRightPanelPreset);
 
@@ -38,7 +38,7 @@ export function ActionCards({ onAction }: ActionCardsProps) {
     setExtracting(true);
     onAction('레코드 추출을 시작합니다...');
 
-    streamExtractRecords(currentProject.project_id, undefined, {
+    streamExtractArtifactRecords(currentProject.project_id, undefined, {
       onDone: (candidates) => {
         setCandidates(candidates);
         // Records 탭으로 전환 + 우패널 열기

@@ -33,7 +33,13 @@ interface SessionListProps {
 export function SessionList({ onSessionSelect }: SessionListProps) {
   const router = useRouter();
   const params = useParams();
-  const activeSessionId = params?.sessionId as string | undefined;
+  // `/agent/[[...sessionId]]`는 catch-all 라우트라 params.sessionId가 배열이다.
+  // 그냥 `as string`으로 캐스트하면 `"id" === ["id"]` 비교가 false가 되어
+  // active 하이라이트가 안 된다.
+  const rawSessionId = params?.sessionId;
+  const activeSessionId = Array.isArray(rawSessionId)
+    ? rawSessionId[0]
+    : (rawSessionId as string | undefined);
 
   const currentProject = useProjectStore((s) => s.currentProject);
   const sessionListNonce = useChatStore((s) => s.sessionListNonce);

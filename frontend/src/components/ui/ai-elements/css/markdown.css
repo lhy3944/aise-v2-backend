@@ -277,19 +277,63 @@
   border-radius: 0 !important;
 }
 
-/* ── 테이블 ── */
+/* ── 테이블 ──
+ * Streamdown 2.5.0 DOM:
+ *   [data-streamdown='table-wrapper']
+ *     ├─ <div> (툴바: copy/download/fullscreen)
+ *     └─ <div> (스크롤 컨테이너)  →  <table data-streamdown='table'>
+ *
+ * 규칙:
+ * 1. border·radius는 wrapper 한 곳에만. 툴바/스크롤 div/테이블/셀은
+ *    모두 border 제거 — 이중 border 방지.
+ * 2. wrapper의 Streamdown 기본 padding(p-2)/gap(gap-2)을 비워 툴바와
+ *    테이블 헤더가 shell에 밀착되도록 한다 (위쪽만 두껍게 보이는
+ *    비대칭 해소).
+ * 3. 툴바는 자체 padding을 상하 동일(0.375rem)로 주고 하단에 구분선을
+ *    두어 테이블 헤더와 시각적으로 분리한다.
+ */
 
 .markdown-body [data-streamdown='table-wrapper'] {
-  border: none !important;
+  border: 1px solid
+    var(
+      --md-shell-border,
+      var(--md-code-shell-border, var(--color-line-primary))
+    );
   outline: none !important;
-  background: transparent !important;
+  background: transparent;
   box-shadow: none !important;
-  border-radius: 0 !important;
+  border-radius: 6px;
   padding: 0 !important;
+  gap: 0 !important;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
+/* 툴바 div: wrapper 직속 자식 중 table을 갖지 않는 쪽 */
+.markdown-body
+  [data-streamdown='table-wrapper']
+  > div:not(:has([data-streamdown='table'])) {
+  padding: 0.375rem 0.5rem !important;
+  border: none !important;
+  border-bottom: 1px solid var(--md-table-border, var(--color-line-primary)) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+/* 스크롤 컨테이너 div: wrapper 직속 자식 중 table을 갖는 쪽 */
+.markdown-body
+  [data-streamdown='table-wrapper']
+  > div:has([data-streamdown='table']) {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+/* 기존 버전에서 쓰던 명시적 래퍼 이름들 — 혹시 존재해도 투명화 */
 .markdown-body
   :is(
     [data-streamdown='table-block'],
@@ -307,15 +351,9 @@
 .markdown-body [data-streamdown='table'] {
   width: 100%;
   max-width: 100%;
-  border-spacing: 0;
-  border-collapse: separate;
-  border: 1px solid
-    var(
-      --md-shell-border,
-      var(--md-code-shell-border, var(--color-line-primary))
-    );
-  border-radius: var(--md-shell-radius, 12px);
-  overflow: hidden;
+  border: none !important;
+  border-collapse: collapse;
+  border-radius: 0 !important;
   font-size: 0.875em;
   table-layout: fixed;
 }
@@ -323,6 +361,7 @@
 .markdown-body [data-streamdown='table-header-cell'],
 .markdown-body [data-streamdown='table-cell'] {
   padding: 0.5em 0.75em;
+  border: none;
   border-bottom: 1px solid var(--md-table-border, var(--color-line-primary));
   text-align: left;
 }
@@ -330,6 +369,7 @@
 .markdown-body [data-streamdown='table-header-cell'] {
   font-weight: 600;
   background-color: var(--color-canvas-surface);
+  border-radius: 0 !important;
 }
 
 .markdown-body [data-streamdown='table-row']:nth-child(even) {
@@ -346,10 +386,12 @@
   border-bottom: none;
 }
 
-/* 테이블 컨트롤 버튼: border 제거 */
+/* 테이블 컨트롤 버튼: border 제거, 상하 padding 동일 */
 .markdown-body [data-streamdown='table-wrapper'] button {
   border: none !important;
   box-shadow: none !important;
+  padding: 0.25rem !important;
+  line-height: 1;
 }
 
 /* ── 머메이드 ── */
@@ -371,10 +413,21 @@
   cursor: pointer;
   font-weight: 600;
   font-size: 0.8em;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   vertical-align: middle;
   line-height: 1;
-  transition: color 0.15s;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition:
+    color 0.15s,
+    text-decoration-thickness 0.15s;
+  outline: none;
+}
+
+.citation-inline:hover,
+.citation-inline:focus-visible {
+  text-decoration-thickness: 2px;
 }
 
 /* ── 간격 보정 ── */
@@ -481,7 +534,7 @@
       --md-shell-border,
       var(--md-code-shell-border, var(--color-line-primary))
     );
-  border-radius: var(--md-shell-radius, 12px);
+  border-radius: 6px;
   overflow: hidden;
   font-size: 0.875em;
   margin-bottom: 1em;

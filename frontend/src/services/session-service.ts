@@ -17,7 +17,14 @@ export interface SessionMessageResponse {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  tool_calls: Array<{ name: string; arguments: Record<string, unknown> }> | null;
+  tool_calls: Array<{
+    name: string;
+    arguments: Record<string, unknown>;
+    /** tool_result에서 매칭된 값 — 없을 수도 있음 */
+    status?: 'success' | 'error';
+    duration_ms?: number;
+    result?: Record<string, unknown> | null;
+  }> | null;
   tool_data: Record<string, unknown> | null;
   created_at: string;
 }

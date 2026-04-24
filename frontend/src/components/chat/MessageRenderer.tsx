@@ -1,5 +1,7 @@
 'use client';
 
+import { CitationAwareSpan } from '@/components/chat/CitationAwareSpan';
+import { CitationSourcesContext } from '@/components/chat/CitationContext';
 import { ExtractedRequirements } from '@/components/chat/ExtractedRequirements';
 import {
   Questionnaire,
@@ -18,9 +20,9 @@ import { ToolCall } from '@/components/ui/ai-elements/tool-call';
 import { WaveDots } from '@/components/ui/ai-elements/wave-dots';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
+import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
 import type { ChatMessage } from '@/stores/chat-store';
-import { usePanelStore } from '@/stores/panel-store';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useMemo } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
 
 interface MessageRendererProps {
@@ -191,84 +193,39 @@ const MessageItem = memo(
     }, [message.content, message.status, isUser]);
 
     const displayContent = parsed.cleanContent;
-    const sources = message.sources ?? [];
+    // message.sources가 undefined일 때 매 렌더마다 새 배열이 만들어져
+    // 아래 useMemo deps가 흔들리는 것을 방지.
+    const sources = useMemo(
+      () => message.sources ?? [],
+      [message.sources],
+    );
 
-    const openSourceViewer = usePanelStore((s) => s.openSourceViewer);
-    const contentRef = useRef<HTMLDivElement>(null);
+    // sources에 존재하는 ref 번호 집합 — rehype 플러그인이 이 집합에
+    // 포함된 [N]만 클릭 가능한 span으로 변환.
+    const allowedRefs = useMemo(
+      () => new Set(sources.map((s) => s.ref)),
+      [sources],
+    );
 
-    // 렌더 후 DOM에서 [N] 텍스트를 클릭 가능한 span으로 래핑
-    useEffect(() => {
-      const el = contentRef.current;
-      if (!el || sources.length === 0) return;
-
-      const sourceMap = new Map(sources.map((s) => [s.ref, s]));
-
-      // 이전 래핑 복원 (멱등성 보장)
-      el.querySelectorAll('.citation-inline').forEach((span) => {
-        span.replaceWith(document.createTextNode(span.textContent || ''));
-      });
-      el.normalize();
-
-      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      const nodes: Text[] = [];
-      let n: Node | null;
-      while ((n = walker.nextNode())) {
-        if (/\[\d+\]/.test(n.textContent || '')) {
-          if ((n as Text).parentElement?.closest('pre, code')) continue;
-          nodes.push(n as Text);
-        }
+    // 답변 텍스트에서 실제 등장한 [N] 번호 집합 —
+    // SourceReference가 인용되지 않은 문서를 걸러내는 데 사용.
+    const usedRefs = useMemo(() => {
+      const out = new Set<number>();
+      for (const m of displayContent.matchAll(/\[(\d+)\]/g)) {
+        const ref = Number(m[1]);
+        if (allowedRefs.has(ref)) out.add(ref);
       }
+      return out;
+    }, [displayContent, allowedRefs]);
 
-      for (const textNode of nodes) {
-        const text = textNode.textContent || '';
-        const frag = document.createDocumentFragment();
-        let lastIdx = 0;
-        let hasMatch = false;
+    const rehypePlugins = useMemo(
+      () => (allowedRefs.size > 0 ? [createCitationPlugin(allowedRefs)] : undefined),
+      [allowedRefs],
+    );
 
-        for (const m of text.matchAll(/\[(\d+)\]/g)) {
-          const ref = parseInt(m[1]);
-          if (!sourceMap.has(ref)) continue;
-          hasMatch = true;
-          if (m.index > lastIdx) {
-            frag.appendChild(
-              document.createTextNode(text.slice(lastIdx, m.index)),
-            );
-          }
-          const span = document.createElement('span');
-          span.textContent = m[0];
-          span.className = 'citation-inline';
-          span.dataset.citationRef = String(ref);
-          frag.appendChild(span);
-          lastIdx = m.index + m[0].length;
-        }
-
-        if (!hasMatch) continue;
-        if (lastIdx < text.length) {
-          frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-        }
-        textNode.parentNode?.replaceChild(frag, textNode);
-      }
-    }, [displayContent, sources]);
-
-    const handleCitationClick = useCallback(
-      (e: React.MouseEvent) => {
-        const span = (e.target as HTMLElement).closest<HTMLElement>(
-          '[data-citation-ref]',
-        );
-        if (!span) return;
-        const refNum = parseInt(span.dataset.citationRef || '');
-        const source = sources.find((s) => s.ref === refNum);
-        if (source) {
-          openSourceViewer({
-            documentId: source.document_id,
-            documentName: source.document_name,
-            chunkIndex: source.chunk_index,
-            refNumber: source.ref,
-            fileType: source.file_type,
-          });
-        }
-      },
-      [sources, openSourceViewer],
+    const mdComponents = useMemo(
+      () => (allowedRefs.size > 0 ? { span: CitationAwareSpan } : undefined),
+      [allowedRefs],
     );
 
     return (
@@ -278,25 +235,29 @@ const MessageItem = memo(
             <MessageBubble>{message.content}</MessageBubble>
           ) : (
             <>
-              {/* 스트림 응답 대기 중 shimmer */}
-              {showCursor && !message.content && (
-                <div className="mb-3 flex items-center gap-2">
-                  <Spinner variant="ring" />
-                  <Shimmer className="text-sm" duration={1.5} spread={1.5}>
-                    응답을 생성하고 있습니다
-                  </Shimmer>
-                  <WaveDots />
-                </div>
-              )}
-
-              {/* 첫 세션 응답 대기 중 skeleton — 첫 메시지 도착 전까지 */}
-              {showCursor && !message.content && firstResponseSkeleton && (
-                <div className="flex w-full flex-col gap-2">
-                  <Skeleton className="h-4 w-[85%]" />
-                  <Skeleton className="h-4 w-[70%]" />
-                  <Skeleton className="h-4 w-[55%]" />
-                </div>
-              )}
+              {/* 응답 대기 인디케이터 — 토큰/툴콜 어느 것도 아직 도착 전일
+                  때만. 툴콜이 먼저 오면 그 카드가 진행 상태를 보여주므로
+                  중복 표시를 피한다. 첫 세션의 첫 응답이면 skeleton도 함께. */}
+              {showCursor &&
+                !message.content &&
+                (!message.toolCalls || message.toolCalls.length === 0) && (
+                  <>
+                    <div className="mb-3 flex items-center gap-2">
+                      <Spinner variant="ring" />
+                      <Shimmer className="text-sm" duration={1.5} spread={1.5}>
+                        응답을 생성하고 있습니다
+                      </Shimmer>
+                      <WaveDots />
+                    </div>
+                    {firstResponseSkeleton && (
+                      <div className="flex w-full flex-col gap-2">
+                        <Skeleton className="h-4 w-[85%]" />
+                        <Skeleton className="h-4 w-[70%]" />
+                        <Skeleton className="h-4 w-[55%]" />
+                      </div>
+                    )}
+                  </>
+                )}
 
               {/* Tool Calls — SSE 도착 순서상 token보다 먼저 오므로 상단 */}
               {message.toolCalls && message.toolCalls.length > 0 && (
@@ -321,31 +282,31 @@ const MessageItem = memo(
               )}
 
               {/* 텍스트 응답 (마크다운) — 인라인 출처 클릭 지원.
-                  sources 데이터는 스트리밍 중에도 message.sources에 세팅돼
-                  있어 [N] 클릭 wiring은 즉시 동작. 아래 SourceReference
-                  카드는 스트리밍 완료 후에만 렌더 → 답변이 먼저 타이핑되고
+                  rehype 플러그인이 AST 단계에서 [N]을 span 요소로 치환하므로
+                  스트리밍 재렌더에도 링크가 유지된다. 하단 출처 카드는
+                  스트리밍 완료 후에만 렌더 → 답변이 먼저 타이핑되고
                   출처 리스트는 뒤따라 나타남. */}
               {displayContent && (
-                <div
-                  ref={contentRef}
-                  className="w-full min-w-0"
-                  onClick={sources.length > 0 ? handleCitationClick : undefined}
-                >
-                  <MessageResponse
-                    streaming={
-                      message.status === 'streaming' && !!displayContent
-                    }
-                    className="w-full"
-                  >
-                    {displayContent}
-                  </MessageResponse>
+                <div className="w-full min-w-0">
+                  <CitationSourcesContext.Provider value={sources}>
+                    <MessageResponse
+                      streaming={
+                        message.status === 'streaming' && !!displayContent
+                      }
+                      className="w-full"
+                      rehypePlugins={rehypePlugins}
+                      components={mdComponents}
+                    >
+                      {displayContent}
+                    </MessageResponse>
+                  </CitationSourcesContext.Provider>
                 </div>
               )}
 
-              {/* 출처 링크 — 스트리밍 완료 후에만 렌더 */}
-              {!showCursor && sources.length > 0 && (
+              {/* 출처 링크 — 스트리밍 완료 후, 본문에 실제 인용된 문서만 표시 */}
+              {!showCursor && sources.length > 0 && usedRefs.size > 0 && (
                 <div className="w-full min-w-0">
-                  <SourceReference sources={sources} />
+                  <SourceReference sources={sources} usedRefs={usedRefs} />
                 </div>
               )}
 

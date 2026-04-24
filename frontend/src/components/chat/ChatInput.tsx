@@ -6,12 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { streamExtractRecords } from '@/services/record-service';
+import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
+import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useReadinessStore } from '@/stores/readiness-store';
-import { useRecordStore } from '@/stores/record-store';
 import { BookOpen, Database, FileText, Loader2, MicIcon, PaperclipIcon, RefreshCw, Zap } from 'lucide-react';
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -179,10 +179,10 @@ function VoiceButton() {
 function ActionsButton({ onAction }: { onAction?: (text: string) => void }) {
   const currentProject = useProjectStore((s) => s.currentProject);
   const readiness = useReadinessStore((s) => s.data);
-  const extracting = useRecordStore((s) => s.extracting);
-  const setExtracting = useRecordStore((s) => s.setExtracting);
-  const setCandidates = useRecordStore((s) => s.setCandidates);
-  const setExtractError = useRecordStore((s) => s.setExtractError);
+  const extracting = useArtifactRecordStore((s) => s.extracting);
+  const setExtracting = useArtifactRecordStore((s) => s.setExtracting);
+  const setCandidates = useArtifactRecordStore((s) => s.setCandidates);
+  const setExtractError = useArtifactRecordStore((s) => s.setExtractError);
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
   const setRightPanelPreset = usePanelStore((s) => s.setRightPanelPreset);
 
@@ -192,7 +192,7 @@ function ActionsButton({ onAction }: { onAction?: (text: string) => void }) {
     if (!currentProject || extracting) return;
     setExtracting(true);
     onAction?.('레코드 추출을 시작합니다...');
-    streamExtractRecords(currentProject.project_id, undefined, {
+    streamExtractArtifactRecords(currentProject.project_id, undefined, {
       onDone: (candidates) => {
         setCandidates(candidates);
         setActiveTab('records');

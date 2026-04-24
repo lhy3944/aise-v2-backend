@@ -1,22 +1,23 @@
 'use client';
 
 import { streamAgentChat } from '@/services/agent-service';
-import { streamExtractRecords } from '@/services/record-service';
+import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
+import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
+import type { SourceRef } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
-import { useRecordStore } from '@/stores/record-store';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 /** 백엔드 도구 결과를 사용자 친화적 문자열로 포맷 */
-function _formatToolResult(name: string, result: Record<string, unknown>): string {
+function formatToolResult(name: string, result: Record<string, unknown>): string {
   switch (name) {
     case 'create_record':
       return `${result.display_id} 생성 완료`;
@@ -33,8 +34,10 @@ function _formatToolResult(name: string, result: Record<string, unknown>): strin
         ? `SRS v${result.version} 생성 완료`
         : 'SRS 생성 완료';
     case 'knowledge_qa': {
+      // sources_count는 검색된 top-k 청크 개수 — "문서"라고 표기하면 오해를 준다
+      // (같은 문서의 여러 청크가 여러 번 카운트되므로). 청크 개수로 표기.
       const count = result.sources_count;
-      return typeof count === 'number' ? `문서 ${count}건 참조` : '완료';
+      return typeof count === 'number' ? `청크 ${count}개 참조` : '완료';
     }
     case 'requirement': {
       const count = result.records_count;
@@ -112,9 +115,9 @@ export function useChatStream(sessionId?: string) {
   }, [isLoadingMessages, messages.length]);
 
   // Record store
-  const setExtracting = useRecordStore((s) => s.setExtracting);
-  const setCandidates = useRecordStore((s) => s.setCandidates);
-  const setExtractError = useRecordStore((s) => s.setExtractError);
+  const setExtracting = useArtifactRecordStore((s) => s.setExtracting);
+  const setCandidates = useArtifactRecordStore((s) => s.setCandidates);
+  const setExtractError = useArtifactRecordStore((s) => s.setExtractError);
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
 
   // 세션 메시지 로드
@@ -128,22 +131,60 @@ export function useChatStream(sessionId?: string) {
       .get(activeSessionId)
       .then((detail) => {
         if (cancelled) return;
-        const msgs: ChatMessage[] = detail.messages.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          toolCalls: m.tool_calls?.map((tc) => ({
-            name: tc.name,
-            arguments: tc.arguments,
-            state: 'completed' as const,
-          })),
-          toolData: m.tool_data ? { type: 'requirements' as const, data: m.tool_data } : undefined,
-          createdAt: m.created_at,
-        }));
+        const msgs: ChatMessage[] = detail.messages.map((m) => {
+          // backend가 tool_data에 { sources } 등 다양한 보조 데이터를 넣는다.
+          // 인용 복원을 위해 sources는 message.sources로 끌어올리고, 그 외
+          // 페이로드가 있을 때만 toolData(requirements 스키마)로 래핑한다.
+          const td = m.tool_data;
+          const sourcesField =
+            td && 'sources' in td
+              ? (td.sources as SourceRef[] | null | undefined)
+              : undefined;
+          const tdEntries = td
+            ? Object.entries(td).filter(([k]) => k !== 'sources')
+            : [];
+          const tdRest = Object.fromEntries(tdEntries);
+          const hasOtherToolData = tdEntries.length > 0;
+
+          return {
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            toolCalls: m.tool_calls?.map((tc) => {
+              const state: 'completed' | 'error' =
+                tc.status === 'error' ? 'error' : 'completed';
+              const resultText =
+                tc.result && typeof tc.result === 'object'
+                  ? formatToolResult(
+                      tc.name,
+                      tc.result as Record<string, unknown>,
+                    )
+                  : undefined;
+              return {
+                name: tc.name,
+                arguments: tc.arguments,
+                state,
+                result: state === 'completed' ? resultText : undefined,
+                durationMs: tc.duration_ms,
+              };
+            }),
+            toolData: hasOtherToolData
+              ? { type: 'requirements' as const, data: tdRest }
+              : undefined,
+            sources: sourcesField ?? undefined,
+            createdAt: m.created_at,
+          };
+        });
         setMessages(activeSessionId, msgs);
         setIsLoadingMessages(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        // 에러를 조용히 삼키면 empty screen으로 빠지는 현상의 원인 파악이
+        // 어렵다. 진단을 위해 콘솔에 남기고 loading 플래그만 해제한다.
+        console.error(
+          `[useChatStream] session load failed (sessionId=${activeSessionId})`,
+          err,
+        );
         if (!cancelled) setIsLoadingMessages(false);
       });
 
@@ -160,7 +201,7 @@ export function useChatStream(sessionId?: string) {
       setRightPanelPreset(LayoutMode.SPLIT);
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
-      streamExtractRecords(projectId, undefined, {
+      streamExtractArtifactRecords(projectId, undefined, {
         onDone: (candidates) => {
           setCandidates(candidates);
           updateLast(sid, (msg) => ({
@@ -259,7 +300,7 @@ export function useChatStream(sessionId?: string) {
   );
 
   // Records 갱신 트리거
-  const bumpRefresh = useRecordStore((s) => s.bumpRefresh);
+  const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
 
   const clearBufferedTokens = useCallback((sid: string) => {
     tokenBufferRef.current.delete(sid);
@@ -401,7 +442,7 @@ export function useChatStream(sessionId?: string) {
             ? {
                 ...tc,
                 state: newState,
-                result: isError ? undefined : _formatToolResult(name, result),
+                result: isError ? undefined : formatToolResult(name, result),
                 error: isError ? (result.error as string | undefined) : undefined,
                 durationMs: durationMs ?? tc.durationMs,
               }

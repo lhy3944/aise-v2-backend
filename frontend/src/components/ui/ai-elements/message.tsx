@@ -16,6 +16,7 @@ import { createMermaidPlugin } from '@streamdown/mermaid';
 import { Bot, Check, Copy, User } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import {
+  type ComponentProps,
   type ReactNode,
   memo,
   useCallback,
@@ -23,7 +24,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Streamdown } from 'streamdown';
+import { Streamdown, type Components } from 'streamdown';
+
+type StreamdownRehypePlugins = ComponentProps<typeof Streamdown>['rehypePlugins'];
 
 // ── Message Container ──
 
@@ -115,6 +118,10 @@ interface MessageResponseProps {
   children: string;
   streaming?: boolean;
   className?: string;
+  /** Streamdown에 추가 주입할 rehype 플러그인(예: 인용 번호 변환). */
+  rehypePlugins?: StreamdownRehypePlugins;
+  /** Streamdown의 tag 렌더러 오버라이드. */
+  components?: Components;
 }
 
 export const MessageResponse = memo(
@@ -122,6 +129,8 @@ export const MessageResponse = memo(
     children: content,
     streaming,
     className,
+    rehypePlugins,
+    components,
   }: MessageResponseProps) {
     const { resolvedTheme } = useTheme();
     const plugins = resolvedTheme === 'dark' ? pluginsDark : pluginsLight;
@@ -146,6 +155,8 @@ export const MessageResponse = memo(
             parseIncompleteMarkdown={!!streaming}
             className='w-full **:data-language:w-full [&_svg]:max-w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
             plugins={plugins}
+            rehypePlugins={rehypePlugins}
+            components={components}
             mermaid={{
               config: {
                 themeVariables: {
@@ -178,7 +189,10 @@ export const MessageResponse = memo(
     );
   },
   (prev, next) =>
-    prev.children === next.children && prev.streaming === next.streaming,
+    prev.children === next.children &&
+    prev.streaming === next.streaming &&
+    prev.rehypePlugins === next.rehypePlugins &&
+    prev.components === next.components,
 );
 
 // ── User Bubble ──

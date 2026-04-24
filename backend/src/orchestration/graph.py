@@ -215,6 +215,12 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
     extracted = state.get("records_extracted")
     if extracted is not None:
         payload["records_count"] = len(extracted)
+    srs = state.get("srs_generated")
+    if isinstance(srs, dict):
+        if "section_count" in srs:
+            payload["section_count"] = srs["section_count"]
+        if "version" in srs:
+            payload["srs_version"] = srs["version"]
     return payload
 
 

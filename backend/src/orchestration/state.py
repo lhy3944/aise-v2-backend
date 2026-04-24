@@ -73,6 +73,9 @@ class AgentState(TypedDict, total=False):
     sources: list[dict[str, Any]] | None
     # RequirementAgent output: candidate records pending approval.
     records_extracted: list[dict[str, Any]] | None
+    # SrsGeneratorAgent output: {srs_id, version, section_count,
+    # based_on_records_count}
+    srs_generated: dict[str, Any] | None
 
     # error / control
     error: str | None

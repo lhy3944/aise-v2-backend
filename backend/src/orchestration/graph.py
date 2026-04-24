@@ -221,6 +221,12 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
             payload["section_count"] = srs["section_count"]
         if "version" in srs:
             payload["srs_version"] = srs["version"]
+    tcs = state.get("testcases_generated")
+    if isinstance(tcs, dict):
+        if "testcase_count" in tcs:
+            payload["testcase_count"] = tcs["testcase_count"]
+        if "srs_version" in tcs:
+            payload["srs_version"] = tcs["srs_version"]
     critic = state.get("critic_report")
     if isinstance(critic, dict):
         if "passed" in critic:

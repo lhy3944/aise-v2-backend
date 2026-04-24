@@ -18,10 +18,6 @@ import {
 } from 'lucide-react';
 
 interface StagedChangesTrayProps {
-  /** 패널 표시 여부 */
-  open: boolean;
-  onClose: () => void;
-
   unstaged: ArtifactDraft[];
   staged: ArtifactDraft[];
   openPRs: PullRequest[];
@@ -46,9 +42,14 @@ interface StagedChangesTrayProps {
   onShowDiff: (pr: PullRequest) => void;
 }
 
+/**
+ * Unstaged / Staged / Open PRs 3-way 작업 트레이.
+ *
+ * Modal content 로 사용되도록 외곽 chrome(border / 고정 width) 은 제거하고
+ * 상위 Modal 의 body 영역에 꽉 차게 렌더된다. 제목과 닫기 버튼은 Modal 이
+ * 제공하므로 여기서는 3 섹션만 세로 스택.
+ */
 export function StagedChangesTray({
-  open,
-  onClose,
   unstaged,
   staged,
   openPRs,
@@ -65,28 +66,13 @@ export function StagedChangesTray({
   onMergePR,
   onShowDiff,
 }: StagedChangesTrayProps) {
-  if (!open) return null;
-
   const resolveLabel = (artifactId: string) =>
     displayIdOf?.(artifactId) ?? artifactId.slice(0, 8);
 
   return (
-    <div className='border-line-primary bg-canvas-surface flex h-full w-80 flex-col border-l'>
-      {/* Header */}
-      <div className='border-line-primary flex shrink-0 items-center justify-between border-b px-3 py-2'>
-        <span className='text-fg-primary text-xs font-semibold'>변경 내역</span>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='text-fg-muted size-6'
-          onClick={onClose}
-        >
-          <X className='size-3.5' />
-        </Button>
-      </div>
-
+    <div className='flex h-full min-h-0 flex-col'>
       <ScrollArea className='min-h-0 flex-1'>
-        <div className='flex flex-col gap-4 p-3'>
+        <div className='flex flex-col gap-4'>
           {/* Unstaged */}
           <Section
             title='Unstaged'

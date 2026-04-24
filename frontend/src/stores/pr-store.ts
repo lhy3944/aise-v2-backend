@@ -19,6 +19,11 @@ interface PrState {
   setLoading: (v: boolean) => void;
   setError: (msg: string | null) => void;
   bumpRefresh: () => void;
+  /**
+   * 프로젝트 전환 등 PR 캐시를 초기화해야 할 때 호출.
+   * 서버 재조회가 뒤따른다고 가정하므로 refreshNonce 는 건드리지 않는다.
+   */
+  reset: () => void;
 }
 
 export const usePrStore = create<PrState>()((set) => ({
@@ -30,4 +35,5 @@ export const usePrStore = create<PrState>()((set) => ({
   setLoading: (v) => set({ loading: v }),
   setError: (msg) => set({ error: msg, loading: false }),
   bumpRefresh: () => set((s) => ({ refreshNonce: s.refreshNonce + 1 })),
+  reset: () => set({ openPRs: [], loading: false, error: null }),
 }));

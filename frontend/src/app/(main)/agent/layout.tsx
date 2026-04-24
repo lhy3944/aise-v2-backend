@@ -7,6 +7,7 @@ import { ResizeHandle } from '@/components/layout/ResizeHandle';
 import { ProjectSelector } from '@/components/projects/ProjectSelector';
 import { useFocusPromptInput } from '@/hooks/useFocusPromptInput';
 import { useResponsivePanel } from '@/hooks/useMediaQuery';
+import { useProjectScopedReset } from '@/hooks/useProjectScopedReset';
 import { useResize } from '@/hooks/useResize';
 import { cn } from '@/lib/utils';
 import { usePanelStore } from '@/stores/panel-store';
@@ -36,6 +37,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
 
   useResponsivePanel();
   useFocusPromptInput();
+  useProjectScopedReset();
 
   const showLeftPanel = !isMobile;
   const showSidebar = leftSidebarOpen && !isMobile;

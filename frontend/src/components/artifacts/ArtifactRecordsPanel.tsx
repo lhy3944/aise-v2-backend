@@ -5,14 +5,7 @@ import {
   ArtifactRecordEditorActions,
   type ArtifactRecordEditorValues,
 } from '@/components/artifacts/workspace/editor/ArtifactRecordEditor';
-import {
-  PullRequestCreateActions,
-  PullRequestCreateForm,
-  type PullRequestCreateValues,
-  type StagedChangeSummary,
-} from '@/components/artifacts/workspace/PullRequestCreateForm';
-import { DiffViewer } from '@/components/artifacts/workspace/diff/DiffViewer';
-import { StagedChangesTray } from '@/components/artifacts/workspace/StagedChangesTray';
+import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import { WorkspaceStatusBar } from '@/components/artifacts/workspace/WorkspaceStatusBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,12 +24,11 @@ import { artifactRecordService } from '@/services/artifact-record-service';
 import { artifactService } from '@/services/artifact-service';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { usePrStore } from '@/stores/pr-store';
-import { useStagingStore } from '@/stores/staging-store';
+import { EMPTY_BUCKET, useStagingStore } from '@/stores/staging-store';
 import type {
   ArtifactRecord,
   ArtifactRecordCreate,
   ArtifactRecordStatus,
-  PullRequest,
 } from '@/types/project';
 import {
   Check,
@@ -49,7 +41,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface ArtifactRecordsPanelProps {
   projectId: string;
@@ -90,24 +82,32 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(new Set());
   const [approving, setApproving] = useState(false);
 
-  const unstagedArtifacts = useStagingStore((s) => s.unstagedArtifacts);
-  const stagedArtifacts = useStagingStore((s) => s.stagedArtifacts);
-  const setArtifactDraft = useStagingStore((s) => s.setArtifactDraft);
-  const discardArtifactDraft = useStagingStore((s) => s.discardArtifactDraft);
-  const stageArtifact = useStagingStore((s) => s.stageArtifact);
-  const stageAll = useStagingStore((s) => s.stageAll);
-  const unstageArtifact = useStagingStore((s) => s.unstageArtifact);
-  const discardStagedArtifact = useStagingStore((s) => s.discardStagedArtifact);
-  const clearArtifact = useStagingStore((s) => s.clearArtifact);
+  // 프로젝트별 bucket — 카운트 및 레코드 편집 UI 용으로만 구독.
+  // stage/unstage/discard/PR actions 는 ChangesWorkspaceModal 이 직접 담당.
+  const unstagedArtifacts = useStagingStore(
+    (s) => s.byProject[projectId]?.unstaged ?? EMPTY_BUCKET.unstaged,
+  );
+  const stagedArtifacts = useStagingStore(
+    (s) => s.byProject[projectId]?.staged ?? EMPTY_BUCKET.staged,
+  );
+  const _setDraft = useStagingStore((s) => s.setDraft);
+  const _discardDraft = useStagingStore((s) => s.discardDraft);
+  const setArtifactDraft = useCallback(
+    (draft: Parameters<typeof _setDraft>[1]) => _setDraft(projectId, draft),
+    [_setDraft, projectId],
+  );
+  const discardArtifactDraft = useCallback(
+    (artifactId: string) => _discardDraft(projectId, artifactId),
+    [_discardDraft, projectId],
+  );
 
+  // PR 목록은 WorkspaceStatusBar 의 Open PR 카운트에만 필요.
+  // loading/refresh/update 는 ChangesWorkspaceModal 로 이관.
   const openPRs = usePrStore((s) => s.openPRs);
-  const prsLoading = usePrStore((s) => s.loading);
   const setOpenPRs = usePrStore((s) => s.setOpenPRs);
   const setPrLoading = usePrStore((s) => s.setLoading);
   const prRefreshNonce = usePrStore((s) => s.refreshNonce);
-  const bumpPrRefresh = usePrStore((s) => s.bumpRefresh);
 
-  const [trayOpen, setTrayOpen] = useState(false);
   const overlay = useOverlay();
 
   const fetchRecords = useCallback(async () => {
@@ -141,12 +141,6 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       cancelled = true;
     };
   }, [projectId, prRefreshNonce, setOpenPRs, setPrLoading]);
-
-  // display_id 조회 유틸 — Tray 에서 artifactId → 레이블
-  const displayIdOf = useCallback(
-    (artifactId: string) => records.find((r) => r.artifact_id === artifactId)?.display_id,
-    [records],
-  );
 
   // 섹션 목록 추출
   const sections = Array.from(
@@ -246,142 +240,22 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     [overlay, unstagedArtifacts, setArtifactDraft, discardArtifactDraft],
   );
 
-  // ── PR 워크플로우 핸들러 ───────────────────────────────────────────
+  // ── PR 워크플로우 ────────────────────────────────────────────────────
+  // PR 생성 / 승인 / 거절 / 머지 / diff 보기 + stage/unstage/discard 핸들러는
+  // 모두 ChangesWorkspaceModal 로 이관 (modal 내부에서 store 를 직접 구독해
+  // 실시간 반영). 여기서는 모달을 여는 entry point 만 제공.
 
-  const unstagedList = useMemo(
-    () => Object.values(unstagedArtifacts),
-    [unstagedArtifacts],
-  );
-  const stagedList = useMemo(
-    () => Object.values(stagedArtifacts),
-    [stagedArtifacts],
-  );
+  const unstagedCount = Object.keys(unstagedArtifacts).length;
+  const stagedCount = Object.keys(stagedArtifacts).length;
 
-  const submitPullRequest = useCallback(
-    async (values: PullRequestCreateValues, drafts: typeof stagedList) => {
-      // 각 staged artifact 에 대해: content PATCH → PR 생성
-      for (const draft of drafts) {
-        const record = records.find((r) => r.artifact_id === draft.artifactId);
-        const baseContent =
-          (record && {
-            text: record.content,
-            section_id: record.section_id,
-            source_document_id: record.source_document_id,
-            source_location: record.source_location,
-            confidence_score: record.confidence_score,
-            is_auto_extracted: record.is_auto_extracted,
-            order_index: record.order_index,
-            metadata: { status: record.status },
-          }) ||
-          {};
-
-        await artifactService.update(projectId, draft.artifactId, {
-          content: { ...baseContent, text: draft.content },
-        });
-        await artifactService.createPR(projectId, draft.artifactId, {
-          title: values.title,
-          description: values.description || null,
-        });
-        clearArtifact(draft.artifactId);
-      }
-      bumpPrRefresh();
-    },
-    [projectId, records, clearArtifact, bumpPrRefresh],
-  );
-
-  const handleCreatePR = useCallback(() => {
-    if (stagedList.length === 0) return;
-
-    const changes: StagedChangeSummary[] = stagedList.map((d) => ({
-      artifactId: d.artifactId,
-      displayId: displayIdOf(d.artifactId) ?? d.artifactId.slice(0, 8),
-      contentPreview: d.content,
-    }));
-    const defaultTitle =
-      stagedList.length === 1
-        ? `${changes[0].displayId} 편집`
-        : `${changes.length}개 레코드 편집`;
-
-    const onFormSubmit = async (values: PullRequestCreateValues) => {
-      try {
-        await submitPullRequest(values, stagedList);
-        overlay.closeModal();
-      } catch {
-        // 글로벌 핸들링
-      }
-    };
-
+  const openChangesModal = useCallback(() => {
     overlay.modal({
-      title: 'PR 생성',
-      description:
-        'Staged 변경을 서버에 반영하고 Pull Request 를 엽니다. 머지 전까지 이 PR 을 통해 검토할 수 있습니다.',
-      size: 'md',
-      content: (
-        <PullRequestCreateForm
-          changes={changes}
-          defaultTitle={defaultTitle}
-          onSubmit={onFormSubmit}
-        />
-      ),
-      footer: <PullRequestCreateActions onCancel={() => overlay.closeModal()} />,
+      title: '변경 내역',
+      description: 'Unstaged · Staged · Open PR 을 한곳에서 관리합니다.',
+      size: 'xl',
+      content: <ChangesWorkspaceModal projectId={projectId} />,
     });
-  }, [stagedList, displayIdOf, overlay, submitPullRequest]);
-
-  const handleApprovePR = useCallback(
-    async (prId: string) => {
-      try {
-        await artifactService.approvePR(prId);
-        bumpPrRefresh();
-      } catch {
-        // 글로벌 핸들링
-      }
-    },
-    [bumpPrRefresh],
-  );
-
-  const handleRejectPR = useCallback(
-    async (prId: string) => {
-      try {
-        await artifactService.rejectPR(prId);
-        bumpPrRefresh();
-        // 거절 시 artifact 가 dirty 로 복귀 — 목록 재로딩
-        fetchRecords();
-      } catch {
-        // 글로벌 핸들링
-      }
-    },
-    [bumpPrRefresh, fetchRecords],
-  );
-
-  const handleMergePR = useCallback(
-    async (prId: string) => {
-      try {
-        await artifactService.mergePR(prId);
-        bumpPrRefresh();
-        fetchRecords();
-      } catch {
-        // 글로벌 핸들링
-      }
-    },
-    [bumpPrRefresh, fetchRecords],
-  );
-
-  const handleShowDiff = useCallback(
-    (pr: PullRequest) => {
-      const displayLabel = displayIdOf(pr.artifact_id) ?? pr.artifact_id.slice(0, 8);
-      overlay.modal({
-        title: `변경 내용 · ${displayLabel}`,
-        size: 'lg',
-        content: (
-          <DiffViewer
-            headVersionId={pr.head_version_id}
-            baseVersionId={pr.base_version_id ?? undefined}
-          />
-        ),
-      });
-    },
-    [displayIdOf, overlay],
-  );
+  }, [overlay, projectId]);
 
   // 후보 전체 선택/해제
   const toggleAllCandidates = useCallback(() => {
@@ -753,32 +627,13 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     <div className='flex h-full flex-row'>
       <div className='flex min-w-0 flex-1 flex-col'>
         <WorkspaceStatusBar
-          unstagedCount={unstagedList.length}
-          stagedCount={stagedList.length}
+          unstagedCount={unstagedCount}
+          stagedCount={stagedCount}
           openPRsCount={openPRs.length}
-          onOpenTray={() => setTrayOpen((v) => !v)}
+          onOpenTray={openChangesModal}
         />
         {renderContent()}
       </div>
-      <StagedChangesTray
-        open={trayOpen}
-        onClose={() => setTrayOpen(false)}
-        unstaged={unstagedList}
-        staged={stagedList}
-        openPRs={openPRs}
-        prsLoading={prsLoading}
-        displayIdOf={displayIdOf}
-        onStage={stageArtifact}
-        onStageAll={stageAll}
-        onDiscardUnstaged={discardArtifactDraft}
-        onUnstage={unstageArtifact}
-        onDiscardStaged={discardStagedArtifact}
-        onCreatePR={handleCreatePR}
-        onApprovePR={handleApprovePR}
-        onRejectPR={handleRejectPR}
-        onMergePR={handleMergePR}
-        onShowDiff={handleShowDiff}
-      />
     </div>
   );
 }

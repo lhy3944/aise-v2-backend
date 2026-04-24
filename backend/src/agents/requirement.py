@@ -1,9 +1,9 @@
 """RequirementAgent — extracts candidate requirement records from a
 project's active knowledge documents.
 
-Thin wrapper around `services.record_svc.extract_records`; the heavy
-lifting (section/glossary context assembly, LLM call, JSON parsing) lives
-in record_svc and is reused as-is.
+Thin wrapper around `services.artifact_record_svc.extract_records`; the
+heavy lifting (section/glossary context assembly, LLM call, JSON parsing)
+lives there and is reused as-is.
 
 Output contract (partial state update):
     - `final_answer`: short human-readable summary (count + section mix)
@@ -26,7 +26,7 @@ from src.agents.base import AgentCapability, BaseAgent
 from src.agents.registry import register_agent
 from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext, AgentState
-from src.services import record_svc
+from src.services import artifact_record_svc
 
 
 def _section_histogram(candidates: list[dict[str, Any]]) -> str:
@@ -67,9 +67,9 @@ class RequirementAgent(BaseAgent):
         )
 
         try:
-            response = await record_svc.extract_records(ctx.db, ctx.project_id)
+            response = await artifact_record_svc.extract_records(ctx.db, ctx.project_id)
         except AppException as exc:
-            logger.warning(f"RequirementAgent: record_svc rejected: {exc.detail}")
+            logger.warning(f"RequirementAgent: artifact_record_svc rejected: {exc.detail}")
             return {"error": exc.detail}
 
         candidates = [c.model_dump() for c in response.candidates]

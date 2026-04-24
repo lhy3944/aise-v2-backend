@@ -1,9 +1,9 @@
 """RequirementAgent (Phase 2 increment 1B).
 
-Verifies the agent correctly wraps record_svc.extract_records:
-- happy path: record_svc returns candidates → summary + records_extracted
+Verifies the agent correctly wraps artifact_record_svc.extract_records:
+- happy path: service returns candidates → summary + records_extracted
 - no candidates: agent returns the "nothing to extract" summary
-- record_svc raises AppException: agent surfaces `error` in state update
+- service raises AppException: agent surfaces `error` in state update
 """
 
 from __future__ import annotations
@@ -18,7 +18,10 @@ from src.agents import list_agents, load_builtin_agents
 from src.agents.registry import get_agent
 from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext
-from src.schemas.api.record import RecordExtractedItem, RecordExtractResponse
+from src.schemas.api.artifact_record import (
+    ArtifactRecordExtractedItem as RecordExtractedItem,
+    ArtifactRecordExtractResponse as RecordExtractResponse,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +53,7 @@ async def test_requirement_agent_summarises_extraction():
         candidates=[_candidate("FR"), _candidate("FR"), _candidate("QA")]
     )
     with patch(
-        "src.services.record_svc.extract_records",
+        "src.services.artifact_record_svc.extract_records",
         new=AsyncMock(return_value=fake_response),
     ):
         update = await agent.run({"project_id": str(project_id)}, ctx)
@@ -70,7 +73,7 @@ async def test_requirement_agent_empty_extraction():
     ctx = AgentContext(db=AsyncMock(), project_id=project_id)
 
     with patch(
-        "src.services.record_svc.extract_records",
+        "src.services.artifact_record_svc.extract_records",
         new=AsyncMock(return_value=RecordExtractResponse(candidates=[])),
     ):
         update = await agent.run({"project_id": str(project_id)}, ctx)
@@ -87,7 +90,7 @@ async def test_requirement_agent_surfaces_app_exception_as_state_error():
 
     boom = AppException(400, "활성 지식 문서가 없습니다.")
     with patch(
-        "src.services.record_svc.extract_records",
+        "src.services.artifact_record_svc.extract_records",
         new=AsyncMock(side_effect=boom),
     ):
         update = await agent.run({"project_id": str(project_id)}, ctx)
@@ -124,7 +127,7 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
                     "reasoning": "stub",
                 }
             )
-        return "Unused — agent uses record_svc directly."
+        return "Unused — agent uses artifact_record_svc directly."
 
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
@@ -138,7 +141,7 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
     session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
 
     with patch(
-        "src.services.record_svc.extract_records",
+        "src.services.artifact_record_svc.extract_records",
         new=AsyncMock(return_value=fake_response),
     ):
         graph = build_graph(session_factory)

@@ -139,6 +139,105 @@ class SourcesEvent(BaseModel):
     data: SourcesEventData
 
 
+# ---------- Phase 2 events (Artifact Governance) ----------
+#
+# Git-like 워크플로우 이벤트. 프론트엔드는 이들을 받아 StagedChangesTray / PR
+# 패널 / ImpactBanner를 갱신한다. `ArtifactKind`는 통합 artifact 모델의 단수형
+# 타입 이름을 사용하며(`record/srs/design/testcase`), 위의 레거시 `ArtifactType`
+# (복수형 "records" 등)과는 별개로 병행한다 — Phase 3에서 단일화 예정.
+
+
+ArtifactKind = Literal["record", "srs", "design", "testcase"]
+PRStatus = Literal["open", "approved", "rejected", "merged", "superseded"]
+
+
+class ArtifactStagedEventData(BaseModel):
+    artifact_id: UUID
+    artifact_kind: ArtifactKind
+    project_id: UUID
+    version_id: UUID
+    version_number: int
+    author_id: str
+
+
+class ArtifactStagedEvent(BaseModel):
+    type: Literal["artifact_staged"] = "artifact_staged"
+    data: ArtifactStagedEventData
+
+
+class PRCreatedEventData(BaseModel):
+    pr_id: UUID
+    artifact_id: UUID
+    artifact_kind: ArtifactKind
+    project_id: UUID
+    title: str
+    author_id: str
+    base_version_id: UUID | None = None
+    head_version_id: UUID
+    auto_generated: bool = False
+
+
+class PRCreatedEvent(BaseModel):
+    type: Literal["pr_created"] = "pr_created"
+    data: PRCreatedEventData
+
+
+class PRMergedEventData(BaseModel):
+    pr_id: UUID
+    artifact_id: UUID
+    artifact_kind: ArtifactKind
+    project_id: UUID
+    merged_version_id: UUID
+    version_number: int
+    merger_id: str
+
+
+class PRMergedEvent(BaseModel):
+    type: Literal["pr_merged"] = "pr_merged"
+    data: PRMergedEventData
+
+
+class PRRejectedEventData(BaseModel):
+    pr_id: UUID
+    artifact_id: UUID
+    artifact_kind: ArtifactKind
+    project_id: UUID
+    reviewer_id: str
+    reason: str | None = None
+
+
+class PRRejectedEvent(BaseModel):
+    type: Literal["pr_rejected"] = "pr_rejected"
+    data: PRRejectedEventData
+
+
+ImpactReason = Literal[
+    "upstream_version_bumped",
+    "upstream_status_changed",
+    "upstream_deleted",
+]
+
+
+class ImpactedRef(BaseModel):
+    artifact_id: UUID
+    artifact_kind: ArtifactKind
+    display_id: str
+    reason: ImpactReason
+    pinned_version_number: int | None = None
+
+
+class ImpactDetectedEventData(BaseModel):
+    source_artifact_id: UUID
+    source_artifact_kind: ArtifactKind
+    project_id: UUID
+    impacted: list[ImpactedRef]
+
+
+class ImpactDetectedEvent(BaseModel):
+    type: Literal["impact_detected"] = "impact_detected"
+    data: ImpactDetectedEventData
+
+
 # ---------- Phase 3 events (HITL) ----------
 
 
@@ -218,6 +317,11 @@ AgentStreamEvent = Annotated[
         PlanUpdateEvent,
         InterruptEvent,
         ArtifactCreatedEvent,
+        ArtifactStagedEvent,
+        PRCreatedEvent,
+        PRMergedEvent,
+        PRRejectedEvent,
+        ImpactDetectedEvent,
         SourcesEvent,
         DoneEvent,
         ErrorEvent,
@@ -240,6 +344,9 @@ __all__ = [
     "AgentStreamEvent",
     "ArtifactCreatedEvent",
     "ArtifactCreatedEventData",
+    "ArtifactKind",
+    "ArtifactStagedEvent",
+    "ArtifactStagedEventData",
     "ArtifactType",
     "ClarifyData",
     "ClarifyOption",
@@ -255,7 +362,18 @@ __all__ = [
     "ErrorEventData",
     "FinishReason",
     "HitlData",
+    "ImpactDetectedEvent",
+    "ImpactDetectedEventData",
+    "ImpactReason",
+    "ImpactedRef",
     "InterruptEvent",
+    "PRCreatedEvent",
+    "PRCreatedEventData",
+    "PRMergedEvent",
+    "PRMergedEventData",
+    "PRRejectedEvent",
+    "PRRejectedEventData",
+    "PRStatus",
     "PlanStep",
     "PlanStepStatus",
     "PlanUpdateEvent",

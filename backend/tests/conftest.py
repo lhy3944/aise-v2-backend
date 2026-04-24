@@ -50,13 +50,19 @@ def _verify_test_db_ready():
     conn.close()
     yield
 
-# 테이블 정리 순서 (FK 의존성 고려)
+# 테이블 정리 순서 (FK 의존성 고려). artifacts ↔ artifact_versions 의 순환
+# FK 때문에 artifacts 포인터를 먼저 NULL 로 풀어야 한다.
 CLEANUP_TABLES = [
     "session_messages",
     "sessions",
     "srs_sections",
     "srs_documents",
-    "records",
+    "change_events",
+    "artifact_dependencies",
+    "__null_artifact_pointers",
+    "pull_requests",
+    "artifact_versions",
+    "artifacts",
     "knowledge_chunks",
     "knowledge_documents",
     "requirement_reviews",
@@ -78,6 +84,16 @@ async def _cleanup_db():
             )
             existing_tables = {row[0] for row in existing_tables_result.all()}
             for table in CLEANUP_TABLES:
+                if table == "__null_artifact_pointers":
+                    # circular FK 해제: DELETE 전에 포인터를 먼저 NULL 처리
+                    if "artifacts" in existing_tables:
+                        await cleanup_session.execute(
+                            text(
+                                "UPDATE artifacts SET current_version_id=NULL, "
+                                "open_pr_id=NULL"
+                            )
+                        )
+                    continue
                 if table in existing_tables:
                     await cleanup_session.execute(text(f"DELETE FROM {table}"))
 

@@ -58,6 +58,15 @@ class AgentState(TypedDict, total=False):
 
     # agent intermediate
     rag_chunks: list[dict[str, Any]] | None
+    # Retrieval-first gate가 임베딩·검색을 선행 수행한 결과를 KnowledgeQA가
+    # 재사용하기 위한 캐시. gate가 작동하지 않은 경로에서는 None.
+    # {
+    #   "rewritten_query": str,             # query rewriter가 반환한 standalone 질의
+    #   "query_embedding": list[float],     # 위 query의 임베딩
+    #   "chunks": list[dict],               # [{chunk_id, document_id, chunk_index, content, score}, ...]
+    #   "max_score": float,
+    # }
+    rag_cache: dict[str, Any] | None
 
     # final agent output
     final_answer: str | None

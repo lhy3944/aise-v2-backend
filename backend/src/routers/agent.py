@@ -7,6 +7,7 @@ LangGraph-only: orchestration.run_chat 기반. SSE AgentStreamEvent envelope
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -18,6 +19,7 @@ from src.core.database import get_db, get_session_factory
 from src.models.session import Session as SessionModel
 from src.orchestration.graph import build_graph, get_checkpointer, run_chat
 from src.schemas.api.agent import AgentChatRequest
+from src.services import session_svc
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -63,7 +65,14 @@ async def _stream_chat(
     message: str,
     session_factory: async_sessionmaker[AsyncSession],
 ):
-    """SSE generator using the AgentStreamEvent envelope per docs/events.md."""
+    """SSE generator using the AgentStreamEvent envelope per docs/events.md.
+
+    Persists the turn to `session_messages`:
+      1. 과거 history 로드 (현재 user 입력 제외) → LangGraph에 전달
+      2. user 메시지 commit (실행 전 — 에이전트 실패해도 사용자 입력은 보존)
+      3. 스트림 진행하면서 token/tool_call/sources 수집
+      4. finally에서 assistant 메시지 commit
+    """
     async with session_factory() as db:
         try:
             project_id = await _resolve_project_id(session_id, db)
@@ -75,15 +84,75 @@ async def _stream_chat(
             yield f"data: {payload}\n\n"
             return
 
+        history = await session_svc.get_history(db, session_id, limit=50)
+        await session_svc.add_message(db, session_id, role="user", content=message)
+        await session_svc.update_session_title_if_first(db, session_id, message)
+        await db.commit()
+
     graph = await _get_graph(session_factory)
-    async for event in run_chat(
-        graph,
-        project_id=project_id,
-        session_id=session_id,
-        user_input=message,
-        session_factory=session_factory,
-    ):
-        yield f"data: {event.model_dump_json()}\n\n"
+    assistant_parts: list[str] = []
+    # tool_call_id → 누적 entry. tool_result 이벤트가 도착하면 동일 id에
+    # duration_ms/status/result를 덧붙여 저장용 레코드를 완성한다.
+    tool_calls_by_id: dict[str, dict[str, Any]] = {}
+    tool_call_order: list[str] = []
+    sources_acc: list[dict[str, Any]] | None = None
+    had_error = False
+
+    try:
+        async for event in run_chat(
+            graph,
+            project_id=project_id,
+            session_id=session_id,
+            user_input=message,
+            history=history,
+            session_factory=session_factory,
+        ):
+            etype = event.type
+            if etype == "token":
+                assistant_parts.append(event.data.text)
+            elif etype == "tool_call":
+                tcid = event.data.tool_call_id
+                tool_calls_by_id[tcid] = {
+                    "name": event.data.name,
+                    "arguments": event.data.arguments,
+                }
+                tool_call_order.append(tcid)
+            elif etype == "tool_result":
+                tcid = event.data.tool_call_id
+                entry = tool_calls_by_id.get(tcid)
+                if entry is not None:
+                    if event.data.duration_ms is not None:
+                        entry["duration_ms"] = event.data.duration_ms
+                    if event.data.status is not None:
+                        entry["status"] = event.data.status
+                    if event.data.result is not None:
+                        entry["result"] = event.data.result
+            elif etype == "sources":
+                sources_acc = [s.model_dump() for s in event.data.sources]
+            elif etype == "error":
+                had_error = True
+            yield f"data: {event.model_dump_json()}\n\n"
+    finally:
+        content = "".join(assistant_parts)
+        tool_calls_acc = [tool_calls_by_id[tcid] for tcid in tool_call_order]
+        # 빈 content + tool_call/sources/에러도 없으면 저장하지 않음
+        if content or tool_calls_acc or sources_acc or had_error:
+            try:
+                async with session_factory() as db:
+                    tool_data = {"sources": sources_acc} if sources_acc else None
+                    await session_svc.add_message(
+                        db,
+                        session_id,
+                        role="assistant",
+                        content=content,
+                        tool_calls=tool_calls_acc or None,
+                        tool_data=tool_data,
+                    )
+                    await db.commit()
+            except Exception:
+                logger.exception(
+                    "Failed to persist assistant message for session %s", session_id
+                )
 
 
 @router.post("/chat")

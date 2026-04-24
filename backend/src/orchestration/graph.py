@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.agents import load_builtin_agents
 from src.agents.base import BaseAgent
 from src.agents.registry import get_agent, try_get_agent
+from src.orchestration.retrieval_gate import evaluate_gate
 from src.orchestration.state import AgentContext, AgentState
 from src.orchestration.supervisor import (
     route_after_supervisor,
@@ -508,20 +509,46 @@ async def run_chat(
         "history": history or [],
     }
 
-    # 1. Supervisor — direct call, no graph invocation needed.
-    try:
-        supervisor_update = await supervisor_node(initial_state)
-    except Exception as e:  # pragma: no cover — defensive
-        logger.exception("supervisor_node failed")
-        yield ErrorEvent(
-            data=ErrorEventData(
-                message=str(e),
-                code="SUPERVISOR_FAILURE",
-                recoverable=False,
+    # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
+    # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서
+    # 없음·score 미달) supervisor LLM이 판단한다.
+    gate_result = None
+    if session_factory is not None:
+        try:
+            project_uuid_for_gate = uuid.UUID(str(project_id))
+        except (ValueError, TypeError):
+            project_uuid_for_gate = None
+        if project_uuid_for_gate is not None:
+            try:
+                async with session_factory() as db:
+                    gate_result = await evaluate_gate(
+                        user_input=user_input,
+                        history=history or [],
+                        project_id=project_uuid_for_gate,
+                        db=db,
+                    )
+            except Exception:  # pragma: no cover — gate 실패는 LLM로 폴백
+                logger.exception("retrieval_gate failed, falling back to supervisor LLM")
+                gate_result = None
+
+    if gate_result is not None:
+        initial_state["routing"] = gate_result.routing
+        initial_state["rag_cache"] = gate_result.rag_cache
+    else:
+        # 1b. Supervisor — direct call, no graph invocation needed.
+        try:
+            supervisor_update = await supervisor_node(initial_state)
+        except Exception as e:  # pragma: no cover — defensive
+            logger.exception("supervisor_node failed")
+            yield ErrorEvent(
+                data=ErrorEventData(
+                    message=str(e),
+                    code="SUPERVISOR_FAILURE",
+                    recoverable=False,
+                )
             )
-        )
-        return
-    initial_state.update(supervisor_update)
+            return
+        initial_state.update(supervisor_update)
 
     if initial_state.get("error"):
         yield ErrorEvent(

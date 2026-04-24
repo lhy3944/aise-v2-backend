@@ -63,8 +63,16 @@ class KnowledgeQAAgent(BaseAgent):
             }
             return
 
+        # Retrieval-first gate가 앞서 계산한 결과를 재사용한다. 캐시에는 임베딩
+        # 벡터와 standalone query만 들어있고, pgvector 검색은 이 함수에서 한 번
+        # 더 수행하지만 임베딩 API call은 건너뛴다.
+        rag_cache = state.get("rag_cache") or {}
+        cached_embedding = rag_cache.get("query_embedding")
+        rewritten_query = rag_cache.get("rewritten_query")
+
         logger.info(
-            f"KnowledgeQAAgent run_stream: project={ctx.project_id} query={query[:60]!r}"
+            f"KnowledgeQAAgent run_stream: project={ctx.project_id} "
+            f"query={query[:60]!r} cache={'hit' if cached_embedding else 'miss'}"
         )
 
         try:
@@ -74,6 +82,8 @@ class KnowledgeQAAgent(BaseAgent):
                 history=state.get("history", []) or [],
                 top_k=5,
                 db=ctx.db,
+                query_embedding=cached_embedding,
+                rewritten_query=rewritten_query,
             )
         except AppException as exc:
             yield {"kind": "final", "update": {"error": str(exc.detail)}}

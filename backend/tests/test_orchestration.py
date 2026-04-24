@@ -58,7 +58,13 @@ def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
 
     Supervisor and rag_svc/knowledge_qa all import `llm_svc` as a module,
     so a single `setattr` on the module covers all call sites.
+
+    Also disables the retrieval-first gate so tests that exercise
+    supervisor routing semantics (clarify / plan / invalid JSON / unknown
+    agent) see the supervisor LLM decision instead of the gate short-
+    circuiting to knowledge_qa. Gate-specific tests re-enable the env var.
     """
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
     default_routing = json.dumps(
         {
             "action": "single",
@@ -399,10 +405,13 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
         ),
     )
 
-    # Stub record_svc so requirement step is deterministic.
+    # Stub artifact_record_svc so requirement step is deterministic.
     from unittest.mock import AsyncMock, patch
 
-    from src.schemas.api.record import RecordExtractedItem, RecordExtractResponse
+    from src.schemas.api.artifact_record import (
+        ArtifactRecordExtractedItem as RecordExtractedItem,
+        ArtifactRecordExtractResponse as RecordExtractResponse,
+    )
 
     fake_records = RecordExtractResponse(
         candidates=[
@@ -423,7 +432,7 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
     graph = build_graph(session_factory)
 
     with patch(
-        "src.services.record_svc.extract_records",
+        "src.services.artifact_record_svc.extract_records",
         new=AsyncMock(return_value=fake_records),
     ):
         events = [

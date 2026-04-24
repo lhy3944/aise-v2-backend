@@ -116,6 +116,91 @@ export interface SourcesEvent {
   };
 }
 
+// ---------- Phase 2 events (Artifact Governance) ----------
+
+export type ArtifactKind = 'record' | 'srs' | 'design' | 'testcase';
+export type PRStatus =
+  | 'open'
+  | 'approved'
+  | 'rejected'
+  | 'merged'
+  | 'superseded';
+
+export interface ArtifactStagedEvent {
+  type: 'artifact_staged';
+  data: {
+    artifact_id: string;
+    artifact_kind: ArtifactKind;
+    project_id: string;
+    version_id: string;
+    version_number: number;
+    author_id: string;
+  };
+}
+
+export interface PRCreatedEvent {
+  type: 'pr_created';
+  data: {
+    pr_id: string;
+    artifact_id: string;
+    artifact_kind: ArtifactKind;
+    project_id: string;
+    title: string;
+    author_id: string;
+    base_version_id?: string | null;
+    head_version_id: string;
+    auto_generated: boolean;
+  };
+}
+
+export interface PRMergedEvent {
+  type: 'pr_merged';
+  data: {
+    pr_id: string;
+    artifact_id: string;
+    artifact_kind: ArtifactKind;
+    project_id: string;
+    merged_version_id: string;
+    version_number: number;
+    merger_id: string;
+  };
+}
+
+export interface PRRejectedEvent {
+  type: 'pr_rejected';
+  data: {
+    pr_id: string;
+    artifact_id: string;
+    artifact_kind: ArtifactKind;
+    project_id: string;
+    reviewer_id: string;
+    reason?: string | null;
+  };
+}
+
+export type ImpactReason =
+  | 'upstream_version_bumped'
+  | 'upstream_status_changed'
+  | 'upstream_deleted';
+
+export interface ImpactedRef {
+  artifact_id: string;
+  artifact_kind: ArtifactKind;
+  display_id: string;
+  reason: ImpactReason;
+  pinned_version_number?: number | null;
+}
+
+export interface ImpactDetectedEvent {
+  type: 'impact_detected';
+  data: {
+    source_artifact_id: string;
+    source_artifact_kind: ArtifactKind;
+    project_id: string;
+    impacted: ImpactedRef[];
+  };
+}
+
 // ---------- Phase 3 events (HITL) ----------
 
 export interface ClarifyOption {
@@ -187,6 +272,11 @@ export type AgentStreamEvent =
   | PlanUpdateEvent
   | InterruptEvent
   | ArtifactCreatedEvent
+  | ArtifactStagedEvent
+  | PRCreatedEvent
+  | PRMergedEvent
+  | PRRejectedEvent
+  | ImpactDetectedEvent
   | SourcesEvent
   | DoneEvent
   | ErrorEvent;
@@ -213,6 +303,18 @@ export const isInterruptEvent = (e: AgentStreamEvent): e is InterruptEvent =>
 export const isArtifactCreatedEvent = (
   e: AgentStreamEvent,
 ): e is ArtifactCreatedEvent => e.type === 'artifact_created';
+export const isArtifactStagedEvent = (
+  e: AgentStreamEvent,
+): e is ArtifactStagedEvent => e.type === 'artifact_staged';
+export const isPRCreatedEvent = (e: AgentStreamEvent): e is PRCreatedEvent =>
+  e.type === 'pr_created';
+export const isPRMergedEvent = (e: AgentStreamEvent): e is PRMergedEvent =>
+  e.type === 'pr_merged';
+export const isPRRejectedEvent = (e: AgentStreamEvent): e is PRRejectedEvent =>
+  e.type === 'pr_rejected';
+export const isImpactDetectedEvent = (
+  e: AgentStreamEvent,
+): e is ImpactDetectedEvent => e.type === 'impact_detected';
 export const isSourcesEvent = (e: AgentStreamEvent): e is SourcesEvent =>
   e.type === 'sources';
 export const isDoneEvent = (e: AgentStreamEvent): e is DoneEvent =>

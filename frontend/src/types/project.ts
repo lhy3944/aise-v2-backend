@@ -291,7 +291,7 @@ export interface SrsDocument {
   status: string;
   error_message: string | null;
   sections: SrsSection[];
-  based_on_records: { record_ids?: string[] } | null;
+  based_on_records: { artifact_ids?: string[] } | null;
   based_on_documents: { documents?: { id: string; name: string }[] } | null;
   created_at: string;
 }
@@ -300,12 +300,12 @@ export interface SrsListResponse {
   documents: SrsDocument[];
 }
 
-// --- Record ---
+// --- ArtifactRecord (artifact_type='record' 의 도메인 뷰) ---
 
-export type RecordStatus = 'draft' | 'approved' | 'excluded';
+export type ArtifactRecordStatus = 'draft' | 'approved' | 'excluded';
 
-export interface Record {
-  record_id: string;
+export interface ArtifactRecord {
+  artifact_id: string;
   project_id: string;
   section_id: string | null;
   section_name: string | null;
@@ -315,31 +315,31 @@ export interface Record {
   source_document_name: string | null;
   source_location: string | null;
   confidence_score: number | null;
-  status: RecordStatus;
+  status: ArtifactRecordStatus;
   is_auto_extracted: boolean;
   order_index: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface RecordCreate {
+export interface ArtifactRecordCreate {
   content: string;
   section_id?: string | null;
   source_document_id?: string | null;
   source_location?: string | null;
 }
 
-export interface RecordUpdate {
+export interface ArtifactRecordUpdate {
   content?: string | null;
   section_id?: string | null;
 }
 
-export interface RecordListResponse {
-  records: Record[];
+export interface ArtifactRecordListResponse {
+  records: ArtifactRecord[];
   total: number;
 }
 
-export interface RecordExtractedItem {
+export interface ArtifactRecordExtractedItem {
   content: string;
   section_id: string | null;
   section_name: string | null;
@@ -349,8 +349,177 @@ export interface RecordExtractedItem {
   confidence_score: number | null;
 }
 
-export interface RecordExtractResponse {
-  candidates: RecordExtractedItem[];
+export interface ArtifactRecordExtractResponse {
+  candidates: ArtifactRecordExtractedItem[];
+}
+
+// --- Artifact Governance (Git-like: Unstaged/Staged/PR/Merge) ---
+export type JsonObject = { [key: string]: unknown };
+
+export type ArtifactKind = 'record' | 'srs' | 'design' | 'testcase';
+export type WorkingStatus = 'clean' | 'dirty' | 'staged';
+export type LifecycleStatus = 'active' | 'archived' | 'deleted';
+export type PullRequestStatus =
+  | 'open'
+  | 'approved'
+  | 'rejected'
+  | 'merged'
+  | 'superseded';
+export type DependencyType = 'derives_from' | 'references' | 'covers';
+export type ChangeAction =
+  | 'created'
+  | 'edited'
+  | 'staged'
+  | 'pr_opened'
+  | 'pr_approved'
+  | 'pr_merged'
+  | 'pr_rejected'
+  | 'reverted';
+
+// Record/SRS/Design/TC 각각의 JSON payload shape은 타입별로 다르다.
+// 공용 Artifact 타입은 payload를 제네릭으로 유지.
+export interface Artifact<T = JsonObject> {
+  artifact_id: string;
+  project_id: string;
+  artifact_type: ArtifactKind;
+  display_id: string;
+  title: string | null;
+  content: T;
+  working_status: WorkingStatus;
+  lifecycle_status: LifecycleStatus;
+  current_version_id: string | null;
+  current_version_number: number | null;
+  open_pr_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ArtifactListResponse {
+  artifacts: Artifact[];
+  total: number;
+}
+
+export interface ArtifactVersion<T = JsonObject> {
+  version_id: string;
+  artifact_id: string;
+  artifact_type: ArtifactKind;
+  version_number: number;
+  parent_version_id: string | null;
+  snapshot: T;
+  content_hash: string;
+  commit_message: string;
+  author_id: string;
+  committed_at: string;
+  merged_from_pr_id: string | null;
+}
+
+export interface ArtifactVersionListResponse {
+  versions: ArtifactVersion[];
+}
+
+// --- Diff ---
+
+export type DiffFormat = 'unified' | 'deepdiff';
+
+export interface DiffHunk {
+  op: 'equal' | 'add' | 'delete';
+  text: string;
+}
+
+export interface DiffFieldEntry {
+  field_path: string;
+  kind: 'added' | 'removed' | 'modified' | 'unchanged';
+  before?: unknown;
+  after?: unknown;
+  hunks?: DiffHunk[];
+}
+
+export interface DiffResult {
+  format: DiffFormat;
+  base_version_id: string | null;
+  head_version_id: string;
+  entries: DiffFieldEntry[];
+  unified_text: string | null;
+}
+
+// --- PullRequest ---
+
+export interface PullRequest {
+  pr_id: string;
+  project_id: string;
+  artifact_id: string;
+  artifact_type: ArtifactKind;
+  base_version_id: string | null;
+  head_version_id: string;
+  status: PullRequestStatus;
+  title: string;
+  description: string | null;
+  author_id: string;
+  reviewer_id: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  merged_at: string | null;
+  auto_generated: boolean;
+}
+
+export interface PullRequestListResponse {
+  pull_requests: PullRequest[];
+  total: number;
+}
+
+export interface PullRequestCreate {
+  title: string;
+  description?: string | null;
+}
+
+// --- ChangeEvent (audit log) ---
+
+export interface ChangeEvent {
+  event_id: string;
+  project_id: string;
+  artifact_id: string | null;
+  pr_id: string | null;
+  version_id: string | null;
+  action: ChangeAction;
+  actor: string;
+  diff_summary: JsonObject | null;
+  impact_summary: JsonObject | null;
+  occurred_at: string;
+}
+
+// --- Impact graph ---
+
+export type ImpactReason =
+  | 'upstream_version_bumped'
+  | 'upstream_status_changed'
+  | 'upstream_deleted';
+
+export interface ImpactedArtifactRef {
+  artifact_id: string;
+  artifact_type: ArtifactKind;
+  display_id: string;
+  reason: ImpactReason;
+  pinned_version_number: number | null;
+}
+
+export interface ImpactResponse {
+  source_artifact_id: string;
+  impacted: ImpactedArtifactRef[];
+}
+
+// --- Staging buffers (client-side only) ---
+//
+// Unstaged/Staged edits는 서버에 도달하지 않은 로컬 버퍼.
+// sessionStorage에 persist되어 새로고침을 방어한다.
+export interface ArtifactDraft<T = JsonObject> {
+  artifact_id: string | null; // null = 신규 (아직 서버 ID 없음)
+  local_id: string; // 로컬 고유 식별자 (unstaged 관리용)
+  artifact_type: ArtifactKind;
+  change_type: 'create' | 'update' | 'delete';
+  base_version_id: string | null;
+  content: T;
+  title?: string | null;
+  updated_at: string;
 }
 
 // --- Readiness ---

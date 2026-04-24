@@ -25,7 +25,7 @@ function Checkbox({
       data-state={checked ? 'checked' : 'unchecked'}
       className={cn(
         'peer border-input inline-flex size-4 shrink-0 items-center justify-center rounded-sm border shadow-xs transition-colors',
-        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
+        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-1 focus-visible:outline-none',
         'disabled:cursor-not-allowed disabled:opacity-50',
         (checked || indeterminate) && 'border-primary bg-primary text-primary-foreground',
         className,

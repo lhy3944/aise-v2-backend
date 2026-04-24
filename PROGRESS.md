@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 70% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent 완료. 남은 증분 3~5 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 80% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent + Artifact Governance + Retrieval Gate/Rewriter 완료. 남은: DiffViewer / SRS·TestCase·Critic agents / 통합 artifacts 라우터 세부 |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -86,6 +86,40 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-24 — Artifact Governance + Retrieval 품질 레이어 (12 커밋 정리)
+
+세션에 쌓여 있던 대규모 WIP(+1085/−1989, 42 파일)를 논리 단위로 나눠 11 커밋 + 검증 중 발견된 check constraint 수정 1 커밋으로 정리. **백엔드 141 passed** (신규 test_artifact_svc / test_artifact_record / test_query_rewriter / test_retrieval_gate 포함; Windows ProactorEventLoop+psycopg 호환성으로 인한 2건 Postgres checkpointer 테스트는 환경 이슈). **프론트 `tsc --noEmit` 0 error, `pnpm build` 성공**.
+
+| 커밋 | 범위 | 요약 |
+|---|---|---|
+| `959ca74` | backend/db | artifact governance 스키마 (artifacts + versions + PRs + dependencies) |
+| `5553575` | backend/models | Artifact 모델 도입, Record 제거 (artifact_type='record' 로 흡수) |
+| `7eacf6d` | backend/artifact | artifact_svc / artifact_record_svc + routers + schemas + 테스트 |
+| `e26a650` | backend/rag | Query Rewriter + Retrieval Gate + SSE 이벤트(query_rewritten/gate_decision) 통합 |
+| `cd744e2` | backend/svc | srs/suggestion이 Artifact 기반으로 조회 (storage_svc MinIO 포트 9100→9000 정정) |
+| `1072041` | backend/db | records→artifacts 백필 + records 테이블 drop 마이그레이션 |
+| `cb4fe40` | frontend/overlay | PromptDialog + overlay-store/useOverlay 확장 |
+| `d0bdf13` | frontend/types | artifact/PR 이벤트 + QueryRewritten/GateDecision 타입 |
+| `2807db6` | frontend/artifact | services/stores/workspace UI/citation + legacy RecordsArtifact 제거 |
+| `8adc8d7` | frontend/chat | SSE stream + MessageRenderer의 citation/artifact 이벤트 반영 |
+| `169bb57` | frontend/landing | HeroSection 포맷 + 미사용 import 정리 |
+| `95c750f` | backend/fix | artifact 초기 working_status='clean'→'dirty' (check constraint 일치) + conftest cleanup 수정 |
+
+#### Git-like Artifact Governance 핵심
+- Artifact = working copy (clean/dirty/staged) + ArtifactVersion = 불변 스냅샷
+- PullRequest staging → review → merge 라이프사이클, ChangeEvent 감사 로그
+- ArtifactDependency 그래프로 영향도 전파(HITL/Critic에서 활용 예정)
+- Record/SRS/Design/TestCase가 artifact_type 으로 통합됨
+
+#### Retrieval 품질 레이어
+- `services/query_rewriter`: 세션 컨텍스트 기반 follow-up 재작성
+- `orchestration/retrieval_gate`: 질문이 실제 retrieval을 요구하는지 gate 결정(skip/proceed) — small talk / 문서 없음 / low-score cut-off
+- 두 결정 모두 SSE 이벤트로 프론트에 노출
+
+#### 후속 작업 (세션 인계)
+- **DiffViewer (plan §3 7번)**: PR 생성 시 HEAD vs base diff 를 리뷰어에게 hunk 단위로 노출. 구조: `components/artifacts/workspace/diff/{DiffViewer,FieldDiffRow}.tsx`, `GET /api/v1/versions/{version_id}/diff` 연결.
+- Phase 2 증분 3a/3b/3c(SRS/TestCase/Critic agents)는 남은 과제.
 
 ### 2026-04-22 — `expose_as_tool` 플래그 (general_chat UI 정리)
 

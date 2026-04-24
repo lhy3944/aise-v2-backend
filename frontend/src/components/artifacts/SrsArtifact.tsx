@@ -228,7 +228,7 @@ export function SrsArtifact() {
   return (
     <div className='flex h-full flex-col'>
       {/* Header */}
-      <div className='border-line-primary flex items-center justify-between gap-2 border-b px-4 py-2'>
+      <div className='border-line-primary flex flex-col gap-2 border-b px-4 py-2 md:flex-row md:items-center md:justify-between'>
         <div className='flex min-w-0 items-center gap-2'>
           <Select
             value={selectedSrsId ?? undefined}
@@ -236,7 +236,7 @@ export function SrsArtifact() {
           >
             <SelectTrigger
               size='sm'
-              className='h-7 w-auto min-w-[220px] gap-2 text-xs'
+              className='h-7 w-full gap-2 text-xs md:w-auto md:min-w-[220px]'
             >
               <SelectValue placeholder='버전 선택'>
                 {selectedDoc && (
@@ -275,28 +275,28 @@ export function SrsArtifact() {
             </SelectContent>
           </Select>
         </div>
-        <div className='flex items-center gap-1.5'>
+        <div className='flex items-center justify-end gap-1.5'>
           <Button
-            variant='outline'
+            variant='ghost'
             size='sm'
             className='h-7 gap-1.5 text-xs'
             disabled={!selectedDoc}
             onClick={handleDownloadMarkdown}
           >
-            <Download className='size-3' />
-            Markdown 다운로드
+            <Download className='size-3.5' />
+            다운로드
           </Button>
           <Button
-            variant='outline'
+            variant='ghost'
             size='sm'
             className='h-7 gap-1.5 text-xs'
             onClick={handleGenerate}
             disabled={generating}
           >
             {generating ? (
-              <Spinner size='size-3' />
+              <Spinner size='size-3.5' />
             ) : (
-              <RefreshCw className='size-3' />
+              <RefreshCw className='size-3.5' />
             )}
             재생성
           </Button>

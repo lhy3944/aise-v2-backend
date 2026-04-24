@@ -2,6 +2,7 @@ import {
   type AlertOptions,
   type ConfirmOptions,
   type ModalOptions,
+  type PromptOptions,
   useOverlayStore,
 } from '@/stores/overlay-store';
 
@@ -32,17 +33,27 @@ import {
  * });
  */
 export function useOverlay() {
-  const { showAlert, hideAlert, showConfirm, hideConfirm, showModal, hideModal } =
-    useOverlayStore();
+  const {
+    showAlert,
+    hideAlert,
+    showConfirm,
+    hideConfirm,
+    showModal,
+    hideModal,
+    showPrompt,
+    hidePrompt,
+  } = useOverlayStore();
 
   return {
     alert: showAlert,
     confirm: showConfirm,
     modal: showModal,
+    prompt: showPrompt,
     closeAlert: hideAlert,
     closeConfirm: hideConfirm,
     closeModal: hideModal,
+    closePrompt: hidePrompt,
   };
 }
 
-export type { AlertOptions, ConfirmOptions, ModalOptions };
+export type { AlertOptions, ConfirmOptions, ModalOptions, PromptOptions };

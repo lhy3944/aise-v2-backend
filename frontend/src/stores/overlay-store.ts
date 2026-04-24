@@ -30,6 +30,20 @@ export interface ModalOptions {
   onClose?: () => void;
 }
 
+export interface PromptOptions {
+  title: string;
+  description?: string;
+  label?: string;
+  placeholder?: string;
+  defaultValue?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  requiredMessage?: string;
+  maxLength?: number;
+  onConfirm: (value: string) => void;
+  onCancel?: () => void;
+}
+
 interface OverlayState {
   alertOpen: boolean;
   alertOptions: AlertOptions | null;
@@ -37,6 +51,8 @@ interface OverlayState {
   confirmOptions: ConfirmOptions | null;
   modalOpen: boolean;
   modalOptions: ModalOptions | null;
+  promptOpen: boolean;
+  promptOptions: PromptOptions | null;
 
   showAlert: (options: AlertOptions) => void;
   hideAlert: () => void;
@@ -44,6 +60,8 @@ interface OverlayState {
   hideConfirm: () => void;
   showModal: (options: ModalOptions) => void;
   hideModal: () => void;
+  showPrompt: (options: PromptOptions) => void;
+  hidePrompt: () => void;
 }
 
 export const useOverlayStore = create<OverlayState>((set) => ({
@@ -53,6 +71,8 @@ export const useOverlayStore = create<OverlayState>((set) => ({
   confirmOptions: null,
   modalOpen: false,
   modalOptions: null,
+  promptOpen: false,
+  promptOptions: null,
 
   showAlert: (options) => set({ alertOpen: true, alertOptions: options }),
   hideAlert: () => set({ alertOpen: false }),
@@ -60,4 +80,6 @@ export const useOverlayStore = create<OverlayState>((set) => ({
   hideConfirm: () => set({ confirmOpen: false }),
   showModal: (options) => set({ modalOpen: true, modalOptions: options }),
   hideModal: () => set({ modalOpen: false }),
+  showPrompt: (options) => set({ promptOpen: true, promptOptions: options }),
+  hidePrompt: () => set({ promptOpen: false }),
 }));

@@ -3,6 +3,7 @@
 import { AlertDialog } from '@/components/overlay/AlertDialog';
 import { ConfirmDialog } from '@/components/overlay/ConfirmDialog';
 import { Modal } from '@/components/overlay/Modal';
+import { PromptDialog } from '@/components/overlay/PromptDialog';
 import { useOverlayStore } from '@/stores/overlay-store';
 
 export function OverlayProvider() {
@@ -16,6 +17,9 @@ export function OverlayProvider() {
     modalOpen,
     modalOptions,
     hideModal,
+    promptOpen,
+    promptOptions,
+    hidePrompt,
   } = useOverlayStore();
 
   return (
@@ -50,6 +54,16 @@ export function OverlayProvider() {
         >
           {modalOptions.content}
         </Modal>
+      )}
+
+      {promptOptions && (
+        <PromptDialog
+          open={promptOpen}
+          onOpenChange={(open) => {
+            if (!open) hidePrompt();
+          }}
+          {...promptOptions}
+        />
       )}
     </>
   );

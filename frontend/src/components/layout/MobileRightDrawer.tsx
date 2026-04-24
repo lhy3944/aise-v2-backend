@@ -23,7 +23,11 @@ export function MobileRightDrawer() {
   if (isMobile && sourceViewerData !== prevSourceDataRef.current) {
     if (sourceViewerData !== null && !open) {
       setOpen(true);
-    } else if (sourceViewerData === null && prevSourceDataRef.current !== null && open) {
+    } else if (
+      sourceViewerData === null &&
+      prevSourceDataRef.current !== null &&
+      open
+    ) {
       setOpen(false);
     }
     prevSourceDataRef.current = sourceViewerData;
@@ -41,7 +45,7 @@ export function MobileRightDrawer() {
       </Button>
 
       <DrawerContent
-        className='border-line-primary bg-canvas-primary top-15! bottom-0! flex h-auto w-[95vw] flex-col border-l p-0 sm:w-[480px]'
+        className='border-line-primary bg-canvas-primary top-15! bottom-0! flex h-auto w-[95vw] flex-col border-l p-0 sm:w-[580px]'
         overlayClassName='top-15!'
       >
         <DrawerTitle className='sr-only'>패널</DrawerTitle>

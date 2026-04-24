@@ -361,7 +361,7 @@ async def create_record(
             order_index=order_index,
             status="draft",
         ),
-        working_status="clean",
+        working_status="dirty",
         lifecycle_status="active",
     )
     db.add(artifact)
@@ -699,7 +699,7 @@ async def approve_records(
                 order_index=order_index,
                 status="approved",
             ),
-            working_status="clean",
+            working_status="dirty",
             lifecycle_status="active",
         )
         db.add(artifact)

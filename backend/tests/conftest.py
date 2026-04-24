@@ -86,11 +86,14 @@ async def _cleanup_db():
             for table in CLEANUP_TABLES:
                 if table == "__null_artifact_pointers":
                     # circular FK 해제: DELETE 전에 포인터를 먼저 NULL 처리
+                    # working_status='dirty' 로 재설정해 check constraints
+                    # (ck_artifacts_clean_requires_version / ck_artifacts_staged_requires_pr)
+                    # 위반 방지
                     if "artifacts" in existing_tables:
                         await cleanup_session.execute(
                             text(
                                 "UPDATE artifacts SET current_version_id=NULL, "
-                                "open_pr_id=NULL"
+                                "open_pr_id=NULL, working_status='dirty'"
                             )
                         )
                     continue

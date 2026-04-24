@@ -1,10 +1,11 @@
-"""Record API 테스트"""
+"""Record-flavoured artifact API 테스트 — /api/v1/projects/{pid}/artifacts/record."""
 
 import uuid
 
 import pytest
 
 from src.models.knowledge import KnowledgeDocument
+
 
 async def create_test_project(client, name: str = "레코드 테스트 프로젝트") -> str:
     resp = await client.post(
@@ -20,7 +21,7 @@ async def test_create_record_invalid_section_id_returns_422(client):
     project_id = await create_test_project(client)
 
     resp = await client.post(
-        f"/api/v1/projects/{project_id}/records",
+        f"/api/v1/projects/{project_id}/artifacts/record",
         json={"content": "테스트 레코드", "section_id": "not-a-uuid"},
     )
 
@@ -32,7 +33,7 @@ async def test_list_records_invalid_section_id_returns_422(client):
     project_id = await create_test_project(client)
 
     resp = await client.get(
-        f"/api/v1/projects/{project_id}/records?section_id=not-a-uuid",
+        f"/api/v1/projects/{project_id}/artifacts/record?section_id=not-a-uuid",
     )
 
     assert resp.status_code == 422
@@ -48,7 +49,7 @@ async def test_create_record_rejects_section_from_another_project(client):
     section_id = section_resp.json()["sections"][0]["section_id"]
 
     resp = await client.post(
-        f"/api/v1/projects/{project_1}/records",
+        f"/api/v1/projects/{project_1}/artifacts/record",
         json={"content": "다른 프로젝트 섹션 참조", "section_id": section_id},
     )
 
@@ -61,14 +62,14 @@ async def test_approve_records_keeps_incremental_display_ids(client):
     project_id = await create_test_project(client)
 
     create_resp = await client.post(
-        f"/api/v1/projects/{project_id}/records",
+        f"/api/v1/projects/{project_id}/artifacts/record",
         json={"content": "기본 레코드"},
     )
     assert create_resp.status_code == 201
     assert create_resp.json()["display_id"] == "OTH-001"
 
     approve_resp = await client.post(
-        f"/api/v1/projects/{project_id}/records/approve",
+        f"/api/v1/projects/{project_id}/artifacts/record/approve",
         json={
             "items": [
                 {"content": "후보 레코드 A"},
@@ -89,36 +90,36 @@ async def test_reorder_records_partial_non_prefix_keeps_consistent_order(client)
     project_id = await create_test_project(client, "레코드 순서 테스트 프로젝트")
 
     rec1 = await client.post(
-        f"/api/v1/projects/{project_id}/records",
+        f"/api/v1/projects/{project_id}/artifacts/record",
         json={"content": "A"},
     )
     rec2 = await client.post(
-        f"/api/v1/projects/{project_id}/records",
+        f"/api/v1/projects/{project_id}/artifacts/record",
         json={"content": "B"},
     )
     rec3 = await client.post(
-        f"/api/v1/projects/{project_id}/records",
+        f"/api/v1/projects/{project_id}/artifacts/record",
         json={"content": "C"},
     )
     assert rec1.status_code == 201
     assert rec2.status_code == 201
     assert rec3.status_code == 201
 
-    rec1_id = rec1.json()["record_id"]
-    rec2_id = rec2.json()["record_id"]
-    rec3_id = rec3.json()["record_id"]
+    rec1_id = rec1.json()["artifact_id"]
+    rec2_id = rec2.json()["artifact_id"]
+    rec3_id = rec3.json()["artifact_id"]
 
     reorder_resp = await client.put(
-        f"/api/v1/projects/{project_id}/records/reorder",
+        f"/api/v1/projects/{project_id}/artifacts/record/reorder",
         json={"ordered_ids": [rec3_id, rec1_id]},
     )
     assert reorder_resp.status_code == 200
     assert reorder_resp.json()["updated_count"] == 3
 
-    list_resp = await client.get(f"/api/v1/projects/{project_id}/records")
+    list_resp = await client.get(f"/api/v1/projects/{project_id}/artifacts/record")
     assert list_resp.status_code == 200
     records = list_resp.json()["records"]
-    assert [r["record_id"] for r in records] == [rec3_id, rec1_id, rec2_id]
+    assert [r["artifact_id"] for r in records] == [rec3_id, rec1_id, rec2_id]
     assert [r["order_index"] for r in records] == [0, 1, 2]
 
 
@@ -127,7 +128,7 @@ async def test_reorder_records_invalid_uuid_returns_422(client):
     project_id = await create_test_project(client, "레코드 UUID 검증 프로젝트")
 
     resp = await client.put(
-        f"/api/v1/projects/{project_id}/records/reorder",
+        f"/api/v1/projects/{project_id}/artifacts/record/reorder",
         json={"ordered_ids": ["not-a-uuid"]},
     )
     assert resp.status_code == 422
@@ -151,7 +152,7 @@ async def test_create_record_rejects_source_document_from_another_project(client
     await db.refresh(foreign_doc)
 
     resp = await client.post(
-        f"/api/v1/projects/{project_1}/records",
+        f"/api/v1/projects/{project_1}/artifacts/record",
         json={
             "content": "외부 프로젝트 문서 참조",
             "source_document_id": str(foreign_doc.id),
@@ -180,7 +181,7 @@ async def test_approve_records_rejects_source_document_from_another_project(clie
     await db.refresh(foreign_doc)
 
     resp = await client.post(
-        f"/api/v1/projects/{project_1}/records/approve",
+        f"/api/v1/projects/{project_1}/artifacts/record/approve",
         json={
             "items": [
                 {

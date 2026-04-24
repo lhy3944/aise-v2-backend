@@ -1,4 +1,11 @@
-"""Record API 스키마"""
+"""Record-flavoured artifact 의 API 스키마.
+
+`artifacts(artifact_type='record')` 전용 입출력 형태. 공통 artifact 스키마는
+`schemas/api/artifact.py` 에 있고, 여기 있는 스키마는 record 의 도메인 필드
+(section/source_document/status 등)를 평탄화해 UI 에서 접근하기 편하도록
+정리한 것이다.
+"""
+from __future__ import annotations
 
 import uuid
 from datetime import datetime
@@ -10,28 +17,28 @@ from pydantic import BaseModel, Field
 RecordStatus = Literal["draft", "approved", "excluded"]
 
 
-class RecordCreate(BaseModel):
+class ArtifactRecordCreate(BaseModel):
     content: str = Field(description="레코드 본문")
     section_id: uuid.UUID | None = Field(default=None, description="섹션 ID")
     source_document_id: uuid.UUID | None = Field(default=None)
     source_location: str | None = Field(default=None)
 
 
-class RecordUpdate(BaseModel):
+class ArtifactRecordUpdate(BaseModel):
     content: str | None = Field(default=None)
     section_id: uuid.UUID | None = Field(default=None)
 
 
-class RecordStatusUpdate(BaseModel):
+class ArtifactRecordStatusUpdate(BaseModel):
     status: RecordStatus
 
 
-class RecordReorderRequest(BaseModel):
-    ordered_ids: list[uuid.UUID] = Field(description="변경된 순서대로 레코드 ID 배열")
+class ArtifactRecordReorderRequest(BaseModel):
+    ordered_ids: list[uuid.UUID] = Field(description="변경된 순서대로 artifact ID 배열")
 
 
-class RecordResponse(BaseModel):
-    record_id: str
+class ArtifactRecordResponse(BaseModel):
+    artifact_id: str
     project_id: str
     section_id: str | None = None
     section_name: str | None = None
@@ -48,13 +55,13 @@ class RecordResponse(BaseModel):
     updated_at: datetime
 
 
-class RecordListResponse(BaseModel):
-    records: list[RecordResponse]
+class ArtifactRecordListResponse(BaseModel):
+    records: list[ArtifactRecordResponse]
     total: int
 
 
-class RecordExtractedItem(BaseModel):
-    """AI 추출 후보 레코드"""
+class ArtifactRecordExtractedItem(BaseModel):
+    """AI 추출 후보 — Artifact 생성 전 단계."""
     content: str
     section_id: str | None = None
     section_name: str | None = None
@@ -64,9 +71,9 @@ class RecordExtractedItem(BaseModel):
     confidence_score: float | None = None
 
 
-class RecordExtractResponse(BaseModel):
-    candidates: list[RecordExtractedItem]
+class ArtifactRecordExtractResponse(BaseModel):
+    candidates: list[ArtifactRecordExtractedItem]
 
 
-class RecordApproveRequest(BaseModel):
-    items: list[RecordCreate] = Field(description="승인할 레코드 목록")
+class ArtifactRecordApproveRequest(BaseModel):
+    items: list[ArtifactRecordCreate] = Field(description="승인할 레코드 목록")

@@ -8,6 +8,7 @@ import type { PullRequest } from '@/types/project';
 import type { ArtifactDraft } from '@/stores/staging-store';
 import {
   Check,
+  FileDiff,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -42,6 +43,7 @@ interface StagedChangesTrayProps {
   onApprovePR: (prId: string) => void;
   onRejectPR: (prId: string) => void;
   onMergePR: (prId: string) => void;
+  onShowDiff: (pr: PullRequest) => void;
 }
 
 export function StagedChangesTray({
@@ -61,6 +63,7 @@ export function StagedChangesTray({
   onApprovePR,
   onRejectPR,
   onMergePR,
+  onShowDiff,
 }: StagedChangesTrayProps) {
   if (!open) return null;
 
@@ -205,6 +208,16 @@ export function StagedChangesTray({
                     {pr.title}
                   </p>
                   <div className='flex items-center gap-1'>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='text-fg-secondary h-6 gap-1 px-2 text-[10px]'
+                      onClick={() => onShowDiff(pr)}
+                      title='변경 내용 보기'
+                    >
+                      <FileDiff className='size-3' />
+                      변경
+                    </Button>
                     <Button
                       variant='ghost'
                       size='sm'

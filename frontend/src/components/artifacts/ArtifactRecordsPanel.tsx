@@ -11,6 +11,7 @@ import {
   type PullRequestCreateValues,
   type StagedChangeSummary,
 } from '@/components/artifacts/workspace/PullRequestCreateForm';
+import { DiffViewer } from '@/components/artifacts/workspace/diff/DiffViewer';
 import { StagedChangesTray } from '@/components/artifacts/workspace/StagedChangesTray';
 import { WorkspaceStatusBar } from '@/components/artifacts/workspace/WorkspaceStatusBar';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +36,7 @@ import type {
   ArtifactRecord,
   ArtifactRecordCreate,
   ArtifactRecordStatus,
+  PullRequest,
 } from '@/types/project';
 import {
   Check,
@@ -362,6 +364,23 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       }
     },
     [bumpPrRefresh, fetchRecords],
+  );
+
+  const handleShowDiff = useCallback(
+    (pr: PullRequest) => {
+      const displayLabel = displayIdOf(pr.artifact_id) ?? pr.artifact_id.slice(0, 8);
+      overlay.modal({
+        title: `변경 내용 · ${displayLabel}`,
+        size: 'lg',
+        content: (
+          <DiffViewer
+            headVersionId={pr.head_version_id}
+            baseVersionId={pr.base_version_id ?? undefined}
+          />
+        ),
+      });
+    },
+    [displayIdOf, overlay],
   );
 
   // 후보 전체 선택/해제
@@ -758,6 +777,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         onApprovePR={handleApprovePR}
         onRejectPR={handleRejectPR}
         onMergePR={handleMergePR}
+        onShowDiff={handleShowDiff}
       />
     </div>
   );

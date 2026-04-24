@@ -1,7 +1,7 @@
 'use client';
 
+import { ArtifactRecordsPanel } from '@/components/artifacts/ArtifactRecordsPanel';
 import { DesignArtifact } from '@/components/artifacts/DesignArtifact';
-import { RecordsArtifact } from '@/components/artifacts/RecordsArtifact';
 import { SrsArtifact } from '@/components/artifacts/SrsArtifact';
 import { TestCaseArtifact } from '@/components/artifacts/TestCaseArtifact';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -74,7 +74,7 @@ export function ArtifactPanel() {
       {/* Content */}
       <div className='flex min-h-0 flex-1 flex-col'>
         <TabsContent value='records' className='mt-0 h-full'>
-          <RecordsArtifact projectId={currentProject.project_id} />
+          <ArtifactRecordsPanel projectId={currentProject.project_id} />
         </TabsContent>
         <TabsContent value='srs' className='mt-0 h-full'>
           <SrsArtifact />

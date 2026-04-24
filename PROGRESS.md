@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 80% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent + Artifact Governance + Retrieval Gate/Rewriter 완료. 남은: DiffViewer / SRS·TestCase·Critic agents / 통합 artifacts 라우터 세부 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | 🟢 진행 중 | 90% | 증분 1A/1B/2 + 마무리 + [P2] sources + 토큰 스트리밍 + GeneralChatAgent + Artifact Governance + Retrieval Gate/Rewriter + DiffViewer + SrsGenerator/TestCaseGenerator/Critic 에이전트 완료. 남은: 프론트 N1~N5 UI (AgentInvocationCard / PlanProgress / SrsEditor / TestCaseList) |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
 | **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
@@ -86,6 +86,27 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-24 — DiffViewer + SRS/TestCase/Critic 에이전트 5커밋
+
+Artifact governance 리팩터링 검증 push 직후 이어 작업. **백엔드 154 passed**
+(신규 test_srs_generator_agent 3 + test_critic_agent 6 + test_testcase_generator_agent 4 포함),
+프론트 `tsc --noEmit` 0 error (DiffViewer까지).
+
+| 커밋 | 범위 | 요약 |
+|---|---|---|
+| `6f27004` | frontend/artifact | DiffViewer + FieldDiffRow. PR 머지 전 리뷰어가 HEAD vs base 스냅샷 차이를 overlay modal 로 확인. added/removed/modified/unchanged 카테고리별 카운트 chip, 변경 없음 토글. 백엔드 `GET /api/v1/versions/{version_id}/diff` 자산 재사용 (plan §3-7). |
+| `25e2fc4` | backend/agents | SrsGeneratorAgent (3a). srs_svc.generate_srs 래핑. state.srs_generated = {srs_id, version, section_count, based_on_records_count}. tool_result 에 section_count/srs_version 노출. |
+| `31fd98e` | backend/agents | CriticAgent (3c). 결정론적 citation integrity check — 답변의 [N] 인용이 sources ref 에 존재하는지 검증. LLM 호출 없음 (retrieval_gate / query_rewriter 의 결정성 유지). state.critic_report = {passed, issues, checked_citations, valid_citations}. 6 테스트 (all resolve / unknown ref / citation but empty sources / no citations / no prior answer / positional fallback). |
+| `cf83190` | backend/agents | TestCaseGeneratorAgent (3b). 최신 completed SRS 섹션별로 LLM 호출 → TC JSON 배열 파싱 → artifact_type='testcase' Artifact 저장 (working_status='dirty'). prompts/testcase/generate.py + services/testcase_svc.py + schemas/api/artifact_testcase.py 신설. display_id 'TC-<n:03d>' 연번. 섹션 JSON 파싱 실패는 skipped_sections 로 수용. |
+
+#### 후속 작업 (Phase 2 90% → 100%)
+- **N1 AgentInvocationCard**: tool_call/tool_result 카드 (이미 ToolCall 컴포넌트 있으나 agent별 result metadata 포맷 개선 필요 — records_count / section_count / testcase_count / critic_passed).
+- **N3 PlanProgress**: plan_update 이벤트 받아 step별 상태 표시 패널. 이미 chat-store 에 plan 상태는 있지만 시각화 미구현.
+- **N4 SrsEditor**: ArtifactRecordEditor 패턴 재사용. SRS 섹션별 편집 + artifact_type='srs' PR workflow.
+- **N5 TestCaseList**: testcase artifact 목록/편집. ArtifactRecordsPanel 구조 재사용.
+
+Phase 2 마무리 후 Phase 3 HITL 착수.
 
 ### 2026-04-24 — Artifact Governance + Retrieval 품질 레이어 (12 커밋 정리)
 

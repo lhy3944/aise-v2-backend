@@ -1,7 +1,7 @@
-# Preview 환경 (master와 포트/컨테이너 완전 분리)
+# Preview 환경 (main과 포트/컨테이너 완전 분리)
 # 사용: docker compose -f docker-compose.preview.yml up -d --build
 #
-# master:  Frontend 4000, Backend 8081, DB 5432 (aise2_*)
+# main:    Frontend 4000, Backend 8081, DB 5432 (aise2_*)
 # preview: Frontend 4100, Backend 8181, DB 5433 (aise2_preview_*)
 #
 # API 프록시: 브라우저 → https://preview.devbanjang.cloud/api/*

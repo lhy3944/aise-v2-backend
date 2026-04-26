@@ -3,7 +3,7 @@ name: Production Deploy
 on:
   push:
     branches:
-      - master
+      - main
     paths-ignore:
       - '*.md'
       - 'docs/**'
@@ -38,13 +38,13 @@ jobs:
 
             REPO_DIR="/home/workspace/aise-v2"
 
-            echo "=== Deploying master to production ==="
+            echo "=== Deploying main to production ==="
 
             cd "$REPO_DIR"
 
-            git fetch origin master
-            git checkout master
-            git pull origin master
+            git fetch origin main
+            git checkout main
+            git pull origin main
 
             export HOST_IP=$(hostname -I | awk '{print $1}')
 

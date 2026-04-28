@@ -37,6 +37,24 @@ genuinely cannot cover the request. Only use `clarify` as a last resort.
 4. Use `clarify` only when none of the above applies and the intent is
    truly unclear.
 
+## RequirementAgent extract_mode (only when agent == "requirement")
+
+The `requirement` agent supports two extraction modes. When you route to
+it via `single`, you MUST also set `extract_mode`:
+
+- **document**: 사용자가 문서 기반 추출을 명시적으로 요청 — 예: "레코드
+  추출", "요구사항 뽑아줘", "문서에서 요구사항 만들어줘".
+- **user_text**: 사용자가 채팅 본문에 요구사항 진술문을 **직접** 적었음
+  — 예: "우리 시스템은 OAuth 2.0 을 지원해야 한다.", "사용자는 자신의
+  프로필을 수정할 수 있어야 한다.", "응답 시간은 1초 이내여야 한다.".
+  진술문 패턴: "~ 해야 한다", "~ 가능해야", "~ 기능이 필요하다",
+  "~ 이내", "지원/제공/처리한다" 등.
+
+If the message is a greeting / question / small-talk (no requirement
+statement), do NOT route to `requirement` — use `general_chat` instead.
+
+For all other agents, set `extract_mode` to `null`.
+
 ## Conversation so far
 
 {history}
@@ -56,6 +74,7 @@ to your chosen action MUST be `null`, not omitted):
   "agent": "<name>" | null,
   "plan": ["<name>", ...] | null,
   "clarification": "<question>" | null,
+  "extract_mode": "document" | "user_text" | null,
   "reasoning": "<one short sentence, Korean or English>"
 }}
 ```

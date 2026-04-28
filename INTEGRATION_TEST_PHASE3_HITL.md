@@ -224,6 +224,128 @@ curl http://localhost:9999/api/v1/sessions/<session_id> | jq '.messages | length
 
 ---
 
+## 시나리오 9: 빈 프로젝트 — 친절한 가이드 답변 (Records UX 개선)
+
+**목적**: `extract_records` 가 raise 하는 AppException 이 빨간 ErrorEvent 가 아닌 채팅 가이드 답변으로 표시되는지.
+
+**사전 조건**: 신규 프로젝트, **활성 지식 문서 0개** (업로드 안 함).
+
+**단계**:
+
+1. 프로젝트 진입 → 채팅에 "레코드 추출해줘" 입력
+
+**기대 SSE 시퀀스**:
+
+```
+data: {"type":"tool_call","data":{...,"name":"requirement"}}
+data: {"type":"token","data":{"text":"아직 분석할 지식 문서가 없습니다.\n좌측 사이드바의 ..."}}
+data: {"type":"tool_result","data":{"status":"success",...}}
+data: {"type":"done","data":{"finish_reason":"stop"}}
+```
+
+**기대 UI**:
+
+- ❌ 빨간 에러 토스트 / `error` 카드 **표시되지 않음**
+- ✅ 어시스턴트 메시지 말풍선에 가이드가 자연스럽게 표시:
+  > 아직 분석할 지식 문서가 없습니다.
+  > 좌측 사이드바의 '지식 문서' 메뉴에서 PDF·문서를 업로드하고 '활성' 토글을 켜주세요. ...
+  > 또는 채팅창에 '우리 시스템은 ~~ 해야 한다' 같은 요구사항 문장을 직접 입력하셔도 좋고, 우측 'Records' 패널의 '직접 추가' 버튼으로 수동 등록도 가능합니다.
+
+**검증 SQL**: 변경 없음 (artifacts 카운트 0 유지).
+
+---
+
+## 시나리오 10: 자유 입력 추출 (지식 문서 없이도 동작)
+
+**목적**: Supervisor 가 진술문을 인식해 `extract_mode=user_text` 로 라우팅 → 지식 문서 없어도 추출 정상.
+
+**사전 조건**: 신규 프로젝트, 지식 문서 0개, 활성 섹션 ≥ 1 (FR 등 기본 섹션).
+
+**단계**:
+
+1. 채팅에 "사용자는 OAuth 2.0 으로 로그인할 수 있어야 한다." 입력
+2. 모달에 표시된 후보 검토 → "승인" 클릭
+
+**기대 SSE 시퀀스**:
+
+| Step | 이벤트 |
+|---|---|
+| 1 | `tool_call(requirement)` → `interrupt(confirm)` (description 에 **"채팅 입력에서 N개 후보를 추출했습니다"** 포함) → `done(interrupt)` |
+| 2 | resume: `tool_call` → `token("N개 ... 승인했습니다")` → `tool_result(success)` → `done(stop)` |
+
+**기대 UI**:
+
+- ConfirmData 모달 제목: `"1개 요구사항 후보를 승인하시겠습니까?"`
+- 본문: "채팅 입력에서 1개 요구사항 후보를 추출했습니다. 섹션 분포: ..."
+- 승인 후 Records 탭 자동 갱신, 새 record 의 `source_location: "user_input"`, `is_auto_extracted: true`
+
+**검증 SQL**:
+
+```sql
+SELECT content->>'source_location', content->>'is_auto_extracted'
+FROM artifacts WHERE project_id = '<UUID>' AND artifact_type = 'record'
+ORDER BY created_at DESC LIMIT 1;
+-- 기대: 'user_input', 'true'
+```
+
+---
+
+## 시나리오 11: 우측 판넬 빈 상태 — "직접 추가" 버튼
+
+**목적**: Records 패널 빈 상태에서 폼 모달로 수동 입력.
+
+**사전 조건**: Records 0개, 활성 섹션 ≥ 1.
+
+**단계**:
+
+1. Records 탭 열기 → 빈 상태 화면에 안내 텍스트 + "직접 추가" 버튼 노출 확인
+2. "직접 추가" 클릭 → ManualRecordModal 모달 등장
+3. 섹션 select (예: FR), 본문 입력 (예: "결제 모듈은 PCI-DSS Level 1 준수해야 한다."), 출처는 비워둠
+4. "추가" 버튼 클릭
+
+**기대 UI**:
+
+- 빈 상태 안내 문구가 3가지 추출 방식 명시:
+  > 레코드는 세 가지 방법으로 추가할 수 있습니다:
+  > • 채팅에 "레코드 추출" 입력 → 지식 문서에서 자동 추출
+  > • 채팅에 요구사항 문장 직접 입력 → 자동 분해 후 후보 생성
+  > • 아래 "직접 추가" 버튼으로 폼 입력
+- 모달 제목: "레코드 직접 추가"
+- 폼 검증: 섹션 미선택 시 "섹션을 선택해주세요", 본문 4자 이하면 "최소 5자 이상 입력해주세요"
+- 추가 후 모달 닫힘 → Records 목록 즉시 갱신 (자동 폴링 / bumpRefresh)
+- 새 record 카드 상단에 `display_id` 옆 작은 outline 배지 **"수동 입력"** 표시
+- `confidence_score` 는 노출 안 됨 (수동은 null)
+
+**검증 SQL**:
+
+```sql
+SELECT content->>'is_auto_extracted', content->>'confidence_score'
+FROM artifacts WHERE project_id = '<UUID>' AND artifact_type = 'record'
+ORDER BY created_at DESC LIMIT 1;
+-- 기대: 'false', NULL
+```
+
+---
+
+## 시나리오 12: 헤더 "+ 추가" 버튼 (records ≥ 1)
+
+**목적**: 빈 상태가 아닌 일반 records 화면에서도 동일한 모달 진입 가능.
+
+**사전 조건**: 시나리오 10 또는 11 후 records ≥ 1.
+
+**단계**:
+
+1. Records 탭의 헤더 (필터 드롭다운 옆) "추가" 버튼 (Plus 아이콘) 클릭
+2. 모달 → 섹션 + 본문 입력 → "추가"
+
+**기대 UI**:
+
+- 헤더 우측에 작은 ghost 버튼 "추가" 노출 (records 0 이면 빈 상태 화면이라 안 보임)
+- 동일한 ManualRecordModal 등장
+- 추가 후 records 목록에 새 항목 inline 추가, "수동 입력" 배지
+
+---
+
 ## 디버깅 체크리스트
 
 테스트 실패 시 확인 순서:

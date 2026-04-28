@@ -50,6 +50,10 @@ from src.schemas.api.artifact_record import (
     ArtifactRecordUpdate,
     RecordStatus,
 )
+from src.prompts.extraction import (
+    build_document_extract_messages,
+    build_user_text_extract_messages,
+)
 from src.services.llm_svc import chat_completion
 from src.utils.json_parser import parse_llm_json
 from src.utils.reorder import build_reordered_ids
@@ -374,7 +378,8 @@ async def create_record(
             section_id=data.section_id,
             source_document_id=data.source_document_id,
             source_location=data.source_location,
-            confidence_score=None,
+            # 수동 입력은 사용자가 직접 신뢰도를 적은 경우만 보존 (보통 None).
+            confidence_score=data.confidence_score,
             is_auto_extracted=False,
             order_index=order_index,
             status="draft",
@@ -493,9 +498,25 @@ async def reorder_records(
 
 
 async def extract_records(
-    db: AsyncSession, project_id: uuid.UUID, section_id: uuid.UUID | None = None,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    section_id: uuid.UUID | None = None,
+    *,
+    user_text: str | None = None,
 ) -> ArtifactRecordExtractResponse:
-    logger.info(f"레코드 추출 시작: project_id={project_id}, section_id={section_id}")
+    """프로젝트 record 후보를 LLM 으로 추출.
+
+    두 가지 모드:
+      - **document** (`user_text=None`, default): 활성 지식 문서 청크에서
+        섹션별 후보를 추출. 활성 섹션 + 활성 지식 문서 모두 필요.
+      - **user_text** (`user_text=<자유 입력>`): 사용자가 채팅에 직접 적은
+        텍스트를 한 문장 = 한 후보로 분해. 활성 섹션만 필요 (지식 문서 불요).
+        `source_document_id` 는 None, `source_location` 은 "user_input".
+    """
+    mode = "user_text" if user_text else "document"
+    logger.info(
+        f"레코드 추출 시작: project_id={project_id}, section_id={section_id}, mode={mode}"
+    )
 
     sect_stmt = (
         select(RequirementSection)
@@ -511,32 +532,6 @@ async def extract_records(
     sections = (await db.execute(sect_stmt)).scalars().all()
     if not sections:
         raise AppException(400, "활성 섹션이 없습니다.")
-
-    chunk_stmt = (
-        select(KnowledgeChunk.content, KnowledgeDocument.id, KnowledgeDocument.name)
-        .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
-        .where(
-            KnowledgeDocument.project_id == project_id,
-            KnowledgeDocument.is_active == True,  # noqa: E712
-            KnowledgeDocument.status == "completed",
-        )
-        .order_by(KnowledgeDocument.id, KnowledgeChunk.chunk_index)
-    )
-    rows = (await db.execute(chunk_stmt)).all()
-    if not rows:
-        raise AppException(400, "활성 지식 문서가 없습니다.")
-
-    doc_map: dict[str, dict] = {}
-    for content, doc_id, doc_name in rows:
-        did = str(doc_id)
-        if did not in doc_map:
-            doc_map[did] = {"name": doc_name, "chunks": []}
-        doc_map[did]["chunks"].append(content)
-
-    document_text = "\n\n".join(
-        f"[문서: {info['name']}]\n" + "\n".join(info["chunks"][:20])
-        for info in doc_map.values()
-    )
 
     glossary_result = await db.execute(
         select(GlossaryItem.term, GlossaryItem.definition).where(
@@ -557,37 +552,52 @@ async def extract_records(
 
     section_ids_map = {s.name: {"id": str(s.id), "type": s.type} for s in sections}
 
-    messages = [
-        {"role": "system", "content": "JSON 형식으로만 응답하세요."},
-        {
-            "role": "user",
-            "content": f"""\
-아래 지식 문서에서 섹션별 레코드를 추출하세요.
+    if mode == "user_text":
+        assert user_text is not None
+        doc_map: dict[str, dict] = {}
+        messages = build_user_text_extract_messages(
+            sections_text=sections_text,
+            glossary_text=glossary_text,
+            user_text=user_text,
+        )
+        max_tokens = 2048
+    else:
+        chunk_stmt = (
+            select(KnowledgeChunk.content, KnowledgeDocument.id, KnowledgeDocument.name)
+            .join(
+                KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id
+            )
+            .where(
+                KnowledgeDocument.project_id == project_id,
+                KnowledgeDocument.is_active == True,  # noqa: E712
+                KnowledgeDocument.status == "completed",
+            )
+            .order_by(KnowledgeDocument.id, KnowledgeChunk.chunk_index)
+        )
+        rows = (await db.execute(chunk_stmt)).all()
+        if not rows:
+            raise AppException(400, "활성 지식 문서가 없습니다.")
 
-규칙:
-- 각 레코드는 하나의 독립적인 요구사항/제약/속성/설명 단위여야 합니다
-- 원문에 없는 내용을 생성하지 마세요
-- 각 레코드에 출처(문서명, 위치)를 반드시 명시하세요
-- 신뢰도 점수(0.0~1.0)를 부여하세요 (명확한 내용: 0.8+, 모호한 내용: 0.5 이하)
-- 입력 언어와 동일한 언어로 응답하세요
+        doc_map = {}
+        for content, doc_id, doc_name in rows:
+            did = str(doc_id)
+            if did not in doc_map:
+                doc_map[did] = {"name": doc_name, "chunks": []}
+            doc_map[did]["chunks"].append(content)
 
-출력 형식:
-{{"records": [
-  {{"section_name": "섹션명", "content": "레코드 내용", "source_document": "문서명", "source_location": "위치 정보", "confidence": 0.85}}
-]}}
+        document_text = "\n\n".join(
+            f"[문서: {info['name']}]\n" + "\n".join(info["chunks"][:20])
+            for info in doc_map.values()
+        )
 
-섹션 목록:
-{sections_text}
+        messages = build_document_extract_messages(
+            sections_text=sections_text,
+            glossary_text=glossary_text,
+            document_text=document_text,
+        )
+        max_tokens = 8192
 
-용어 사전:
-{glossary_text}
-
-지식 문서:
-{document_text}""",
-        },
-    ]
-
-    raw = await chat_completion(messages, temperature=0.2, max_completion_tokens=8192)
+    raw = await chat_completion(messages, temperature=0.2, max_completion_tokens=max_tokens)
     parsed = parse_llm_json(raw, error_msg="LLM 응답 파싱 실패")
     items = parsed.get("records", [])
 
@@ -596,7 +606,7 @@ async def extract_records(
         sec_name = item.get("section_name", "")
         sec_info = section_ids_map.get(sec_name, {})
         src_doc_name = item.get("source_document", "")
-        src_doc_id = None
+        src_doc_id: str | None = None
         for did, info in doc_map.items():
             if info["name"] == src_doc_name:
                 src_doc_id = did
@@ -608,13 +618,13 @@ async def extract_records(
                 section_id=sec_info.get("id"),
                 section_name=sec_name,
                 source_document_id=src_doc_id,
-                source_document_name=src_doc_name,
+                source_document_name=src_doc_name or None,
                 source_location=item.get("source_location"),
                 confidence_score=item.get("confidence"),
             )
         )
 
-    logger.info(f"레코드 추출 완료: {len(candidates)}개 후보")
+    logger.info(f"레코드 추출 완료: {len(candidates)}개 후보 (mode={mode})")
     return ArtifactRecordExtractResponse(candidates=candidates)
 
 

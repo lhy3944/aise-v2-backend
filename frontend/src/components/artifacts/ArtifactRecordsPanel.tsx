@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
+import { ManualRecordModal } from '@/components/artifacts/ManualRecordModal';
 import { RecordVersionsModal } from '@/components/artifacts/workspace/RecordVersionsModal';
 import {
   ArtifactRecordEditor,
@@ -40,6 +41,7 @@ import {
   History,
   MinusCircle,
   Pencil,
+  Plus,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -75,12 +77,14 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const [records, setRecords] = useState<ArtifactRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [sectionFilters, setSectionFilters] = useState<string[]>([]);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const extracting = useArtifactRecordStore((s) => s.extracting);
   const candidates = useArtifactRecordStore((s) => s.candidates);
   const extractError = useArtifactRecordStore((s) => s.extractError);
   const clearCandidates = useArtifactRecordStore((s) => s.clearCandidates);
   const refreshNonce = useArtifactRecordStore((s) => s.refreshNonce);
+  const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
   const [selectedCandidates, setSelectedCandidates] = useState<Set<number>>(
     new Set(),
   );
@@ -411,12 +415,25 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         <div className='flex h-full flex-col items-center justify-center p-6 text-center'>
           <FileText className='text-fg-muted mb-3 size-10' />
           <p className='text-fg-secondary text-sm font-medium'>
-            레코드가 없습니다
+            아직 등록된 레코드가 없습니다
           </p>
-          <p className='text-fg-muted mt-1 text-xs'>
-            채팅에서 &quot;레코드 추출&quot;을 실행하면 지식 문서에서 자동으로
-            추출됩니다.
+          <p className='text-fg-muted mt-1 max-w-xs text-xs leading-relaxed'>
+            레코드는 세 가지 방법으로 추가할 수 있습니다:
+            <br />• 채팅에 <b>&quot;레코드 추출&quot;</b> 입력 → 지식 문서에서
+            자동 추출
+            <br />• 채팅에 <b>요구사항 문장 직접 입력</b> → 자동 분해 후 후보
+            생성
+            <br />• 아래 <b>&quot;직접 추가&quot;</b> 버튼으로 폼 입력
           </p>
+          <Button
+            variant='outline'
+            size='sm'
+            className='mt-4 gap-1.5'
+            onClick={() => setManualOpen(true)}
+          >
+            <Plus className='size-3.5' />
+            직접 추가
+          </Button>
         </div>
       );
     }
@@ -537,6 +554,17 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         <span className='text-fg-primary text-xs font-semibold'>
           {records.length}개 레코드
         </span>
+        <div className='flex items-center gap-1'>
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-7 gap-1 text-xs'
+            onClick={() => setManualOpen(true)}
+            title='레코드 직접 추가'
+          >
+            <Plus className='size-3' />
+            추가
+          </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant='ghost' size='sm' className='h-7 gap-1.5 text-xs'>
@@ -576,6 +604,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
 
       {/* Record list */}
@@ -613,6 +642,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                           <span className='text-accent-primary inline-flex items-center gap-1 font-medium'>
                             <span className='bg-accent-primary size-1.5 rounded-full' />
                             unstaged
+                          </span>
+                        )}
+                        {record.is_auto_extracted === false && (
+                          <span className='border-line-primary text-fg-muted inline-flex items-center rounded-sm border px-1 py-px text-[10px]'>
+                            수동 입력
                           </span>
                         )}
                         {record.confidence_score != null && (
@@ -743,6 +777,18 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         />
         {renderContent()}
       </div>
+      <ManualRecordModal
+        open={manualOpen}
+        onOpenChange={setManualOpen}
+        projectId={projectId}
+        onCreated={() => {
+          // 생성 즉시 records 목록 재조회 — Records 탭에 새 레코드 노출.
+          bumpRefresh();
+        }}
+        onError={(msg) => {
+          overlay.alert({ type: 'error', title: '레코드 추가 실패', description: msg });
+        }}
+      />
     </div>
   );
 }

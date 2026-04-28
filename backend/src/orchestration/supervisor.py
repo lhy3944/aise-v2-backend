@@ -51,6 +51,10 @@ def _validate_decision(payload: dict[str, Any]) -> RoutingDecision:
             raise ValueError(
                 f"supervisor picked unknown agent {decision.agent!r}"
             )
+        # RequirementAgent 라우팅 시 extract_mode 디폴트 — supervisor LLM 이
+        # 누락하면 안전하게 'document' 모드로 (기존 동작 보존).
+        if decision.agent == "requirement" and decision.extract_mode is None:
+            decision = decision.model_copy(update={"extract_mode": "document"})
     elif decision.action == "plan":
         if not decision.plan:
             raise ValueError("supervisor returned action=plan with empty plan")

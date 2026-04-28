@@ -9,7 +9,6 @@ Verifies the agent correctly wraps artifact_record_svc.extract_records:
 from __future__ import annotations
 
 import uuid
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -68,6 +67,7 @@ async def test_requirement_agent_summarises_extraction():
 
 @pytest.mark.asyncio
 async def test_requirement_agent_empty_extraction():
+    """후보 0개 → no_candidates_guide 의 친절한 안내 문구 반환."""
     agent = get_agent("requirement")
     project_id = uuid.uuid4()
     ctx = AgentContext(db=AsyncMock(), project_id=project_id)
@@ -79,11 +79,17 @@ async def test_requirement_agent_empty_extraction():
         update = await agent.run({"project_id": str(project_id)}, ctx)
 
     assert update["records_extracted"] == []
-    assert "없습니다" in update["final_answer"]
+    # 새 가이드 문구는 대체 경로(직접 입력 / 수동 폼)를 함께 안내한다.
+    assert "후보" in update["final_answer"]
+    assert "직접" in update["final_answer"]
 
 
 @pytest.mark.asyncio
-async def test_requirement_agent_surfaces_app_exception_as_state_error():
+async def test_requirement_agent_surfaces_app_exception_as_friendly_guide():
+    """AppException → state['error'] 가 아닌 final_answer 에 친절 가이드.
+
+    Phase 3 후속: 빨간 ErrorEvent 가 아닌 일반 답변으로 표시되도록 변경.
+    """
     agent = get_agent("requirement")
     project_id = uuid.uuid4()
     ctx = AgentContext(db=AsyncMock(), project_id=project_id)
@@ -95,9 +101,11 @@ async def test_requirement_agent_surfaces_app_exception_as_state_error():
     ):
         update = await agent.run({"project_id": str(project_id)}, ctx)
 
-    # The agent converts AppException into a state["error"] rather than
-    # bubbling up, so run_chat can emit a clean AGENT_ERROR SSE event.
-    assert update == {"error": "활성 지식 문서가 없습니다."}
+    # error 키는 채워지지 않아야 한다 (ErrorEvent 안 발행 → 일반 답변).
+    assert "error" not in update
+    assert update["records_extracted"] == []
+    assert "지식 문서" in update["final_answer"]
+    assert "직접" in update["final_answer"]
 
 
 # ---------- End-to-end via the graph ----------
@@ -294,3 +302,81 @@ async def test_run_stream_no_candidates_skips_interrupt():
     assert "interrupt" not in kinds
     assert kinds[-1] == "final"
     assert events[-1]["update"]["records_extracted"] == []
+
+
+# ---------- Phase 3 후속: 가이드 메시지 + user_text 모드 ----------
+
+
+@pytest.mark.asyncio
+async def test_run_stream_app_exception_yields_guide_token_not_error():
+    """추출 실패 (활성 지식 문서 없음) → ErrorEvent 가 아닌 친절 가이드 token+final."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    with patch(
+        "src.services.artifact_record_svc.extract_records",
+        new=AsyncMock(side_effect=AppException(400, "활성 지식 문서가 없습니다.")),
+    ):
+        events = [ev async for ev in agent.run_stream({"project_id": str(project_id)}, ctx)]
+
+    kinds = [e.get("kind") for e in events]
+    assert kinds == ["token", "final"]
+    final = events[-1]
+    # 'error' 키는 비어 있어야 한다 — ErrorEvent 가 아닌 일반 답변으로 표시되도록.
+    assert "error" not in final["update"]
+    assert "지식 문서" in final["update"]["final_answer"]
+    assert "직접" in final["update"]["final_answer"]
+
+
+@pytest.mark.asyncio
+async def test_run_stream_user_text_mode_passes_user_input_to_extractor():
+    """routing.extract_mode='user_text' → extract_records 에 user_text 인자 전달."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    fake = RecordExtractResponse(candidates=[_candidate("FR", "OAuth 2.0 지원")])
+    extract_mock = AsyncMock(return_value=fake)
+    with patch(
+        "src.services.artifact_record_svc.extract_records", new=extract_mock,
+    ):
+        state = {
+            "project_id": str(project_id),
+            "user_input": "우리 시스템은 OAuth 2.0 을 지원해야 한다",
+            "routing": {"extract_mode": "user_text"},
+        }
+        events = [ev async for ev in agent.run_stream(state, ctx)]
+
+    # extract_records 호출 인자 검증 — user_text 가 그대로 전달돼야 함
+    extract_mock.assert_awaited_once()
+    call_kwargs = extract_mock.await_args.kwargs
+    assert call_kwargs.get("user_text") == "우리 시스템은 OAuth 2.0 을 지원해야 한다"
+
+    # ConfirmData interrupt + 채팅 입력 안내 문구 검증
+    interrupt_ev = next(e for e in events if e.get("kind") == "interrupt")
+    assert "채팅 입력에서" in interrupt_ev["data"].description
+
+
+@pytest.mark.asyncio
+async def test_run_stream_document_mode_does_not_pass_user_text():
+    """routing.extract_mode='document' (또는 None) → user_text 인자 None."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    fake = RecordExtractResponse(candidates=[_candidate("FR")])
+    extract_mock = AsyncMock(return_value=fake)
+    with patch(
+        "src.services.artifact_record_svc.extract_records", new=extract_mock,
+    ):
+        state = {
+            "project_id": str(project_id),
+            "user_input": "레코드 추출해줘",
+            "routing": {"extract_mode": "document"},
+        }
+        async for _ in agent.run_stream(state, ctx):
+            pass
+
+    call_kwargs = extract_mock.await_args.kwargs
+    assert call_kwargs.get("user_text") is None

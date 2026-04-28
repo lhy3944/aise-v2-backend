@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 RoutingAction = Literal["single", "plan", "clarify"]
+ExtractMode = Literal["document", "user_text"]
 
 
 class RoutingDecision(BaseModel):
@@ -36,6 +37,15 @@ class RoutingDecision(BaseModel):
     clarification: str | None = Field(
         default=None,
         description="Question to ask the user. Used when action == 'clarify'. (Phase 3)",
+    )
+    extract_mode: ExtractMode | None = Field(
+        default=None,
+        description=(
+            "RequirementAgent 라우팅 시 추출 모드를 명시. "
+            "'document' = 활성 지식 문서에서 추출 (기존). "
+            "'user_text' = user_input 자체를 추출 대상으로 사용 (자유 진술문). "
+            "다른 에이전트 라우팅 시에는 None."
+        ),
     )
     reasoning: str = Field(default="", description="Why this decision was made (debug/audit only)")
 
@@ -109,5 +119,6 @@ __all__ = [
     "AgentContext",
     "AgentState",
     "RoutingAction",
+    "ExtractMode",
     "RoutingDecision",
 ]

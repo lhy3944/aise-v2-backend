@@ -32,6 +32,13 @@ export interface AgentChatRequest {
   message: string;
 }
 
+export interface AgentResumeRequest {
+  /** thread_id (= interrupt_id) — 라우터 경로와 body 모두에 동일하게 전달 */
+  thread_id: string;
+  /** 사용자 응답 페이로드 — kind 별 다르다 (e.g., {action: 'approve'}) */
+  response: Record<string, unknown>;
+}
+
 export interface ToolCallEvent {
   name: string;
   arguments: Record<string, unknown>;
@@ -133,12 +140,11 @@ function dispatch(event: WireEvent, cb: StreamCallbacks): 'continue' | 'stop' {
 class FatalStreamError extends Error {}
 
 /**
- * Start an Agent Chat SSE stream.
- *
- * @returns abort() — idempotent; safe to call after completion.
+ * 공통 SSE 시작 헬퍼 — chat / resume 의 차이는 URL + body 뿐이므로 분리.
  */
-export function streamAgentChat(
-  request: AgentChatRequest,
+function _startSseStream(
+  url: string,
+  body: unknown,
   callbacks: StreamCallbacks,
 ): () => void {
   const controller = new AbortController();
@@ -153,13 +159,11 @@ export function streamAgentChat(
 
   (async () => {
     try {
-      await fetchEventSource(`${API_BASE}/api/v1/agent/chat`, {
+      await fetchEventSource(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify(request),
+        body: JSON.stringify(body),
         signal: controller.signal,
-        // Prevent the library from reconnecting when the tab is backgrounded —
-        // we treat the stream as a one-shot request.
         openWhenHidden: true,
 
         async onopen(response) {
@@ -179,15 +183,13 @@ export function streamAgentChat(
           try {
             parsed = JSON.parse(msg.data);
           } catch {
-            return; // malformed line — drop silently (contract invariant)
+            return;
           }
           const outcome = dispatch(parsed, callbacks);
           if (outcome === 'stop') close();
         },
 
         onclose() {
-          // Peer closed. If we never saw a terminal event, emit onDone so the
-          // UI exits the streaming state cleanly.
           if (!closed) {
             close();
             callbacks.onDone();
@@ -195,7 +197,6 @@ export function streamAgentChat(
         },
 
         onerror(err) {
-          // Throwing aborts the retry loop; returning undefined would retry.
           throw err instanceof Error ? err : new FatalStreamError(String(err));
         },
       });
@@ -212,4 +213,34 @@ export function streamAgentChat(
   })();
 
   return close;
+}
+
+/**
+ * HITL 일시 정지에서 사용자 응답으로 SSE 스트림 재개.
+ * 백엔드 `POST /api/v1/agent/resume/{thread_id}` 호출.
+ *
+ * @returns abort() — idempotent; safe to call after completion.
+ */
+export function streamAgentResume(
+  request: AgentResumeRequest,
+  callbacks: StreamCallbacks,
+): () => void {
+  const url = `${API_BASE}/api/v1/agent/resume/${encodeURIComponent(request.thread_id)}`;
+  const body = {
+    interrupt_id: request.thread_id,
+    response: request.response,
+  };
+  return _startSseStream(url, body, callbacks);
+}
+
+/**
+ * Start an Agent Chat SSE stream.
+ *
+ * @returns abort() — idempotent; safe to call after completion.
+ */
+export function streamAgentChat(
+  request: AgentChatRequest,
+  callbacks: StreamCallbacks,
+): () => void {
+  return _startSseStream(`${API_BASE}/api/v1/agent/chat`, request, callbacks);
 }

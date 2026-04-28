@@ -447,14 +447,15 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
         ]
 
     types = [type(e).__name__ for e in events]
-    # Streaming plan sequence:
+    # Streaming plan sequence (Phase 3 PR-2):
     #   PlanUpdate(all pending)
     #   PlanUpdate(step 0 running), ToolCall, Sources(knowledge_qa),
     #     [tokens suppressed — not last step],
     #     ToolResult, PlanUpdate(step 0 completed)
     #   PlanUpdate(step 1 running), ToolCall,
-    #     Token(requirement final_answer, via default run_stream fallback),
-    #     ToolResult, PlanUpdate(step 1 completed),
+    #     [requirement issues an interrupt — suppressed under
+    #      allow_interrupt=False; plan-path HITL is PR-3],
+    #     ToolResult(empty), PlanUpdate(step 1 completed),
     #   Done
     assert types == [
         "PlanUpdateEvent",
@@ -465,21 +466,17 @@ async def test_supervisor_plan_executes_sequentially_with_plan_updates(
         "PlanUpdateEvent",
         "PlanUpdateEvent",
         "ToolCallEvent",
-        "TokenEvent",
         "ToolResultEvent",
         "PlanUpdateEvent",
         "DoneEvent",
     ]
 
-    # Last plan_update before Done: both steps completed.
+    # Last plan_update before Done: both steps completed (interrupt is
+    # suppressed in plan-path so step 1 still marks completed with empty
+    # update — PR-3 will surface this as a proper user-facing pause).
     final_plan = events[-2]
     assert [s.agent for s in final_plan.data.plan] == ["knowledge_qa", "requirement"]
     assert [s.status for s in final_plan.data.plan] == ["completed", "completed"]
-
-    # Terminal token is the requirement agent's summary (forwarded because
-    # it's the last step).
-    last_token = next(e for e in reversed(events) if isinstance(e, TokenEvent))
-    assert "1개의 요구사항 후보" in last_token.data.text
 
 
 async def test_supervisor_invalid_json_falls_back_to_clarify(monkeypatch, db):

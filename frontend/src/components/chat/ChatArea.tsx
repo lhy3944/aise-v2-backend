@@ -3,6 +3,7 @@
 import { ChatInput } from '@/components/chat/ChatInput';
 import { MessageRenderer } from '@/components/chat/MessageRenderer';
 import { PromptSuggestions } from '@/components/chat/PromptSuggestions';
+import { HITLPromptModal } from '@/components/hitl/HITLPromptModal';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatScroll } from '@/hooks/useChatScroll';
 import { useChatStream } from '@/hooks/useChatStream';
@@ -30,6 +31,9 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
     sendMessage,
     stopStreaming,
     setInputValue,
+    pendingHitl,
+    resumeFromInterrupt,
+    cancelInterrupt,
   } = useChatStream(sessionId);
 
   const { scrollRef, setScrollEl, isAtBottom, scrollToBottom } =
@@ -211,6 +215,14 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
           </div>
         </div>
       )}
+
+      {/* === HITL 일시 정지 모달 (Phase 3 PR-3) === */}
+      <HITLPromptModal
+        open={pendingHitl !== null}
+        data={pendingHitl?.data ?? null}
+        onRespond={resumeFromInterrupt}
+        onDismiss={cancelInterrupt}
+      />
     </div>
   );
 }

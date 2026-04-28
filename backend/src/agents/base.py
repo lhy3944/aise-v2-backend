@@ -16,6 +16,12 @@ discriminated events the orchestrator forwards as SSE:
 
     {"kind": "sources",   "sources": list[dict]} → SourcesEvent
     {"kind": "token",     "text":    str}        → TokenEvent
+    {"kind": "partial",   "update":  dict}       → SSE 로 발행되지 않고 누적
+                                                    state 에 머지. interrupt
+                                                    발행 전에 추출 결과 등을
+                                                    hitl_state.accumulated_state
+                                                    에 보관해 resume 시 복원
+                                                    가능하게 한다.
     {"kind": "interrupt", "data":    HitlData}   → InterruptEvent (Phase 3);
                                                     SSE 드라이버는 hitl_state
                                                     저장 후 done(interrupt)

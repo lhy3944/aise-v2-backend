@@ -1,6 +1,10 @@
 'use client';
 
-import { streamAgentChat } from '@/services/agent-service';
+import {
+  streamAgentChat,
+  streamAgentResume,
+  type StreamCallbacks,
+} from '@/services/agent-service';
 import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
@@ -8,11 +12,17 @@ import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
-import type { SourceRef } from '@/types/agent-events';
+import type { HitlData, SourceRef } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+interface PendingHitl {
+  threadId: string;
+  sessionId: string;
+  data: HitlData;
+}
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -108,6 +118,7 @@ export function useChatStream(sessionId?: string) {
   const pendingFinishStatusRef = useRef<Map<string, 'done' | 'error'>>(
     new Map(),
   );
+  const [pendingHitl, setPendingHitl] = useState<PendingHitl | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(
     () =>
       !!activeSessionId &&
@@ -478,6 +489,106 @@ export function useChatStream(sessionId?: string) {
     [bumpRefresh],
   );
 
+  // sendMessage / resumeFromInterrupt 가 공유하는 SSE 콜백 빌더.
+  // sid 별 클로저 스냅샷이 필요해 함수로 둔다.
+  const buildStreamCallbacks = useCallback(
+    (sid: string): StreamCallbacks => {
+      const updateLastAssistant =
+        useChatStore.getState().updateLastAssistantMessage;
+      return {
+        onToken: (token) => enqueueToken(sid, token),
+        onToolCall: (toolCall) => {
+          const tc: ToolCallData = {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+            state: 'running',
+            startedAt: Date.now(),
+          };
+          updateLastAssistant(sid, (msg) => ({
+            ...msg,
+            toolCalls: [...(msg.toolCalls ?? []), tc],
+          }));
+          executeToolCall(sid, toolCall.name, toolCall.arguments);
+        },
+        onToolResult: (toolResult) => {
+          handleToolResult(
+            sid,
+            toolResult.name,
+            toolResult.result,
+            toolResult.status,
+            toolResult.durationMs,
+          );
+        },
+        onSources: (sources) => {
+          updateLastAssistant(sid, (msg) => ({
+            ...msg,
+            sources,
+          }));
+        },
+        onPlanUpdate: ({ plan, current_step }) => {
+          updateLastAssistant(sid, (msg) => ({
+            ...msg,
+            plan,
+            currentPlanStep: current_step,
+          }));
+        },
+        onInterrupt: (data) => {
+          setPendingHitl({
+            threadId: data.interrupt_id,
+            sessionId: sid,
+            data,
+          });
+        },
+        onDone: () => {
+          requestFinishAfterDrain(sid, 'done');
+        },
+        onError: (error) => {
+          enqueueToken(sid, `\n\n⚠️ ${error}`);
+          requestFinishAfterDrain(sid, 'error');
+        },
+      };
+    },
+    [enqueueToken, executeToolCall, handleToolResult, requestFinishAfterDrain],
+  );
+
+  const resumeFromInterrupt = useCallback(
+    (response: Record<string, unknown>) => {
+      if (!pendingHitl) return;
+      const { threadId, sessionId: hitlSessionId } = pendingHitl;
+      setPendingHitl(null);
+
+      // resume 응답은 새 assistant 메시지 turn 으로 표시 — interrupt 직전
+      // 메시지(승인 요청)는 그대로 두고 결과(승인됨/거부됨)를 새 카드로 분리.
+      const assistantMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        createdAt: new Date().toISOString(),
+      };
+      addMessage(hitlSessionId, assistantMsg);
+      setSessionStreaming(hitlSessionId, true);
+      clearBufferedTokens(hitlSessionId);
+
+      const abort = streamAgentResume(
+        { thread_id: threadId, response },
+        buildStreamCallbacks(hitlSessionId),
+      );
+      abortControllersRef.current.set(hitlSessionId, abort);
+    },
+    [
+      pendingHitl,
+      addMessage,
+      setSessionStreaming,
+      clearBufferedTokens,
+      buildStreamCallbacks,
+    ],
+  );
+
+  const cancelInterrupt = useCallback(() => {
+    setPendingHitl(null);
+  }, []);
+
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || !currentProject || isStreaming) return;
@@ -525,60 +636,9 @@ export function useChatStream(sessionId?: string) {
       setSessionStreaming(targetSessionId, true);
       clearBufferedTokens(targetSessionId);
 
-      const updateLastAssistant = useChatStore.getState().updateLastAssistantMessage;
-
       const abort = streamAgentChat(
-        {
-          session_id: targetSessionId,
-          message: text,
-        },
-        {
-          onToken: (token) => {
-            enqueueToken(targetSessionId, token);
-          },
-          onToolCall: (toolCall) => {
-            const tc: ToolCallData = {
-              name: toolCall.name,
-              arguments: toolCall.arguments,
-              state: 'running',
-              startedAt: Date.now(),
-            };
-            updateLastAssistant(targetSessionId, (msg) => ({
-              ...msg,
-              toolCalls: [...(msg.toolCalls ?? []), tc],
-            }));
-            executeToolCall(targetSessionId, toolCall.name, toolCall.arguments);
-          },
-          onToolResult: (toolResult) => {
-            handleToolResult(
-              targetSessionId,
-              toolResult.name,
-              toolResult.result,
-              toolResult.status,
-              toolResult.durationMs,
-            );
-          },
-          onSources: (sources) => {
-            updateLastAssistant(targetSessionId, (msg) => ({
-              ...msg,
-              sources,
-            }));
-          },
-          onPlanUpdate: ({ plan, current_step }) => {
-            updateLastAssistant(targetSessionId, (msg) => ({
-              ...msg,
-              plan,
-              currentPlanStep: current_step,
-            }));
-          },
-          onDone: () => {
-            requestFinishAfterDrain(targetSessionId, 'done');
-          },
-          onError: (error) => {
-            enqueueToken(targetSessionId, `\n\n⚠️ ${error}`);
-            requestFinishAfterDrain(targetSessionId, 'error');
-          },
-        },
+        { session_id: targetSessionId, message: text },
+        buildStreamCallbacks(targetSessionId),
       );
 
       abortControllersRef.current.set(targetSessionId, abort);
@@ -590,10 +650,8 @@ export function useChatStream(sessionId?: string) {
       addMessage,
       setInputValue,
       setSessionStreaming,
-      enqueueToken,
-      requestFinishAfterDrain,
-      executeToolCall,
-      handleToolResult,
+      clearBufferedTokens,
+      buildStreamCallbacks,
       router,
     ],
   );
@@ -629,5 +687,8 @@ export function useChatStream(sessionId?: string) {
     sendMessage,
     stopStreaming,
     setInputValue,
+    pendingHitl,
+    resumeFromInterrupt,
+    cancelInterrupt,
   };
 }

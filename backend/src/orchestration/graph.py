@@ -285,6 +285,7 @@ async def _drive_agent_stream(
     ctx: AgentContext,
     agent_name: str,
     forward_tokens: bool,
+    allow_interrupt: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """Consume an agent's `run_stream` and forward SSE events.
 
@@ -292,6 +293,10 @@ async def _drive_agent_stream(
     pydantic model) so the caller can pick up the merged state update
     for `tool_result` composition. All SSE models come through the same
     generator so the caller just re-yields everything but the sentinel.
+
+    `allow_interrupt=False` 인 경로(현재는 plan 실행)에서는 에이전트가
+    interrupt 를 발행해도 SSE 로 흘리지 않고 즉시 종료한다. PR-3 에서
+    plan-path HITL 통합 시 True 로 전환 + 별도 처리 추가.
     """
     async for ev in agent.run_stream(state, ctx):
         kind = ev.get("kind")
@@ -303,11 +308,23 @@ async def _drive_agent_stream(
             text = ev.get("text", "")
             if text:
                 yield TokenEvent(data=TokenEventData(text=text))
+        elif kind == "partial":
+            # 누적 state 갱신용 — interrupt 발행 전에 추출 결과 등을
+            # accumulated_state 에 보관해 resume 시 복원할 수 있게 한다.
+            update = ev.get("update")
+            if isinstance(update, dict) and update:
+                yield {"__partial__": update}
         elif kind == "interrupt":
             data = ev.get("data")
             if isinstance(data, (ClarifyData, ConfirmData, DecisionData)):
-                yield InterruptEvent(data=data)
-                yield {"__interrupted__": data}
+                if allow_interrupt:
+                    yield InterruptEvent(data=data)
+                    yield {"__interrupted__": data}
+                else:
+                    logger.warning(
+                        f"agent {agent_name} issued an interrupt under "
+                        "allow_interrupt=False; suppressed (PR-3 will support)"
+                    )
                 return
         elif kind == "final":
             yield {"__final__": ev.get("update", {}) or {}}
@@ -433,9 +450,12 @@ async def _execute_plan(
                     ctx=ctx,
                     agent_name=name,
                     forward_tokens=is_last,
+                    allow_interrupt=False,  # plan-path HITL 은 PR-3
                 ):
                     if isinstance(ev, dict) and "__final__" in ev:
                         step_update = ev["__final__"]
+                    elif isinstance(ev, dict) and "__partial__" in ev:
+                        shared_state.update(ev["__partial__"])
                     else:
                         yield ev
             except Exception as exc:  # pragma: no cover — defensive
@@ -695,6 +715,8 @@ async def run_chat(
                     final_update = ev["__final__"]
                 elif isinstance(ev, dict) and "__interrupted__" in ev:
                     interrupted_data = ev["__interrupted__"]
+                elif isinstance(ev, dict) and "__partial__" in ev:
+                    initial_state.update(ev["__partial__"])  # type: ignore[typeddict-item]
                 else:
                     yield ev
     except Exception as exc:
@@ -864,6 +886,8 @@ async def resume_chat(
                     final_update = ev["__final__"]
                 elif isinstance(ev, dict) and "__interrupted__" in ev:
                     interrupted_data = ev["__interrupted__"]
+                elif isinstance(ev, dict) and "__partial__" in ev:
+                    state.update(ev["__partial__"])  # type: ignore[typeddict-item]
                 else:
                     yield ev
     except Exception as exc:

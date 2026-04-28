@@ -156,13 +156,141 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
             )
         ]
 
-    # Requirement agent doesn't override run_stream → default fallback
-    # surfaces its final_answer as a single Token. Streaming order:
-    #   tool_call → token → tool_result → done
-    # (no SourcesEvent; requirement doesn't populate state["sources"])
+    # Phase 3 PR-2: RequirementAgent 가 추출 후 ConfirmData interrupt 를
+    # 발행한다. 흐름:
+    #   tool_call → InterruptEvent(confirm) → done(finish_reason="interrupt")
+    # tool_result 는 발행되지 않으며, hitl_state_svc 에 thread_id 가 저장돼
+    # POST /api/v1/agent/resume/{thread_id} 가 같은 에이전트를 재호출한다.
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "TokenEvent", "ToolResultEvent", "DoneEvent"]
-    tool_call, token, tool_result, _done = events
+    assert types == ["ToolCallEvent", "InterruptEvent", "DoneEvent"]
+    tool_call, interrupt, done = events
     assert tool_call.data.name == "requirement"
-    assert tool_result.data.result == {"records_count": 2}
-    assert "2개의 요구사항 후보" in token.data.text
+    assert interrupt.data.kind == "confirm"
+    assert "2개 요구사항 후보" in interrupt.data.title
+    assert done.data.finish_reason == "interrupt"
+
+    # hitl_state 에 후보가 누적된 상태로 저장돼야 한다 (resume 복원용).
+    from src.services import hitl_state_svc
+
+    saved = hitl_state_svc.get(interrupt.data.interrupt_id)
+    assert saved is not None
+    assert saved.selected_agent == "requirement"
+    assert len(saved.accumulated_state.get("records_extracted", [])) == 2
+    hitl_state_svc.delete(interrupt.data.interrupt_id)
+
+
+# ---------- Phase 3 PR-2: HITL run_stream branches (unit, no DB) ----------
+
+
+@pytest.mark.asyncio
+async def test_run_stream_extract_then_interrupt():
+    """첫 호출: 후보 추출 → partial(records_extracted) → ConfirmData interrupt."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    fake = RecordExtractResponse(candidates=[_candidate("FR"), _candidate("QA")])
+    with patch(
+        "src.services.artifact_record_svc.extract_records",
+        new=AsyncMock(return_value=fake),
+    ):
+        events = [ev async for ev in agent.run_stream({"project_id": str(project_id)}, ctx)]
+
+    kinds = [e.get("kind") for e in events]
+    assert kinds == ["partial", "interrupt"]
+    assert len(events[0]["update"]["records_extracted"]) == 2
+    assert events[1]["data"].kind == "confirm"
+    assert "2개 요구사항 후보" in events[1]["data"].title
+
+
+@pytest.mark.asyncio
+async def test_run_stream_resume_approve_calls_approve_records():
+    """resume + action=approve → approve_records 호출 + records_approved_count."""
+    from src.schemas.api.artifact_record import (
+        ArtifactRecordListResponse,
+        ArtifactRecordResponse,
+    )
+
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    candidates = [
+        _candidate("FR").model_dump(mode="json"),
+        _candidate("QA").model_dump(mode="json"),
+    ]
+    state = {
+        "project_id": str(project_id),
+        "records_extracted": candidates,
+        "hitl_response": {"action": "approve"},
+        "hitl_interrupt_id": "itp_test",
+    }
+
+    def _mk_resp(content: str) -> ArtifactRecordResponse:
+        return ArtifactRecordResponse(
+            artifact_id=str(uuid.uuid4()),
+            project_id=str(project_id),
+            content=content,
+            display_id="REC-001",
+            status="approved",
+            is_auto_extracted=True,
+            order_index=0,
+            created_at="2026-04-28T00:00:00Z",
+            updated_at="2026-04-28T00:00:00Z",
+        )
+
+    approve_mock = AsyncMock(
+        return_value=ArtifactRecordListResponse(
+            records=[_mk_resp("a"), _mk_resp("b")], total=2,
+        )
+    )
+    with patch("src.services.artifact_record_svc.approve_records", new=approve_mock):
+        events = [ev async for ev in agent.run_stream(state, ctx)]
+
+    approve_mock.assert_awaited_once()
+    final = next(e for e in events if e.get("kind") == "final")
+    assert final["update"]["records_approved_count"] == 2
+    assert "2개 요구사항 후보를 승인" in final["update"]["final_answer"]
+
+
+@pytest.mark.asyncio
+async def test_run_stream_resume_reject_skips_approve():
+    """resume + action=reject → approve_records 호출 안 됨, 거부 메시지."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    state = {
+        "project_id": str(project_id),
+        "records_extracted": [_candidate("FR").model_dump(mode="json")],
+        "hitl_response": {"action": "reject"},
+        "hitl_interrupt_id": "itp_test",
+    }
+
+    approve_mock = AsyncMock()
+    with patch("src.services.artifact_record_svc.approve_records", new=approve_mock):
+        events = [ev async for ev in agent.run_stream(state, ctx)]
+
+    approve_mock.assert_not_awaited()
+    final = next(e for e in events if e.get("kind") == "final")
+    assert final["update"]["records_approved_count"] == 0
+    assert "거부" in final["update"]["final_answer"]
+
+
+@pytest.mark.asyncio
+async def test_run_stream_no_candidates_skips_interrupt():
+    """후보 0개 → interrupt 없이 바로 final."""
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    with patch(
+        "src.services.artifact_record_svc.extract_records",
+        new=AsyncMock(return_value=RecordExtractResponse(candidates=[])),
+    ):
+        events = [ev async for ev in agent.run_stream({"project_id": str(project_id)}, ctx)]
+
+    kinds = [e.get("kind") for e in events]
+    assert "interrupt" not in kinds
+    assert kinds[-1] == "final"
+    assert events[-1]["update"]["records_extracted"] == []

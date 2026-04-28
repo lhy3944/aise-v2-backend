@@ -335,6 +335,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
           section_id: c.section_id ?? undefined,
           source_document_id: c.source_document_id ?? undefined,
           source_location: c.source_location ?? undefined,
+          confidence_score: c.confidence_score ?? undefined,
         };
       },
     );

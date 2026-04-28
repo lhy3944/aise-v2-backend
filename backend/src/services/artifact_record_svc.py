@@ -712,7 +712,7 @@ async def approve_records(
                 section_id=item_data.section_id,
                 source_document_id=item_data.source_document_id,
                 source_location=item_data.source_location,
-                confidence_score=None,
+                confidence_score=item_data.confidence_score,
                 is_auto_extracted=True,
                 order_index=order_index,
                 status="approved",

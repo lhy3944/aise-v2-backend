@@ -22,6 +22,7 @@ class ArtifactRecordCreate(BaseModel):
     section_id: uuid.UUID | None = Field(default=None, description="섹션 ID")
     source_document_id: uuid.UUID | None = Field(default=None)
     source_location: str | None = Field(default=None)
+    confidence_score: float | None = Field(default=None)
 
 
 class ArtifactRecordUpdate(BaseModel):

@@ -371,6 +371,7 @@ export interface ArtifactRecordCreate {
   section_id?: string | null;
   source_document_id?: string | null;
   source_location?: string | null;
+  confidence_score?: number | null;
 }
 
 export interface ArtifactRecordUpdate {

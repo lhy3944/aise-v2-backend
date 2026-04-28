@@ -17,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.core.database import get_db, get_session_factory
 from src.models.session import Session as SessionModel
-from src.orchestration.graph import build_graph, get_checkpointer, run_chat
+from src.orchestration.graph import build_graph, get_checkpointer, resume_chat, run_chat
 from src.schemas.api.agent import AgentChatRequest
-from src.services import session_svc
+from src.schemas.events import ResumeRequest
+from src.services import hitl_state_svc, session_svc
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -164,6 +165,117 @@ async def agent_chat(
     logger.info(f"agent/chat: session={body.session_id}")
     return StreamingResponse(
         _stream_chat(body.session_id, body.message, session_factory),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+async def _stream_resume(
+    thread_id: str,
+    body: ResumeRequest,
+    session_factory: async_sessionmaker[AsyncSession],
+):
+    """HITL resume SSE generator.
+
+    `hitl_state_svc` 에서 저장 컨텍스트를 조회 → resume_chat 으로 SSE 재개
+    → 응답 turn 을 session_messages 에 append 한다. body.interrupt_id 는
+    경로의 thread_id 와 일치해야 한다 (CSRF/오접속 방지).
+    """
+    if body.interrupt_id != thread_id:
+        payload = (
+            f'{{"type":"error","data":{{"message":"interrupt_id mismatch",'
+            f'"code":"HITL_ID_MISMATCH","recoverable":false}}}}'
+        )
+        yield f"data: {payload}\n\n"
+        return
+
+    saved = hitl_state_svc.get(thread_id)
+    if saved is None:
+        payload = (
+            f'{{"type":"error","data":{{"message":"hitl thread not found or expired",'
+            f'"code":"HITL_THREAD_NOT_FOUND","recoverable":false}}}}'
+        )
+        yield f"data: {payload}\n\n"
+        return
+
+    try:
+        session_uuid = uuid.UUID(saved.session_id)
+    except (ValueError, TypeError):
+        payload = (
+            f'{{"type":"error","data":{{"message":"invalid session_id in hitl state",'
+            f'"code":"HITL_STATE_INVALID","recoverable":false}}}}'
+        )
+        yield f"data: {payload}\n\n"
+        return
+
+    assistant_parts: list[str] = []
+    tool_calls_by_id: dict[str, dict[str, Any]] = {}
+    tool_call_order: list[str] = []
+    sources_acc: list[dict[str, Any]] | None = None
+    had_error = False
+
+    try:
+        async for event in resume_chat(
+            thread_id, body.response, session_factory=session_factory,
+        ):
+            etype = event.type
+            if etype == "token":
+                assistant_parts.append(event.data.text)
+            elif etype == "tool_call":
+                tcid = event.data.tool_call_id
+                tool_calls_by_id[tcid] = {
+                    "name": event.data.name,
+                    "arguments": event.data.arguments,
+                }
+                tool_call_order.append(tcid)
+            elif etype == "tool_result":
+                tcid = event.data.tool_call_id
+                entry = tool_calls_by_id.get(tcid)
+                if entry is not None:
+                    if event.data.duration_ms is not None:
+                        entry["duration_ms"] = event.data.duration_ms
+                    if event.data.status is not None:
+                        entry["status"] = event.data.status
+                    if event.data.result is not None:
+                        entry["result"] = event.data.result
+            elif etype == "sources":
+                sources_acc = [s.model_dump() for s in event.data.sources]
+            elif etype == "error":
+                had_error = True
+            yield f"data: {event.model_dump_json()}\n\n"
+    finally:
+        content = "".join(assistant_parts)
+        tool_calls_acc = [tool_calls_by_id[tcid] for tcid in tool_call_order]
+        if content or tool_calls_acc or sources_acc or had_error:
+            try:
+                async with session_factory() as db:
+                    tool_data = {"sources": sources_acc} if sources_acc else None
+                    await session_svc.add_message(
+                        db,
+                        session_uuid,
+                        role="assistant",
+                        content=content,
+                        tool_calls=tool_calls_acc or None,
+                        tool_data=tool_data,
+                    )
+                    await db.commit()
+            except Exception:
+                logger.exception(
+                    "Failed to persist resume assistant message for session %s",
+                    session_uuid,
+                )
+
+
+@router.post("/resume/{thread_id}")
+async def agent_resume(
+    thread_id: str,
+    body: ResumeRequest,
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+):
+    """HITL 일시 정지 상태에서 사용자 응답으로 SSE 스트림을 재개."""
+    logger.info(f"agent/resume: thread={thread_id}")
+    return StreamingResponse(
+        _stream_resume(thread_id, body, session_factory),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

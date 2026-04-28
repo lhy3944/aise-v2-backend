@@ -42,10 +42,14 @@ from src.orchestration.supervisor import (
     supervisor_node,
 )
 from src.schemas.events import (
+    ClarifyData,
+    ConfirmData,
+    DecisionData,
     DoneEvent,
     DoneEventData,
     ErrorEvent,
     ErrorEventData,
+    InterruptEvent,
     PlanStep,
     PlanUpdateEvent,
     PlanUpdateEventData,
@@ -59,6 +63,7 @@ from src.schemas.events import (
     ToolResultEvent,
     ToolResultEventData,
 )
+from src.services import hitl_state_svc
 
 
 # ---------- Node helpers ----------
@@ -298,6 +303,12 @@ async def _drive_agent_stream(
             text = ev.get("text", "")
             if text:
                 yield TokenEvent(data=TokenEventData(text=text))
+        elif kind == "interrupt":
+            data = ev.get("data")
+            if isinstance(data, (ClarifyData, ConfirmData, DecisionData)):
+                yield InterruptEvent(data=data)
+                yield {"__interrupted__": data}
+                return
         elif kind == "final":
             yield {"__final__": ev.get("update", {}) or {}}
             return
@@ -667,6 +678,7 @@ async def run_chat(
 
     started = time.perf_counter()
     final_update: dict[str, Any] = {}
+    interrupted_data: ClarifyData | ConfirmData | DecisionData | None = None
     try:
         async with session_factory() as db:
             ctx = AgentContext(
@@ -681,6 +693,8 @@ async def run_chat(
             ):
                 if isinstance(ev, dict) and "__final__" in ev:
                     final_update = ev["__final__"]
+                elif isinstance(ev, dict) and "__interrupted__" in ev:
+                    interrupted_data = ev["__interrupted__"]
                 else:
                     yield ev
     except Exception as exc:
@@ -702,6 +716,28 @@ async def run_chat(
                 recoverable=False,
             )
         )
+        return
+
+    if interrupted_data is not None:
+        # HITL: 에이전트가 일시 정지를 요청. state 저장 후 SSE 종료.
+        # resume 라우터가 thread_id (= interrupt_id) 로 hitl_state 를
+        # 조회해 동일 에이전트의 run_stream 을 재개한다.
+        hitl_state_svc.save(
+            hitl_state_svc.HitlState(
+                thread_id=interrupted_data.interrupt_id,
+                session_id=str(session_id),
+                project_id=str(project_id),
+                user_input=user_input,
+                selected_agent=selected,
+                interrupt_id=interrupted_data.interrupt_id,
+                interrupt_kind=interrupted_data.kind,
+                payload=interrupted_data.model_dump(),
+                history=history or [],
+                routing=initial_state.get("routing"),
+                accumulated_state=dict(initial_state),
+            )
+        )
+        yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
         return
 
     if final_update.get("error"):
@@ -737,9 +773,174 @@ async def run_chat(
     yield DoneEvent(data=DoneEventData(finish_reason="stop"))
 
 
+async def resume_chat(
+    thread_id: str,
+    response: dict[str, Any],
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[Any, None]:
+    """HITL 일시 정지 상태에서 SSE 스트림을 재개.
+
+    `hitl_state_svc.get(thread_id)` 로 저장된 컨텍스트(선택 에이전트, 누적
+    state, history)를 복원한 뒤, 사용자 응답을 `state["hitl_response"]` 와
+    `state["hitl_interrupt_id"]` 로 주입하고 같은 에이전트의 `run_stream`
+    을 재호출한다. 에이전트는 첫 번째 yield 가 interrupt 였던 위치의 다음
+    단계부터 진행하도록 자체 분기를 두어야 한다 (PR-2 의 책임).
+
+    재개 도중 또 다른 interrupt 가 발행되면 새 thread_id 로 다시 저장된다.
+    성공 종료 시 hitl_state 는 삭제된다.
+    """
+    saved = hitl_state_svc.get(thread_id)
+    if saved is None:
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=f"hitl thread not found or expired: {thread_id!r}",
+                code="HITL_THREAD_NOT_FOUND",
+                recoverable=False,
+            )
+        )
+        return
+
+    agent = try_get_agent(saved.selected_agent)
+    if agent is None:
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=f"unknown agent on resume: {saved.selected_agent!r}",
+                code="AGENT_ERROR",
+                recoverable=False,
+            )
+        )
+        return
+
+    try:
+        project_uuid = uuid.UUID(saved.project_id)
+        session_uuid: uuid.UUID | None = uuid.UUID(saved.session_id)
+    except (ValueError, TypeError):
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message="invalid project_id/session_id in saved hitl state",
+                code="HITL_STATE_INVALID",
+                recoverable=False,
+            )
+        )
+        return
+
+    state: AgentState = dict(saved.accumulated_state)  # type: ignore[assignment]
+    state["hitl_interrupt_id"] = thread_id
+    state["hitl_response"] = response
+
+    # 재개 직전에 hitl_state 삭제 — 재개 도중 새 interrupt 가 발행되면
+    # _drive_agent_stream 가 새 thread_id 로 다시 save 한다.
+    hitl_state_svc.delete(thread_id)
+
+    started = time.perf_counter()
+    expose = getattr(agent.capability, "expose_as_tool", True)
+    call_id = f"call_{uuid.uuid4().hex[:12]}"
+    if expose:
+        yield ToolCallEvent(
+            data=ToolCallEventData(
+                tool_call_id=call_id,
+                name=saved.selected_agent,
+                arguments={"resume_from": thread_id},
+                agent=saved.selected_agent,
+            )
+        )
+
+    final_update: dict[str, Any] = {}
+    interrupted_data: ClarifyData | ConfirmData | DecisionData | None = None
+    try:
+        async with session_factory() as db:
+            ctx = AgentContext(
+                db=db, project_id=project_uuid, session_id=session_uuid
+            )
+            async for ev in _drive_agent_stream(
+                agent,
+                state=state,
+                ctx=ctx,
+                agent_name=saved.selected_agent,
+                forward_tokens=True,
+            ):
+                if isinstance(ev, dict) and "__final__" in ev:
+                    final_update = ev["__final__"]
+                elif isinstance(ev, dict) and "__interrupted__" in ev:
+                    interrupted_data = ev["__interrupted__"]
+                else:
+                    yield ev
+    except Exception as exc:
+        logger.exception(f"resume {saved.selected_agent}.run_stream failed")
+        if expose:
+            yield ToolResultEvent(
+                data=ToolResultEventData(
+                    tool_call_id=call_id,
+                    name=saved.selected_agent,
+                    status="error",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    result={"error": str(exc)[:200]},
+                )
+            )
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=str(exc), code="AGENT_ERROR", recoverable=False,
+            )
+        )
+        return
+
+    if interrupted_data is not None:
+        hitl_state_svc.save(
+            hitl_state_svc.HitlState(
+                thread_id=interrupted_data.interrupt_id,
+                session_id=saved.session_id,
+                project_id=saved.project_id,
+                user_input=saved.user_input,
+                selected_agent=saved.selected_agent,
+                interrupt_id=interrupted_data.interrupt_id,
+                interrupt_kind=interrupted_data.kind,
+                payload=interrupted_data.model_dump(),
+                history=saved.history,
+                routing=saved.routing,
+                accumulated_state=dict(state),
+            )
+        )
+        yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
+        return
+
+    if final_update.get("error"):
+        if expose:
+            yield ToolResultEvent(
+                data=ToolResultEventData(
+                    tool_call_id=call_id,
+                    name=saved.selected_agent,
+                    status="error",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    result={"error": str(final_update["error"])[:200]},
+                )
+            )
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=str(final_update["error"]),
+                code="AGENT_ERROR",
+                recoverable=False,
+            )
+        )
+        return
+
+    if expose:
+        yield ToolResultEvent(
+            data=ToolResultEventData(
+                tool_call_id=call_id,
+                name=saved.selected_agent,
+                status="success",
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                result=_result_payload(final_update),
+            )
+        )
+    yield DoneEvent(data=DoneEventData(finish_reason="stop"))
+
+
 __all__ = [
     "build_graph",
     "get_checkpointer",
+    "resume_chat",
     "run_chat",
     "shutdown_checkpointer",
 ]

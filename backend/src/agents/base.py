@@ -14,9 +14,15 @@ Streaming
 Agents that can stream tokens override `run_stream(state, ctx)` to yield
 discriminated events the orchestrator forwards as SSE:
 
-    {"kind": "sources", "sources": list[dict]}  → SourcesEvent
-    {"kind": "token",   "text":    str}          → TokenEvent
-    {"kind": "final",   "update":  dict}         → merged into state;
+    {"kind": "sources",   "sources": list[dict]} → SourcesEvent
+    {"kind": "token",     "text":    str}        → TokenEvent
+    {"kind": "interrupt", "data":    HitlData}   → InterruptEvent (Phase 3);
+                                                    SSE 드라이버는 hitl_state
+                                                    저장 후 done(interrupt)
+                                                    로 종료. resume 라우터가
+                                                    재개한다. interrupt 다음에
+                                                    final 을 발행하면 안 됨.
+    {"kind": "final",     "update":  dict}       → merged into state;
                                                     drives `_result_payload`
                                                     (MUST be the last event)
 

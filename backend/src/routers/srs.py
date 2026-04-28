@@ -1,4 +1,9 @@
-"""SRS 생성/조회/편집 API 라우터"""
+"""SRS 생성/조회 API 라우터.
+
+Phase C 변경:
+- `PUT /{srs_id}/sections/{section_id}` 제거 — 사용자 수동 편집은 통합
+  Artifact 라우터(PATCH /artifacts/{id})와 staging-store/PR 워크플로우로 통일.
+"""
 
 import uuid
 
@@ -9,7 +14,6 @@ from src.core.database import get_db
 from src.schemas.api.srs import (
     SrsDocumentResponse,
     SrsListResponse,
-    SrsSectionUpdate,
 )
 from src.services import srs_svc
 
@@ -24,7 +28,7 @@ async def generate_srs(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """승인된 레코드 기반 SRS 생성"""
+    """승인된 레코드 기반 SRS 생성 (새 ArtifactVersion 추가)."""
     return await srs_svc.generate_srs(db, project_id)
 
 
@@ -42,19 +46,8 @@ async def get_srs(
     srs_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
+    """srs_id = ArtifactVersion.id (Phase C 통합 후)."""
     return await srs_svc.get_srs(db, project_id, srs_id)
-
-
-@router.put("/{srs_id}/sections/{section_id}", response_model=SrsDocumentResponse)
-async def update_srs_section(
-    project_id: uuid.UUID,
-    srs_id: uuid.UUID,
-    section_id: uuid.UUID,
-    body: SrsSectionUpdate,
-    db: AsyncSession = Depends(get_db),
-):
-    """SRS 섹션 인라인 편집"""
-    return await srs_svc.update_srs_section(db, project_id, srs_id, section_id, body)
 
 
 @router.post("/{srs_id}/regenerate", response_model=SrsDocumentResponse, status_code=201)
@@ -63,5 +56,5 @@ async def regenerate_srs(
     srs_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """SRS 재생성 (새 버전)"""
+    """SRS 재생성 (새 ArtifactVersion 추가). srs_id 는 base 로만 사용."""
     return await srs_svc.generate_srs(db, project_id)

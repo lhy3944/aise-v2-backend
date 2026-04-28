@@ -123,6 +123,7 @@ def _to_response(
     *,
     section_name: str | None = None,
     source_document_name: str | None = None,
+    current_version_number: int | None = None,
 ) -> ArtifactRecordResponse:
     c = _payload(artifact)
     return ArtifactRecordResponse(
@@ -139,6 +140,7 @@ def _to_response(
         status=_status_of(artifact),
         is_auto_extracted=bool(c.get("is_auto_extracted", False)),
         order_index=int(c.get("order_index") or 0),
+        current_version_number=current_version_number,
         created_at=artifact.created_at,
         updated_at=artifact.updated_at,
     )
@@ -319,11 +321,27 @@ async def list_records(
 ) -> ArtifactRecordListResponse:
     rows = (await db.execute(_base_query(project_id, section_id))).scalars().all()
     section_map, doc_map = await _enrich_names(db, list(rows))
+
+    # current_version_number 일괄 조회 — N+1 회피.
+    from src.models.artifact import ArtifactVersion as _AV
+    version_ids = [a.current_version_id for a in rows if a.current_version_id]
+    version_map: dict = {}
+    if version_ids:
+        v_rows = (
+            await db.execute(
+                select(_AV.id, _AV.version_number).where(_AV.id.in_(version_ids))
+            )
+        ).all()
+        version_map = {vid: vn for vid, vn in v_rows}
+
     records = [
         _to_response(
             a,
             section_name=section_map.get(_payload(a).get("section_id") or ""),
             source_document_name=doc_map.get(_payload(a).get("source_document_id") or ""),
+            current_version_number=(
+                version_map.get(a.current_version_id) if a.current_version_id else None
+            ),
         )
         for a in rows
     ]

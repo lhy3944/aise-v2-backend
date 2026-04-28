@@ -21,7 +21,11 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         data-slot='scroll-area-viewport'
-        className='focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-1 focus-visible:outline-1'
+        // Radix Viewport 는 내부에 `display: table` wrapper 를 자동 생성해
+        // 콘텐츠가 부모보다 클 경우 viewport 폭을 늘려 horizontal overflow 를
+        // 만든다. wrapper 를 block + 100% 폭 + min-w-0 으로 강제해 콘텐츠가
+        // 부모 가로폭에 항상 맞춰지도록 한다.
+        className='focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-1 focus-visible:outline-1 [&>div]:block! [&>div]:w-full! [&>div]:min-w-0!'
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

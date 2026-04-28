@@ -17,20 +17,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
-from datetime import timezone
+from datetime import datetime, timezone
+from typing import Any
 
 from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.core.exceptions import AppException
-from src.models.artifact import Artifact
+from src.models.artifact import Artifact, ArtifactVersion
 from src.models.glossary import GlossaryItem
-from src.models.srs import SrsDocument
 from src.prompts.testcase.generate import build_testcase_section_prompt
 from src.schemas.api.artifact_testcase import (
     TestCaseArtifactResponse,
@@ -38,6 +38,13 @@ from src.schemas.api.artifact_testcase import (
     TestCaseGenerateResponse,
 )
 from src.services.llm_svc import chat_completion
+
+
+def _content_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _parse_tc_array(raw: str) -> list[dict]:
@@ -96,26 +103,46 @@ def _to_response(artifact: Artifact) -> TestCaseArtifactResponse:
 async def generate_testcases(
     db: AsyncSession, project_id: uuid.UUID
 ) -> TestCaseGenerateResponse:
+    """프로젝트의 SRS Artifact 의 current(clean) version 을 입력으로 TC 생성.
+
+    Phase C 변경:
+    - 기존 SrsDocument 직접 조회 제거
+    - artifact_type='srs' Artifact + current_version_id (clean version) 의
+      ArtifactVersion.snapshot 에서 sections 추출
+    - dirty/staged 상태의 SRS 는 입력으로 사용하지 않음 (검증 안 된 변경 차단)
+    """
     logger.info(f"TestCase 생성 시작: project_id={project_id}")
 
-    # 1. 최신 완료 SRS 선택
-    srs_row = (
+    # 1. SRS Artifact + clean current version 조회
+    srs_artifact = (
         await db.execute(
-            select(SrsDocument)
-            .where(
-                SrsDocument.project_id == project_id,
-                SrsDocument.status == "completed",
+            select(Artifact).where(
+                Artifact.project_id == project_id,
+                Artifact.artifact_type == "srs",
+                Artifact.lifecycle_status == "active",
             )
-            .options(selectinload(SrsDocument.sections))
-            .order_by(SrsDocument.version.desc())
-            .limit(1)
         )
     ).scalar_one_or_none()
 
-    if srs_row is None:
+    if srs_artifact is None or srs_artifact.current_version_id is None:
         raise AppException(400, "완료된 SRS 문서가 없습니다. 먼저 SRS를 생성하세요.")
 
-    sections = sorted(srs_row.sections, key=lambda s: s.order_index)
+    srs_version = await db.get(ArtifactVersion, srs_artifact.current_version_id)
+    if srs_version is None:
+        raise AppException(500, "SRS current version 이 유실되었습니다.")
+
+    snapshot: dict[str, Any] = (
+        srs_version.snapshot if isinstance(srs_version.snapshot, dict) else {}
+    )
+    raw_sections = snapshot.get("sections")
+    sections: list[dict[str, Any]] = (
+        sorted(
+            [s for s in raw_sections if isinstance(s, dict)],
+            key=lambda s: int(s.get("order_index") or 0),
+        )
+        if isinstance(raw_sections, list)
+        else []
+    )
     if not sections:
         raise AppException(400, "SRS 문서에 섹션이 없습니다.")
 
@@ -140,18 +167,20 @@ async def generate_testcases(
     skipped: list[str] = []
 
     for section in sections:
-        section_key = section.title or (
-            str(section.section_id) if section.section_id else "미제목"
-        )
+        section_title = str(section.get("title") or "")
+        section_content = str(section.get("content") or "")
+        section_id_raw = section.get("section_id")
+        section_id_str = str(section_id_raw) if section_id_raw else ""
+        section_key = section_title or section_id_str or "미제목"
 
-        if not section.content or not section.content.strip():
+        if not section_content.strip():
             skipped.append(f"{section_key} (내용 없음)")
             continue
 
         messages = build_testcase_section_prompt(
-            section_title=section.title,
-            section_content=section.content,
-            srs_section_id=str(section.section_id) if section.section_id else "",
+            section_title=section_title,
+            section_content=section_content,
+            srs_section_id=section_id_str,
             glossary=glossary_dicts,
         )
 
@@ -181,15 +210,45 @@ async def generate_testcases(
 
             display_id = f"TC-{next_n:03d}"
             next_n += 1
+            payload = content.model_dump()
             artifact = Artifact(
                 project_id=project_id,
                 artifact_type="testcase",
                 display_id=display_id,
-                content=content.model_dump(),
-                working_status="dirty",
+                content=payload,
+                # Phase E: 생성 시 즉시 v1 ArtifactVersion 을 만들어 clean 으로 두면
+                # SRS clean version 을 source 로 한 lineage 가 ArtifactVersion 에
+                # 기록될 수 있다. 사용자 수동 편집 -> dirty -> staged -> merge 흐름은
+                # 그대로 유지.
+                working_status="clean",
                 lifecycle_status="active",
             )
             db.add(artifact)
+            await db.flush()  # artifact.id 확정
+
+            v1 = ArtifactVersion(
+                artifact_id=artifact.id,
+                version_number=1,
+                parent_version_id=None,
+                snapshot=payload,
+                content_hash=_content_hash(payload),
+                commit_message="TC v1 generated",
+                author_id="testcase_generator",
+                source_artifact_versions={
+                    "srs": [
+                        {
+                            "artifact_id": str(srs_version.artifact_id),
+                            "version_id": str(srs_version.id),
+                            "version_number": srs_version.version_number,
+                            "section_id": section_id_str or None,
+                        }
+                    ]
+                },
+            )
+            db.add(v1)
+            await db.flush()
+            artifact.current_version_id = v1.id
+
             testcases.append(artifact)
             count_in_section += 1
 
@@ -205,8 +264,8 @@ async def generate_testcases(
         await db.refresh(a)
 
     return TestCaseGenerateResponse(
-        based_on_srs_id=str(srs_row.id),
-        srs_version=srs_row.version,
+        based_on_srs_id=str(srs_version.id),
+        srs_version=srs_version.version_number,
         testcases=[_to_response(a) for a in testcases],
         section_coverage=section_coverage,
         skipped_sections=skipped,

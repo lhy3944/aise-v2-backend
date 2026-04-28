@@ -17,7 +17,8 @@ class SrsSectionUpdate(BaseModel):
 
 
 class SrsDocumentResponse(BaseModel):
-    srs_id: str
+    srs_id: str  # ArtifactVersion.id (Phase C 통합 후 — version 단위 식별자)
+    artifact_id: str  # Artifact.id (staging/PR 워크플로우 키)
     project_id: str
     version: int
     status: str
@@ -25,6 +26,8 @@ class SrsDocumentResponse(BaseModel):
     sections: list[SrsSectionResponse] = Field(default_factory=list)
     based_on_records: dict | None = None
     based_on_documents: dict | None = None
+    # Phase E lineage — 이 version 을 만들 때 입력으로 쓴 다른 artifact 들의 version.
+    source_artifact_versions: dict | None = None
     created_at: datetime
 
 

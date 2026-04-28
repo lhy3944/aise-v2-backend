@@ -5,6 +5,7 @@ import os
 
 from loguru import logger
 from minio import Minio
+from minio.deleteobjects import DeleteObject
 from minio.error import S3Error
 
 from src.core.exceptions import AppException
@@ -88,3 +89,37 @@ async def delete_file(bucket: str, key: str) -> None:
     except S3Error as e:
         logger.error(f"MinIO 삭제 실패: {e}")
         raise AppException(500, f"파일 삭제 실패: {e}")
+
+
+async def delete_prefix(bucket: str, prefix: str) -> int:
+    """주어진 prefix 로 시작하는 모든 객체 일괄 삭제. 삭제된 개수 반환.
+
+    프로젝트 hard delete 시 `{project_id}/` prefix 로 등록된 모든 파일을 정리하기
+    위한 헬퍼. MinIO/S3 의 `remove_objects` 는 batch 삭제를 지원해 페이지네이션 +
+    list/delete 한 번씩으로 큰 prefix 도 처리 가능.
+    """
+    client = _get_client()
+    try:
+        objects = client.list_objects(bucket, prefix=prefix, recursive=True)
+        keys = [obj.object_name for obj in objects if obj.object_name]
+        if not keys:
+            logger.info(
+                f"MinIO prefix 삭제 — 대상 없음: bucket={bucket}, prefix={prefix}"
+            )
+            return 0
+        delete_targets = [DeleteObject(k) for k in keys]
+        errors = list(client.remove_objects(bucket, delete_targets))
+        if errors:
+            for err in errors:
+                logger.error(f"MinIO prefix 삭제 일부 실패: {err}")
+            raise AppException(
+                500,
+                f"파일 일괄 삭제 부분 실패: {len(errors)}건 / 총 {len(keys)}건",
+            )
+        logger.info(
+            f"MinIO prefix 삭제 완료: bucket={bucket}, prefix={prefix}, count={len(keys)}"
+        )
+        return len(keys)
+    except S3Error as e:
+        logger.error(f"MinIO prefix 삭제 실패: {e}")
+        raise AppException(500, f"파일 일괄 삭제 실패: {e}")

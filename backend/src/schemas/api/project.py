@@ -93,3 +93,35 @@ class ProjectSettingsUpdate(BaseModel):
     export_format: str | None = Field(default=None)
     diagram_tool: str | None = Field(default=None)
     polarion_pat: str | None = Field(default=None)
+
+
+class ProjectDeletePreview(BaseModel):
+    """프로젝트 삭제 시 영향받을 데이터 카운트.
+
+    soft delete 단계에서는 데이터가 실제로 사라지지 않지만(휴지통),
+    hard delete (30일 후 cron 또는 즉시) 시점에는 모두 영구 삭제.
+    """
+
+    project_id: str
+    project_name: str
+    knowledge_documents: int = 0
+    knowledge_files_bytes: int = 0  # MinIO 누적 바이트
+    sessions: int = 0
+    session_messages: int = 0
+    artifacts: int = 0
+    artifact_versions: int = 0
+    pull_requests: int = 0
+    glossary_items: int = 0
+    requirement_sections: int = 0
+
+
+class ProjectDeleteRequest(BaseModel):
+    """soft delete 호출 시 옵션. confirm_name 으로 type-to-confirm 검증."""
+
+    confirm_name: str | None = Field(
+        default=None,
+        description=(
+            "운영 환경 안전망: 프로젝트 이름과 일치해야 삭제 진행. "
+            "비어 있으면 검증 생략(개발용)."
+        ),
+    )

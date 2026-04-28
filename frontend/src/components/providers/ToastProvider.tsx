@@ -43,25 +43,30 @@ function ToastCard({ toast }: { toast: ToastItem }) {
   return (
     <div
       className={cn(
-        'border-line-primary bg-popover relative w-80 overflow-hidden rounded-xl border shadow-lg transition-all duration-200',
+        'border-line-primary bg-popover w-80 overflow-hidden rounded-xl border shadow-lg transition-all duration-200',
         exiting ? 'translate-x-full opacity-0' : 'translate-x-0 opacity-100',
       )}
     >
-      <div className='flex items-start gap-3 p-4 pr-10'>
+      <div className='flex items-start gap-3 p-4'>
         <Icon className={cn('mt-0.5 size-[18px] shrink-0', iconColor)} />
         <div className='min-w-0 flex-1'>
-          <p className='text-fg-primary text-sm font-medium'>{toast.message}</p>
-          {toast.description && <p className='text-fg-muted mt-0.5 text-xs'>{toast.description}</p>}
+          <p className='text-fg-primary text-sm font-medium wrap-break-word'>
+            {toast.message}
+          </p>
+          {toast.description && (
+            <p className='text-fg-muted mt-0.5 text-xs wrap-break-word'>
+              {toast.description}
+            </p>
+          )}
         </div>
+        <button
+          onClick={handleClose}
+          aria-label='닫기'
+          className='text-fg-muted hover:text-fg-primary -mt-1 -mr-1 shrink-0 rounded-md p-1 transition-colors'
+        >
+          <X className='size-3.5' />
+        </button>
       </div>
-
-      <button
-        onClick={handleClose}
-        className='text-fg-muted hover:text-fg-primary absolute top-3 right-3 rounded-md p-0.5 transition-colors'
-      >
-        <X className='size-3.5' />
-      </button>
-
     </div>
   );
 }

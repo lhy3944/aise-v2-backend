@@ -181,6 +181,12 @@ class ArtifactVersion(Base):
         ),
         nullable=True,
     )
+    # Phase E lineage — 이 version 을 생성할 때 입력으로 사용된 다른 artifact 들의
+    # (artifact_id, version_number) 목록. 자세한 schema 는
+    # alembic/versions/535a79769c7e_add_artifact_version_lineage.py 참조.
+    source_artifact_versions: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
 
 class PullRequest(Base):

@@ -16,8 +16,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         closeButton: true,
         classNames: {
-          closeButton: '!right-[-6px] !left-[unset] !top-4 !w-[30px] !h-[30px] !border-0',
-          toast: '!gap-5',
+          // close button 을 본문 우상단 안쪽에 고정. toast 자체에 pr 을 줘서
+          // title/description 이 close button 영역을 침범하지 않도록 한다.
+          closeButton:
+            '!right-[-6px] !top-[12px] !left-[unset] !w-6 !w-[24px] !h-[24px] !border-0 !rounded-full',
+          toast: '!gap-5 !pr-10',
         },
       }}
       icons={{

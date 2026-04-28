@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.schemas.api.project import (
     ProjectCreate,
+    ProjectDeletePreview,
+    ProjectDeleteRequest,
     ProjectUpdate,
     ProjectResponse,
     ProjectListResponse,
@@ -23,9 +25,12 @@ router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
 
 @router.get("", response_model=ProjectListResponse)
-async def list_projects(db: AsyncSession = Depends(get_db)):
-    """프로젝트 목록 조회"""
-    return await project_svc.list_projects(db)
+async def list_projects(
+    db: AsyncSession = Depends(get_db),
+    include_deleted: bool = False,
+):
+    """프로젝트 목록 조회. `include_deleted=true` 면 휴지통(soft-deleted) 도 포함."""
+    return await project_svc.list_projects(db, include_deleted=include_deleted)
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -59,10 +64,44 @@ async def update_project(
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
     project_id: uuid.UUID,
+    body: ProjectDeleteRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """프로젝트 삭제"""
-    await project_svc.delete_project(db, project_id)
+    """프로젝트 soft delete (status='deleted' 마킹).
+
+    - 30일 retention 후 cron 으로 hard delete 또는 사용자가 즉시 영구 삭제 가능.
+    - body.confirm_name 이 있으면 프로젝트 이름과 일치해야 진행 (운영 안전망).
+    """
+    await project_svc.delete_project(
+        db, project_id, confirm_name=body.confirm_name if body else None,
+    )
+
+
+@router.get("/{project_id}/delete-preview", response_model=ProjectDeletePreview)
+async def get_delete_preview(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """프로젝트 삭제 시 영향받을 데이터 카운트 미리보기."""
+    return await project_svc.get_delete_preview(db, project_id)
+
+
+@router.post("/{project_id}/restore", response_model=ProjectResponse)
+async def restore_project(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """soft-deleted 프로젝트 복원 (status='active')."""
+    return await project_svc.restore_project(db, project_id)
+
+
+@router.delete("/{project_id}/hard", status_code=204)
+async def hard_delete_project(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """프로젝트 영구 삭제 (DB CASCADE + MinIO prefix 정리). 복원 불가."""
+    await project_svc.hard_delete_project(db, project_id)
 
 
 @router.get("/{project_id}/readiness", response_model=ReadinessResponse)

@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectDeleteConfirmModal } from '@/components/projects/ProjectDeleteConfirmModal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,20 +104,25 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
   }
 
   function handleDeleteProject() {
-    overlay.confirm({
-      title: '프로젝트를 삭제하시겠습니까?',
-      description: '삭제된 프로젝트는 복구할 수 없습니다.',
-      variant: 'destructive',
-      onConfirm: async () => {
-        try {
-          await projectService.delete(projectId);
-          removeProjectFromStore(projectId);
-          router.push('/projects');
-        } catch (err) {
-          const message = err instanceof ApiError ? err.message : '프로젝트 삭제에 실패했습니다.';
-          console.error(message);
-        }
-      },
+    if (!project) return;
+    const projectName = project.name;
+    overlay.modal({
+      title: `${projectName} 삭제`,
+      description:
+        '아래 데이터가 휴지통(30일)으로 이동합니다. 영구 삭제 후에는 복원할 수 없습니다.',
+      size: 'md',
+      content: (
+        <ProjectDeleteConfirmModal
+          projectId={projectId}
+          projectName={projectName}
+          onCancel={() => overlay.closeModal()}
+          onDeleted={() => {
+            overlay.closeModal();
+            removeProjectFromStore(projectId);
+            router.push('/projects');
+          }}
+        />
+      ),
     });
   }
 

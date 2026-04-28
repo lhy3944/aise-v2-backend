@@ -1,5 +1,6 @@
 'use client';
 
+import { previewContent } from '@/components/artifacts/workspace/changePreview';
 import { DiffViewer } from '@/components/artifacts/workspace/diff/DiffViewer';
 import {
   PullRequestCreateActions,
@@ -12,6 +13,7 @@ import { useOverlay } from '@/hooks/useOverlay';
 import { artifactRecordService } from '@/services/artifact-record-service';
 import { artifactService } from '@/services/artifact-service';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
+import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { usePrStore } from '@/stores/pr-store';
 import { EMPTY_BUCKET, useStagingStore } from '@/stores/staging-store';
 import type { ArtifactRecord, PullRequest } from '@/types/project';
@@ -55,6 +57,7 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
   const bumpPrRefresh = usePrStore((s) => s.bumpRefresh);
 
   const bumpRecordsRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
+  const bumpAllArtifacts = useArtifactRefreshStore((s) => s.bumpAll);
 
   const unstagedList = useMemo(() => Object.values(unstaged), [unstaged]);
   const stagedList = useMemo(() => Object.values(staged), [staged]);
@@ -103,23 +106,12 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
 
   const submitPullRequest = useCallback(
     async (values: PullRequestCreateValues, drafts: typeof stagedList) => {
+      // staging-store v2: draft.content 가 이미 artifact_type 별 완전한 working
+      // copy snapshot. 호출자(record/srs/design/testcase 화면)가 setDraft 시점에
+      // 전체 payload 를 채워 넣어두므로 여기서는 그대로 PATCH 만 보낸다.
       for (const draft of drafts) {
-        const record = records.find((r) => r.artifact_id === draft.artifactId);
-        const baseContent =
-          (record && {
-            text: record.content,
-            section_id: record.section_id,
-            source_document_id: record.source_document_id,
-            source_location: record.source_location,
-            confidence_score: record.confidence_score,
-            is_auto_extracted: record.is_auto_extracted,
-            order_index: record.order_index,
-            metadata: { status: record.status },
-          }) ||
-          {};
-
         await artifactService.update(projectId, draft.artifactId, {
-          content: { ...baseContent, text: draft.content },
+          content: draft.content,
         });
         await artifactService.createPR(projectId, draft.artifactId, {
           title: values.title,
@@ -129,8 +121,9 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
       }
       bumpPrRefresh();
       bumpRecordsRefresh();
+      bumpAllArtifacts();
     },
-    [projectId, records, clearArtifact, bumpPrRefresh, bumpRecordsRefresh],
+    [projectId, clearArtifact, bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
   );
 
   const handleCreatePR = useCallback(() => {
@@ -138,8 +131,9 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
 
     const changes: StagedChangeSummary[] = stagedList.map((d) => ({
       artifactId: d.artifactId,
-      displayId: displayIdOf(d.artifactId) ?? d.artifactId.slice(0, 8),
-      contentPreview: d.content,
+      displayId:
+        d.displayLabel ?? displayIdOf(d.artifactId) ?? d.artifactId.slice(0, 8),
+      contentPreview: previewContent(d.artifactKind, d.content),
     }));
     const defaultTitle =
       stagedList.length === 1
@@ -189,11 +183,12 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
         await artifactService.rejectPR(prId);
         bumpPrRefresh();
         bumpRecordsRefresh();
+        bumpAllArtifacts();
       } catch {
         // 글로벌 핸들링
       }
     },
-    [bumpPrRefresh, bumpRecordsRefresh],
+    [bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
   );
 
   const handleMergePR = useCallback(
@@ -202,11 +197,12 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
         await artifactService.mergePR(prId);
         bumpPrRefresh();
         bumpRecordsRefresh();
+        bumpAllArtifacts();
       } catch {
         // 글로벌 핸들링
       }
     },
-    [bumpPrRefresh, bumpRecordsRefresh],
+    [bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
   );
 
   const handleShowDiff = useCallback(

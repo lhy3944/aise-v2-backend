@@ -2,6 +2,8 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { ArtifactKind } from '@/types/agent-events';
+import type { JsonObject } from '@/types/project';
 
 /**
  * 로컬 편집 드래프트 — Unstaged / Staged 2단계, **프로젝트 네임스페이스**.
@@ -14,12 +16,19 @@ import { createJSONStorage, persist } from 'zustand/middleware';
  *   [edit] ─► unstaged ─stage──► staged ─createPR──► (server) ─► cleared
  *                 ▲                │
  *                 └─── unstage ────┘
+ *
+ * v2: content 가 JsonObject 로 일반화 — record/srs/design/testcase 모두 동일 schema.
+ * 호출자는 artifact_type 별 working copy 전체 snapshot 을 그대로 넣고, PR 생성 시
+ * 백엔드에 그대로 PATCH 한다.
  */
 export interface ArtifactDraft {
   artifactId: string;
-  content: string;
-  originalContent: string;
+  artifactKind: ArtifactKind;
+  content: JsonObject;
+  originalContent: JsonObject;
   editedAt: string;
+  /** Tray/PR preview 용 라벨 (예: REC-003, SRS-001, TC-012). */
+  displayLabel?: string;
 }
 
 interface ProjectBucket {
@@ -184,7 +193,9 @@ export const useStagingStore = create<StagingState>()(
         }),
     }),
     {
-      name: 'aise-staging',
+      // v2: ArtifactDraft.content 가 JsonObject 로 일반화 — 기존 v1 (string) 드래프트는
+      // schema 불일치라 호환되지 않음. persist key bump 으로 자동 폐기.
+      name: 'aise-staging-v2',
       storage: createJSONStorage(() => sessionStorage),
     },
   ),

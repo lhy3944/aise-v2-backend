@@ -1,5 +1,6 @@
 'use client';
 
+import { previewContent } from '@/components/artifacts/workspace/changePreview';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
@@ -83,7 +84,7 @@ export function StagedChangesTray({
                 <Button
                   variant='ghost'
                   size='sm'
-                  className='h-6 text-[10px]'
+                  className='h-7 text-[11px]'
                   onClick={onStageAll}
                 >
                   전체 Stage
@@ -97,9 +98,12 @@ export function StagedChangesTray({
               unstaged.map((d) => (
                 <DraftRow
                   key={d.artifactId}
-                  label={resolveLabel(d.artifactId)}
-                  content={d.content}
-                  originalContent={d.originalContent}
+                  label={d.displayLabel ?? resolveLabel(d.artifactId)}
+                  contentPreview={previewContent(d.artifactKind, d.content)}
+                  originalPreview={previewContent(
+                    d.artifactKind,
+                    d.originalContent,
+                  )}
                   tone='amber'
                   actions={
                     <>
@@ -130,10 +134,10 @@ export function StagedChangesTray({
               staged.length > 0 ? (
                 <Button
                   size='sm'
-                  className='h-6 text-[10px]'
+                  className='h-7 text-[11px]'
                   onClick={onCreatePR}
                 >
-                  <GitPullRequest className='size-3' />
+                  <GitPullRequest className='size-3.5' />
                   PR 생성
                 </Button>
               ) : null
@@ -145,9 +149,12 @@ export function StagedChangesTray({
               staged.map((d) => (
                 <DraftRow
                   key={d.artifactId}
-                  label={resolveLabel(d.artifactId)}
-                  content={d.content}
-                  originalContent={d.originalContent}
+                  label={d.displayLabel ?? resolveLabel(d.artifactId)}
+                  contentPreview={previewContent(d.artifactKind, d.content)}
+                  originalPreview={previewContent(
+                    d.artifactKind,
+                    d.originalContent,
+                  )}
                   tone='blue'
                   actions={
                     <>
@@ -187,7 +194,7 @@ export function StagedChangesTray({
                   key={pr.pr_id}
                   className='border-line-primary bg-canvas-primary/40 space-y-1.5 rounded-md border p-2'
                 >
-                  <div className='flex items-center gap-1.5 text-[11px]'>
+                  <div className='flex items-center gap-1.5 text-xs'>
                     <span className='text-fg-muted font-mono'>
                       {resolveLabel(pr.artifact_id)}
                     </span>
@@ -195,47 +202,47 @@ export function StagedChangesTray({
                       #{pr.pr_id.slice(0, 6)}
                     </span>
                     {pr.auto_generated && (
-                      <span className='text-fg-muted text-[10px]'>auto</span>
+                      <span className='text-fg-muted text-[11px]'>auto</span>
                     )}
                   </div>
-                  <p className='text-fg-primary line-clamp-2 text-xs leading-snug'>
+                  <p className='text-fg-primary line-clamp-2 text-sm leading-snug'>
                     {pr.title}
                   </p>
                   <div className='flex items-center gap-1'>
                     <Button
                       variant='ghost'
                       size='sm'
-                      className='text-fg-secondary h-6 gap-1 px-2 text-[10px]'
+                      className='text-fg-secondary h-7 gap-1 px-2 text-[11px]'
                       onClick={() => onShowDiff(pr)}
                       title='변경 내용 보기'
                     >
-                      <FileDiff className='size-3' />
+                      <FileDiff className='size-3.5' />
                       변경
                     </Button>
                     <Button
                       variant='ghost'
                       size='sm'
-                      className='h-6 gap-1 px-2 text-[10px] text-green-600'
+                      className='h-7 gap-1 px-2 text-[11px] text-green-600'
                       onClick={() => onApprovePR(pr.pr_id)}
                     >
-                      <Check className='size-3' />
+                      <Check className='size-3.5' />
                       승인
                     </Button>
                     <Button
                       variant='ghost'
                       size='sm'
-                      className='h-6 gap-1 px-2 text-[10px] text-red-500'
+                      className='h-7 gap-1 px-2 text-[11px] text-red-500'
                       onClick={() => onRejectPR(pr.pr_id)}
                     >
-                      <X className='size-3' />
+                      <X className='size-3.5' />
                       거절
                     </Button>
                     <Button
                       size='sm'
-                      className='ml-auto h-6 gap-1 px-2 text-[10px]'
+                      className='ml-auto h-7 gap-1 px-2 text-[11px]'
                       onClick={() => onMergePR(pr.pr_id)}
                     >
-                      <GitMerge className='size-3' />
+                      <GitMerge className='size-3.5' />
                       Merge
                     </Button>
                   </div>
@@ -269,11 +276,11 @@ function Section({
   return (
     <section className='flex flex-col gap-1.5'>
       <div className='flex items-center gap-1.5'>
-        <Icon className='text-fg-muted size-3' />
-        <span className='text-fg-secondary text-[10px] font-semibold tracking-wider uppercase'>
+        <Icon className='text-fg-muted size-3.5' />
+        <span className='text-fg-secondary text-[11px] font-semibold tracking-wider uppercase'>
           {title}
         </span>
-        <span className='text-fg-muted text-[10px] tabular-nums'>
+        <span className='text-fg-muted text-[11px] tabular-nums'>
           ({count})
         </span>
         <div className='ml-auto'>{trailing}</div>
@@ -284,23 +291,23 @@ function Section({
 }
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
-  return <p className='text-fg-muted px-1 py-2 text-[11px]'>{children}</p>;
+  return <p className='text-fg-muted px-1 py-2 text-xs'>{children}</p>;
 }
 
 type RowTone = 'amber' | 'blue';
 
 interface DraftRowProps {
   label: string;
-  content: string;
-  originalContent: string;
+  contentPreview: string;
+  originalPreview: string;
   tone: RowTone;
   actions?: React.ReactNode;
 }
 
 function DraftRow({
   label,
-  content,
-  originalContent,
+  contentPreview,
+  originalPreview,
   tone,
   actions,
 }: DraftRowProps) {
@@ -309,19 +316,19 @@ function DraftRow({
       ? 'border-amber-500/40 bg-amber-500/5'
       : 'border-blue-500/40 bg-blue-500/5';
   return (
-    <div className={cn('rounded-md border p-2', toneCls)}>
+    <div className={cn('rounded-md border p-2.5', toneCls)}>
       <div className='mb-1 flex items-center gap-1.5'>
-        <span className='text-fg-secondary font-mono text-[11px] font-medium'>
+        <span className='text-fg-secondary font-mono text-xs font-medium'>
           {label}
         </span>
         <div className='ml-auto flex items-center gap-0.5'>{actions}</div>
       </div>
-      <p className='text-fg-primary line-clamp-2 text-xs leading-snug'>
-        {content}
+      <p className='text-fg-primary line-clamp-2 text-sm leading-snug'>
+        {contentPreview}
       </p>
-      {originalContent && originalContent !== content && (
-        <p className='text-fg-muted mt-1 line-clamp-1 text-[10px] line-through'>
-          {originalContent}
+      {originalPreview && originalPreview !== contentPreview && (
+        <p className='text-fg-muted mt-1 line-clamp-1 text-[11px] line-through'>
+          {originalPreview}
         </p>
       )}
     </div>
@@ -345,13 +352,13 @@ function IconButton({
       title={title}
       onClick={onClick}
       className={cn(
-        'text-fg-muted inline-flex size-5 items-center justify-center rounded transition-colors',
+        'text-fg-muted inline-flex size-6 items-center justify-center rounded transition-colors',
         destructive
           ? 'hover:bg-red-500/10 hover:text-red-500'
           : 'hover:bg-canvas-primary hover:text-fg-primary',
       )}
     >
-      <Icon className='size-3' />
+      <Icon className='size-3.5' />
     </button>
   );
 }

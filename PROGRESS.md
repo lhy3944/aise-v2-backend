@@ -13,7 +13,7 @@
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
 | **Phase 2** | 멀티 에이전트 + 산출물 Editor | ✅ 완료 | 100% | 2026-04-24 — N1/N3 이어 N4 SrsEditor + N5 TestCaseList 완성. 단, staging/PR 워크플로우는 record-only (ChangesWorkspaceModal 제네릭화 후속). |
 | **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
-| **Phase 4** | 품질·버전·영향도 | ⏸ | 0% | Langfuse 자가호스팅 도입 |
+| **Phase 4** | 품질·버전·영향도 (PLAN_ARTIFACT_LINEAGE.md A~G) | ✅ 완료 | 100% | 2026-04-28 — Phase A~G 7단계 + 후속 #1(soft delete + MinIO) #2(record version UI) 완료. #3(stale UI 재설계) 의사결정 대기 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
 
 **범례**: ✅ 완료 · 🟢 진행 중 · 🟡 대기 · ⏸ 미시작 · ❌ 블록됨
@@ -23,6 +23,24 @@
 ## 알려진 이슈 / 후속 작업
 
 다음 세션에서 다시 확인·보강할 항목. 긴급도는 `P?` 로 표기(P1 = 빠른 대응 권장, P2 = 여유 있음).
+
+### [P1] Stale 알림 / 영향도 모달 UI 재설계 — 의사결정 대기 (2026-04-28 오픈)
+
+**맥락** — Phase 4 후속 #3. Phase G 1차 구현(탭바 우측 amber `stale N` 버튼 + ImpactPanel 모달 체크박스 리스트)에 대해 사용자가 위치/모양 재설계 요청.
+
+**현재 동작 위치**: [ArtifactPanel.tsx](frontend/src/components/artifacts/ArtifactPanel.tsx) 탭바 옆 (line 87 부근). 모달 본문은 [ImpactPanel.tsx](frontend/src/components/artifacts/workspace/ImpactPanel.tsx).
+
+**디자인 결정 옵션 (다음 세션 시작 시 사용자 선택 받기)**:
+
+1. **위치** (4가지): A. 영향받는 각 artifact 화면 헤더 안 inline alert ⭐ / B. 우측 사이드바 상단 알림 / C. 하단 sticky banner / D. 현재 (탭바 우측)
+2. **모달 본문** (3가지): α. 카드 형태 (artifact별 카드 + 카드별 "재생성") ⭐ / β. 의존성 그래프 시각화 / γ. 변경 시간순 타임라인
+3. **진입 빈도** (3가지): stale > 0 일 때만 ⭐ / 항상 보임 / 토글
+
+**권장 조합**: A + α + 현재(stale > 0일 때만) — 각 화면 헤더에 inline banner, 카드별 재생성 버튼. stale 0이면 hide.
+
+**결정 후 작업 추정**: ~150 LOC. 위치 변경(ArtifactPanel 제거 + Srs/Design/TC 헤더 inline) + ImpactPanel 본문을 카드형으로 재작성.
+
+---
 
 ### [P3] SRS PDF 다운로드 — 방식 미결정 (2026-04-24 오픈)
 

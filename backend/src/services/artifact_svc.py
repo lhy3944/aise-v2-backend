@@ -80,6 +80,7 @@ def _uuid(value: uuid.UUID | None) -> str | None:
 def _to_artifact_response(
     artifact: Artifact,
     current_version_number: int | None = None,
+    current_source_artifact_versions: dict | None = None,
 ) -> ArtifactResponse:
     return ArtifactResponse(
         artifact_id=str(artifact.id),
@@ -92,6 +93,7 @@ def _to_artifact_response(
         lifecycle_status=artifact.lifecycle_status,  # type: ignore[arg-type]
         current_version_id=_uuid(artifact.current_version_id),
         current_version_number=current_version_number,
+        current_source_artifact_versions=current_source_artifact_versions,
         open_pr_id=_uuid(artifact.open_pr_id),
         created_at=artifact.created_at,
         updated_at=artifact.updated_at,
@@ -113,6 +115,7 @@ def _to_version_response(
         author_id=version.author_id,
         committed_at=version.committed_at,
         merged_from_pr_id=_uuid(version.merged_from_pr_id),
+        source_artifact_versions=version.source_artifact_versions,
     )
 
 
@@ -246,24 +249,33 @@ async def list_artifacts(
 
     artifacts = (await db.execute(stmt)).scalars().all()
 
-    # 각 artifact 의 current_version_number 조회 — N+1 회피 위해 일괄 로드
+    # 각 artifact 의 current_version_number + lineage 조회 — N+1 회피 위해 일괄 로드
     version_ids = [a.current_version_id for a in artifacts if a.current_version_id]
-    version_map: dict[uuid.UUID, int] = {}
+    version_map: dict[uuid.UUID, tuple[int, dict | None]] = {}
     if version_ids:
-        v_stmt = select(ArtifactVersion.id, ArtifactVersion.version_number).where(
-            ArtifactVersion.id.in_(version_ids)
-        )
-        version_map = {vid: vn for vid, vn in (await db.execute(v_stmt)).all()}
+        v_stmt = select(
+            ArtifactVersion.id,
+            ArtifactVersion.version_number,
+            ArtifactVersion.source_artifact_versions,
+        ).where(ArtifactVersion.id.in_(version_ids))
+        version_map = {
+            vid: (vn, src)
+            for vid, vn, src in (await db.execute(v_stmt)).all()
+        }
 
-    items = [
-        _to_artifact_response(
-            a,
-            current_version_number=version_map.get(a.current_version_id)
-            if a.current_version_id
-            else None,
+    items = []
+    for a in artifacts:
+        vn: int | None = None
+        src: dict | None = None
+        if a.current_version_id and a.current_version_id in version_map:
+            vn, src = version_map[a.current_version_id]
+        items.append(
+            _to_artifact_response(
+                a,
+                current_version_number=vn,
+                current_source_artifact_versions=src,
+            )
         )
-        for a in artifacts
-    ]
     return ArtifactListResponse(artifacts=items, total=len(items))
 
 
@@ -385,7 +397,15 @@ async def create_pr(
             f"이미 PR이 열려 있습니다 (open_pr_id={artifact.open_pr_id}).",
         )
 
-    # head snapshot 기록
+    # head snapshot 기록 (Phase E: lineage 는 base version 에서 상속).
+    # 사용자 수동 편집은 source artifact 변화가 아니라 표현만 다듬는 케이스가 다수이므로
+    # 명시적 갱신이 없으면 base 의 source_artifact_versions 를 그대로 이어붙인다.
+    base_lineage: dict | None = None
+    if artifact.current_version_id is not None:
+        base_v = await db.get(ArtifactVersion, artifact.current_version_id)
+        if base_v is not None:
+            base_lineage = base_v.source_artifact_versions
+
     version_number = await _next_version_number(db, artifact.id)
     head_version = ArtifactVersion(
         artifact_id=artifact.id,
@@ -395,6 +415,7 @@ async def create_pr(
         content_hash=_content_hash(artifact.content),
         commit_message=title,
         author_id=author_id,
+        source_artifact_versions=base_lineage,
     )
     db.add(head_version)
     await db.flush()

@@ -43,6 +43,7 @@ _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "src.agents.knowledge_qa",
     "src.agents.requirement",
     "src.agents.srs_generator",
+    "src.agents.design_generator",
     "src.agents.testcase_generator",
     "src.agents.critic",
 )

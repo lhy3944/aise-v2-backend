@@ -1,6 +1,7 @@
 'use client';
 
 import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
+import { RecordVersionsModal } from '@/components/artifacts/workspace/RecordVersionsModal';
 import {
   ArtifactRecordEditor,
   ArtifactRecordEditorActions,
@@ -36,6 +37,7 @@ import {
   Database,
   FileText,
   Filter,
+  History,
   MinusCircle,
   Pencil,
   Trash2,
@@ -204,19 +206,58 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     [projectId, discardArtifactDraft],
   );
 
+  const handleShowVersions = useCallback(
+    (record: ArtifactRecord) => {
+      overlay.modal({
+        title: `버전 히스토리 — ${record.display_id}`,
+        description:
+          '이 레코드의 모든 머지된 버전과 변경 내역(diff) 입니다.',
+        size: 'lg',
+        content: (
+          <RecordVersionsModal
+            projectId={projectId}
+            artifactId={record.artifact_id}
+            displayLabel={record.display_id}
+          />
+        ),
+      });
+    },
+    [overlay, projectId],
+  );
+
   const handleEdit = useCallback(
     (record: ArtifactRecord) => {
       const existing = unstagedArtifacts[record.artifact_id];
+      // 기존 드래프트가 있으면 그 본문을, 없으면 record 원본을 editor 초기값으로.
+      const draftBody =
+        typeof existing?.content?.text === 'string'
+          ? (existing.content.text as string)
+          : undefined;
+
       const handleSubmit = (values: ArtifactRecordEditorValues) => {
         // 원본 대비 변경이 없으면 드래프트 자체를 제거 — 불필요한 unstaged 표기 방지.
         if (values.content.trim() === record.content.trim()) {
           discardArtifactDraft(record.artifact_id);
         } else {
+          // record 의 working copy 전체 snapshot 을 content payload 로 저장.
+          // 백엔드 update_working_copy 는 이 객체를 그대로 받는다.
+          const baseSnapshot = {
+            text: record.content,
+            section_id: record.section_id,
+            source_document_id: record.source_document_id,
+            source_location: record.source_location,
+            confidence_score: record.confidence_score,
+            is_auto_extracted: record.is_auto_extracted,
+            order_index: record.order_index,
+            metadata: { status: record.status },
+          };
           setArtifactDraft({
             artifactId: record.artifact_id,
-            content: values.content,
-            originalContent: record.content,
+            artifactKind: 'record',
+            content: { ...baseSnapshot, text: values.content },
+            originalContent: baseSnapshot,
             editedAt: new Date().toISOString(),
+            displayLabel: record.display_id,
           });
         }
         overlay.closeModal();
@@ -230,7 +271,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         content: (
           <ArtifactRecordEditor
             record={record}
-            draftContent={existing?.content}
+            draftContent={draftBody}
             onSubmit={handleSubmit}
           />
         ),
@@ -549,7 +590,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                   const statusCfg = STATUS_CONFIG[record.status];
                   const StatusIcon = statusCfg.icon;
                   const draft = unstagedArtifacts[record.artifact_id];
-                  const displayContent = draft?.content ?? record.content;
+                  const draftText =
+                    draft && typeof draft.content?.text === 'string'
+                      ? (draft.content.text as string)
+                      : null;
+                  const displayContent = draftText ?? record.content;
                   return (
                     <div
                       key={record.artifact_id}
@@ -617,6 +662,19 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                           <Pencil className='size-3' />
                           편집
                         </Button>
+                        {record.current_version_number != null &&
+                          record.current_version_number > 0 && (
+                            <Button
+                              variant='ghost'
+                              size='sm'
+                              className='text-fg-secondary h-6 gap-1 px-2 text-[10px]'
+                              onClick={() => handleShowVersions(record)}
+                              title='버전 히스토리'
+                            >
+                              <History className='size-3' />
+                              v{record.current_version_number}
+                            </Button>
+                          )}
                         {record.status !== 'approved' && (
                           <Button
                             variant='ghost'

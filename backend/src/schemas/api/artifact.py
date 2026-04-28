@@ -59,6 +59,8 @@ class ArtifactResponse(BaseModel):
     lifecycle_status: LifecycleStatus
     current_version_id: str | None = None
     current_version_number: int | None = None
+    # Phase E lineage — current_version_id 의 source_artifact_versions 인라인 노출.
+    current_source_artifact_versions: dict[str, Any] | None = None
     open_pr_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -83,6 +85,8 @@ class ArtifactVersionResponse(BaseModel):
     author_id: str
     committed_at: datetime
     merged_from_pr_id: str | None = None
+    # Phase E lineage. {"record": [{"artifact_id":..., "version_number":...}], ...}
+    source_artifact_versions: dict[str, Any] | None = None
 
 
 class ArtifactVersionListResponse(BaseModel):

@@ -36,6 +36,7 @@ def _fake_srs_response(
 ) -> SrsDocumentResponse:
     return SrsDocumentResponse(
         srs_id=str(uuid.uuid4()),
+        artifact_id=str(uuid.uuid4()),
         project_id=str(uuid.uuid4()),
         version=version,
         status="completed",

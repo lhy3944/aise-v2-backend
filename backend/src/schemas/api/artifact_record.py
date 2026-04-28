@@ -51,6 +51,9 @@ class ArtifactRecordResponse(BaseModel):
     status: RecordStatus
     is_auto_extracted: bool
     order_index: int
+    # Phase 후속 — record 도 ArtifactVersion 체인을 보유. 카드에 "버전" 버튼을
+    # 노출할지 결정하는 용도. None / 0 이면 아직 머지된 버전 없음.
+    current_version_number: int | None = None
     created_at: datetime
     updated_at: datetime
 

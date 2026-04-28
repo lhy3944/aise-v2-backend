@@ -45,6 +45,21 @@ export interface ProjectUpdate {
   modules?: ProjectModule[] | null;
 }
 
+/** 프로젝트 hard delete 시 영향받을 데이터 카운트 미리보기. */
+export interface ProjectDeletePreview {
+  project_id: string;
+  project_name: string;
+  knowledge_documents: number;
+  knowledge_files_bytes: number;
+  sessions: number;
+  session_messages: number;
+  artifacts: number;
+  artifact_versions: number;
+  pull_requests: number;
+  glossary_items: number;
+  requirement_sections: number;
+}
+
 export interface ProjectListResponse {
   projects: Project[];
 }
@@ -285,7 +300,8 @@ export interface SrsSection {
 }
 
 export interface SrsDocument {
-  srs_id: string;
+  srs_id: string; // ArtifactVersion.id (version 단위 식별자)
+  artifact_id: string; // Artifact.id (staging/PR 워크플로우 키)
   project_id: string;
   version: number;
   status: string;
@@ -293,11 +309,37 @@ export interface SrsDocument {
   sections: SrsSection[];
   based_on_records: { artifact_ids?: string[] } | null;
   based_on_documents: { documents?: { id: string; name: string }[] } | null;
+  source_artifact_versions: SourceArtifactVersions | null;
   created_at: string;
 }
 
 export interface SrsListResponse {
   documents: SrsDocument[];
+}
+
+// --- Design (artifact_type='design' 의 도메인 뷰, SRS 와 동일 패턴) ---
+export interface DesignSection {
+  section_id: string | null;
+  title: string;
+  content: string;
+  order_index: number;
+}
+
+export interface DesignDocument {
+  design_id: string; // ArtifactVersion.id (version 단위 식별자)
+  artifact_id: string; // Artifact.id (staging/PR 워크플로우 키)
+  project_id: string;
+  version: number;
+  status: string;
+  error_message: string | null;
+  sections: DesignSection[];
+  based_on_srs: { version_id?: string; version_number?: number } | null;
+  source_artifact_versions: SourceArtifactVersions | null;
+  created_at: string;
+}
+
+export interface DesignListResponse {
+  documents: DesignDocument[];
 }
 
 // --- ArtifactRecord (artifact_type='record' 의 도메인 뷰) ---
@@ -318,6 +360,8 @@ export interface ArtifactRecord {
   status: ArtifactRecordStatus;
   is_auto_extracted: boolean;
   order_index: number;
+  /** record 도 ArtifactVersion 체인 보유. null/0 이면 머지된 버전 없음. */
+  current_version_number: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -389,6 +433,8 @@ export interface Artifact<T = JsonObject> {
   lifecycle_status: LifecycleStatus;
   current_version_id: string | null;
   current_version_number: number | null;
+  /** Phase E lineage — current_version_id 의 source 참조. */
+  current_source_artifact_versions: SourceArtifactVersions | null;
   open_pr_id: string | null;
   created_at: string;
   updated_at: string;
@@ -397,6 +443,68 @@ export interface Artifact<T = JsonObject> {
 export interface ArtifactListResponse {
   artifacts: Artifact[];
   total: number;
+}
+
+/** Phase E lineage entry — 이 version 을 만들 때 입력으로 사용한 다른 artifact 의 version. */
+export interface SourceArtifactVersionRef {
+  artifact_id: string;
+  /** 입력으로 쓴 ArtifactVersion.id (= SRS/Design 화면의 selectedXxxId 와 동일).
+   *  record source 처럼 lineage 가 PR 머지 후 채워지는 경우엔 미존재할 수 있음. */
+  version_id?: string;
+  version_number?: number;
+  /** SRS 의 특정 섹션을 참조한 경우 등 — TC->SRS 케이스 */
+  section_id?: string | null;
+}
+
+// --- Phase F: Impact / Stale ---
+export interface StaleReason {
+  source_artifact_id: string;
+  source_artifact_type: string;
+  source_display_id: string | null;
+  referenced_version: number | null;
+  current_version: number | null;
+  section_id: string | null;
+}
+
+export interface ImpactedArtifact {
+  artifact_id: string;
+  artifact_type: string;
+  display_id: string;
+  current_version_number: number | null;
+  stale_reasons: StaleReason[];
+}
+
+export interface ImpactResponse {
+  stale: ImpactedArtifact[];
+}
+
+export interface ImpactApplyRequest {
+  /** 비어 있으면 전체 stale 을 대상으로 함. */
+  artifact_ids: string[];
+}
+
+export interface ImpactApplyEntry {
+  artifact_id: string;
+  artifact_type: string;
+  display_id: string | null;
+  new_version_id: string | null;
+  new_version_number: number | null;
+  error: string | null;
+  skipped_reason: string | null;
+}
+
+export interface ImpactApplyResponse {
+  regenerated: ImpactApplyEntry[];
+  skipped: ImpactApplyEntry[];
+  failed: ImpactApplyEntry[];
+}
+
+/** kind 별 lineage 엔트리 묶음. */
+export interface SourceArtifactVersions {
+  record?: SourceArtifactVersionRef[];
+  srs?: SourceArtifactVersionRef[];
+  design?: SourceArtifactVersionRef[];
+  testcase?: SourceArtifactVersionRef[];
 }
 
 export interface ArtifactVersion<T = JsonObject> {
@@ -411,6 +519,7 @@ export interface ArtifactVersion<T = JsonObject> {
   author_id: string;
   committed_at: string;
   merged_from_pr_id: string | null;
+  source_artifact_versions: SourceArtifactVersions | null;
 }
 
 export interface ArtifactVersionListResponse {

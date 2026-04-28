@@ -9,12 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import AppException
 from sqlalchemy import func
 
+from src.models.artifact import Artifact, ArtifactVersion, PullRequest
 from src.models.glossary import GlossaryItem
 from src.models.knowledge import KnowledgeDocument
 from src.models.project import Project, ProjectSettings
 from src.models.requirement import RequirementSection
+from src.models.session import Session as ChatSession, SessionMessage
 from src.schemas.api.project import (
     ProjectCreate,
+    ProjectDeletePreview,
     ProjectReadiness,
     ProjectUpdate,
     ProjectSettingsUpdate,
@@ -22,6 +25,7 @@ from src.schemas.api.project import (
     ProjectListResponse,
     ProjectSettingsResponse,
 )
+from src.services import storage_svc
 from src.utils.db import get_or_404
 
 
@@ -81,11 +85,14 @@ async def _get_readiness(db: AsyncSession, project_id: uuid.UUID) -> ProjectRead
     )
 
 
-async def list_projects(db: AsyncSession) -> ProjectListResponse:
-    """프로젝트 목록 조회 (준비도 포함)"""
-    result = await db.execute(
-        select(Project).order_by(Project.created_at.desc())
-    )
+async def list_projects(
+    db: AsyncSession, *, include_deleted: bool = False
+) -> ProjectListResponse:
+    """프로젝트 목록 조회 (준비도 포함). 기본은 status='active' 만 반환."""
+    stmt = select(Project).order_by(Project.created_at.desc())
+    if not include_deleted:
+        stmt = stmt.where(Project.status != "deleted")
+    result = await db.execute(stmt)
     projects = result.scalars().all()
 
     responses = []
@@ -165,12 +172,157 @@ async def update_project(
     return await _to_project_response_with_readiness(db, project)
 
 
-async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
-    """프로젝트 삭제"""
+async def delete_project(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    confirm_name: str | None = None,
+) -> None:
+    """프로젝트 soft delete — status='deleted' 로 마킹.
+
+    실제 row 삭제는 `hard_delete_project` 에서. 사용자는 30일 내 복원 가능 (휴지통).
+    `confirm_name` 이 주어지면 프로젝트 이름과 일치해야 진행 (운영 안전망).
+    """
     project = await _get_project_model(db, project_id)
+    if confirm_name is not None and confirm_name.strip() != project.name:
+        raise AppException(
+            400,
+            "프로젝트 이름이 일치하지 않습니다. 삭제를 확인하려면 정확한 이름을 입력하세요.",
+        )
+    if project.status == "deleted":
+        # 이미 휴지통에 있는 경우 — 일관성 위해 200 처리.
+        logger.info(f"프로젝트 이미 삭제됨(skip): id={project_id}")
+        return
+    project.status = "deleted"
+    await db.commit()
+    logger.info(f"프로젝트 soft delete: id={project_id}, name={project.name}")
+
+
+async def restore_project(
+    db: AsyncSession, project_id: uuid.UUID
+) -> ProjectResponse:
+    """soft-deleted 프로젝트를 복원 (status='active')."""
+    project = await _get_project_model(db, project_id)
+    if project.status != "deleted":
+        raise AppException(409, "삭제 상태가 아닌 프로젝트는 복원할 수 없습니다.")
+    project.status = "active"
+    await db.commit()
+    await db.refresh(project)
+    logger.info(f"프로젝트 복원: id={project_id}, name={project.name}")
+    return await _to_project_response_with_readiness(db, project)
+
+
+async def get_delete_preview(
+    db: AsyncSession, project_id: uuid.UUID
+) -> ProjectDeletePreview:
+    """프로젝트 hard delete 시 영향받을 데이터 카운트.
+
+    UI 의 삭제 확인 모달에서 보여주는 데이터. 카운트만 집계 — 실제 삭제 X.
+    """
+    project = await _get_project_model(db, project_id)
+
+    async def _count(model, *conds) -> int:
+        stmt = select(func.count()).select_from(model).where(*conds)
+        return (await db.execute(stmt)).scalar() or 0
+
+    knowledge_docs = await _count(
+        KnowledgeDocument, KnowledgeDocument.project_id == project_id
+    )
+    # MinIO 누적 바이트 — KnowledgeDocument.file_size_bytes 컬럼이 있으면 합계,
+    # 없으면 0 으로 두고 UI 에서 "(파일)" 정도만 표시.
+    file_size_total = 0
+    if hasattr(KnowledgeDocument, "file_size_bytes"):
+        file_size_total = (
+            await db.execute(
+                select(func.coalesce(func.sum(KnowledgeDocument.file_size_bytes), 0))
+                .where(KnowledgeDocument.project_id == project_id)
+            )
+        ).scalar() or 0
+    sessions_count = await _count(
+        ChatSession, ChatSession.project_id == project_id
+    )
+    msgs_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(SessionMessage)
+            .join(ChatSession, SessionMessage.session_id == ChatSession.id)
+            .where(ChatSession.project_id == project_id)
+        )
+    ).scalar() or 0
+    artifacts_count = await _count(
+        Artifact, Artifact.project_id == project_id
+    )
+    versions_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(ArtifactVersion)
+            .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
+            .where(Artifact.project_id == project_id)
+        )
+    ).scalar() or 0
+    prs_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(PullRequest)
+            .join(Artifact, PullRequest.artifact_id == Artifact.id)
+            .where(Artifact.project_id == project_id)
+        )
+    ).scalar() or 0
+    glossary_count = await _count(
+        GlossaryItem, GlossaryItem.project_id == project_id
+    )
+    sections_count = await _count(
+        RequirementSection, RequirementSection.project_id == project_id
+    )
+
+    return ProjectDeletePreview(
+        project_id=str(project.id),
+        project_name=project.name,
+        knowledge_documents=int(knowledge_docs),
+        knowledge_files_bytes=int(file_size_total),
+        sessions=int(sessions_count),
+        session_messages=int(msgs_count),
+        artifacts=int(artifacts_count),
+        artifact_versions=int(versions_count),
+        pull_requests=int(prs_count),
+        glossary_items=int(glossary_count),
+        requirement_sections=int(sections_count),
+    )
+
+
+async def hard_delete_project(
+    db: AsyncSession, project_id: uuid.UUID
+) -> int:
+    """완전 삭제 (DB CASCADE + MinIO prefix 정리). 삭제된 MinIO 객체 수 반환.
+
+    호출 경로:
+    - 사용자가 휴지통에서 즉시 영구 삭제 선택
+    - 30 일 retention cron (별도 구현)
+
+    DB CASCADE 가 모든 자식 row 를 정리하지만 MinIO 객체는 별도 정리 필요.
+    """
+    project = await _get_project_model(db, project_id)
+
+    # 1. MinIO prefix 정리 (DB 삭제 전에 시도 — 실패해도 DB 는 진행)
+    minio_deleted = 0
+    try:
+        bucket = storage_svc.get_default_bucket()
+        prefix = f"{project_id}/"
+        minio_deleted = await storage_svc.delete_prefix(bucket, prefix)
+    except AppException as exc:
+        logger.error(
+            f"프로젝트 hard delete - MinIO 정리 실패 (DB 삭제는 진행): "
+            f"id={project_id}, err={exc.detail}"
+        )
+
+    # 2. DB CASCADE 로 모든 관련 row 삭제
     await db.delete(project)
     await db.commit()
-    logger.info(f"프로젝트 삭제: id={project_id}")
+    logger.info(
+        f"프로젝트 hard delete 완료: id={project_id}, name={project.name}, "
+        f"minio_objects_deleted={minio_deleted}"
+    )
+    return minio_deleted
 
 
 async def get_project_settings(

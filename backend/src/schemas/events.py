@@ -1,7 +1,7 @@
 """Agent SSE event schema.
 
 Single source of truth for events streamed from /api/v1/agent/chat and
-/api/v1/chat/{session_id}/resume (Phase 3+).
+/api/v1/agent/resume/{thread_id} (Phase 3+).
 
 Changes here MUST be mirrored in:
 - docs/events.md (human contract)
@@ -334,7 +334,7 @@ AgentStreamEvent = Annotated[
 
 
 class ResumeRequest(BaseModel):
-    """POST /api/v1/chat/{session_id}/resume body."""
+    """POST /api/v1/agent/resume/{thread_id} body."""
 
     interrupt_id: str
     response: dict[str, Any]

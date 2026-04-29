@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ListFilterPlus, SlidersHorizontal } from 'lucide-react';
+import { ListFilterPlus } from 'lucide-react';
 import { SessionItem } from '@/components/chat/SessionItem';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { sessionService } from '@/services/session-service';
 import type { SessionResponse } from '@/services/session-service';
 import { useChatStore } from '@/stores/chat-store';
+import { useHitlStore } from '@/stores/hitl-store';
 import { useProjectStore } from '@/stores/project-store';
 
 const SKELETON_WIDTHS = [72, 58, 85, 63, 91, 54, 78, 67];
@@ -43,6 +44,8 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
 
   const currentProject = useProjectStore((s) => s.currentProject);
   const sessionListNonce = useChatStore((s) => s.sessionListNonce);
+  const openHitlForSession = useHitlStore((s) => s.openForSession);
+  const clearHitlSession = useHitlStore((s) => s.clearSession);
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -72,6 +75,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
     async (sessionId: string) => {
       try {
         await sessionService.delete(sessionId);
+        clearHitlSession(sessionId);
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
         if (activeSessionId === sessionId) {
           router.push('/agent');
@@ -80,7 +84,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
         // 에러 무시 (글로벌 핸들링)
       }
     },
-    [activeSessionId, router],
+    [activeSessionId, clearHitlSession, router],
   );
 
   const handleRename = useCallback(
@@ -120,6 +124,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
                 session={session}
                 isActive={session.id === activeSessionId}
                 onClick={() => {
+                  openHitlForSession(session.id);
                   router.push(`/agent/${session.id}`);
                   onSessionSelect?.();
                 }}

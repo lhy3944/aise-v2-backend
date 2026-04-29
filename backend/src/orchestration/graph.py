@@ -744,7 +744,8 @@ async def run_chat(
         # HITL: 에이전트가 일시 정지를 요청. state 저장 후 SSE 종료.
         # resume 라우터가 thread_id (= interrupt_id) 로 hitl_state 를
         # 조회해 동일 에이전트의 run_stream 을 재개한다.
-        hitl_state_svc.save(
+        await hitl_state_svc.save_persistent(
+            session_factory,
             hitl_state_svc.HitlState(
                 thread_id=interrupted_data.interrupt_id,
                 session_id=str(session_id),
@@ -757,7 +758,7 @@ async def run_chat(
                 history=history or [],
                 routing=initial_state.get("routing"),
                 accumulated_state=dict(initial_state),
-            )
+            ),
         )
         yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
         return
@@ -803,7 +804,7 @@ async def resume_chat(
 ) -> AsyncGenerator[Any, None]:
     """HITL 일시 정지 상태에서 SSE 스트림을 재개.
 
-    `hitl_state_svc.get(thread_id)` 로 저장된 컨텍스트(선택 에이전트, 누적
+    `hitl_state_svc.get_persistent(thread_id)` 로 저장된 컨텍스트(선택 에이전트, 누적
     state, history)를 복원한 뒤, 사용자 응답을 `state["hitl_response"]` 와
     `state["hitl_interrupt_id"]` 로 주입하고 같은 에이전트의 `run_stream`
     을 재호출한다. 에이전트는 첫 번째 yield 가 interrupt 였던 위치의 다음
@@ -812,7 +813,7 @@ async def resume_chat(
     재개 도중 또 다른 interrupt 가 발행되면 새 thread_id 로 다시 저장된다.
     성공 종료 시 hitl_state 는 삭제된다.
     """
-    saved = hitl_state_svc.get(thread_id)
+    saved = await hitl_state_svc.get_persistent(session_factory, thread_id)
     if saved is None:
         yield ErrorEvent(
             data=ErrorEventData(
@@ -853,7 +854,11 @@ async def resume_chat(
 
     # 재개 직전에 hitl_state 삭제 — 재개 도중 새 interrupt 가 발행되면
     # _drive_agent_stream 가 새 thread_id 로 다시 save 한다.
-    hitl_state_svc.delete(thread_id)
+    await hitl_state_svc.delete_persistent(
+        session_factory,
+        thread_id,
+        response=response,
+    )
 
     started = time.perf_counter()
     expose = getattr(agent.capability, "expose_as_tool", True)
@@ -910,7 +915,8 @@ async def resume_chat(
         return
 
     if interrupted_data is not None:
-        hitl_state_svc.save(
+        await hitl_state_svc.save_persistent(
+            session_factory,
             hitl_state_svc.HitlState(
                 thread_id=interrupted_data.interrupt_id,
                 session_id=saved.session_id,
@@ -923,7 +929,7 @@ async def resume_chat(
                 history=saved.history,
                 routing=saved.routing,
                 accumulated_state=dict(state),
-            )
+            ),
         )
         yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
         return

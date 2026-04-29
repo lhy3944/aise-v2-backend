@@ -549,53 +549,28 @@ Phase A (인프라)
 
 ## 9. 후속 (이 plan 범위 외)
 
-- legacy `srs_documents/srs_sections` drop (Phase C 완료 + 안정화 2 release 후)
+### 완료된 후속 (2026-04-28)
+
+- **Project soft delete + MinIO cleanup**: `Project.status='deleted'` 기반 soft delete, restore API, hard delete 단계의 `storage_svc.delete_prefix` 정리까지 구현됨.
+- **record version 히스토리 UI**: `RecordVersionsModal` + `DiffViewer` 재사용으로 Records 화면에서 버전 히스토리와 diff 확인 가능.
+
+### 남은 후속
+
+- legacy `srs_documents/srs_sections` drop (안정화 2 release 후)
 - 다중 SRS/DESIGN 지원 (현재는 프로젝트당 1개 가정)
 - branch/fork 모델 (현재는 main 단일 trunk)
 - conflict resolution UI (동시 편집 케이스)
 - **Stale 알림 / 영향도 모달 UI 재검토** — Phase G 1차 구현은 탭바 우측 amber
   버튼 + ImpactPanel 모달(체크박스 리스트). 사용자 피드백: 위치/모양 재설계 필요.
-  검토 방향:
-  1. 위치 — 탭바 우측 외 후보: 우측 사이드바 상단 알림 영역, 화면 하단 sticky banner,
-     또는 각 artifact 화면의 헤더 안 inline alert
-  2. 모달 본문 — 체크박스 리스트 대신 카드/타임라인/그래프 시각화 검토
-  3. 진입점 빈도 — 항상 보이게 vs stale > 0 일 때만 vs 사용자가 명시적으로 토글
-- **record version 히스토리 UI** — 백엔드는 `Artifact(record)` + 다수 `ArtifactVersion`
-  로 모든 머지 버전을 보존 중이고 `GET .../artifacts/{id}/versions` API 도 존재
-  하나, ArtifactRecordsPanel 에 version selector / history 모달이 미구현.
-  SRS/Design 화면과 동일한 패턴(version selector + diff)으로 추가 필요.
-- **프로젝트 soft delete + 삭제 영향 미리보기 + MinIO 파일 정리** — 현재
-  `DELETE /api/v1/projects/{id}` 는 hard delete 이며 모든 FK 가 CASCADE 로 묶여
-  있어 16+ 테이블의 데이터(지식 문서, 세션 대화 기록, 모든 산출물 버전 히스토리,
-  lineage, 감사 로그 등)가 즉시 영구 삭제됨. 개발 단계에서는 의도된 동작이나
-  운영 전 다음을 도입 필요:
-  1. **Project soft delete** — `Project.lifecycle_status` 컬럼 추가 (Artifact 와 동일
-     패턴: `active`/`archived`/`deleted`), 삭제 시 status 만 `deleted` 로 변경.
-     30 일 후 별도 cron 으로 hard delete (휴지통 패턴).
-  2. **삭제 확인 모달에 영향 미리보기** — `GET /projects/{id}/delete-preview` 신규
-     API 가 `{records: N, knowledge_docs: M, sessions: K, srs_versions: L, files_mb: F}`
-     반환. ProjectOverviewTab 의 삭제 버튼이 모달로 카운트 표시 후 type-to-confirm.
-  3. **휴지통 UI** — 좌측 사이드바 또는 설정에 "삭제된 프로젝트" 섹션, 복원 버튼.
-  4. **MinIO 파일 cleanup (CRITICAL)** — 현재 `project_svc.delete_project` 가 DB
-     CASCADE 만 의존하고 MinIO 객체는 정리하지 않아 **orphan 파일이 영구 잔존** 한다
-     (`storage_key = {project_id}/{document_id}/{filename}` prefix 의 모든 객체).
-     Hard delete 단계에서:
-     - 프로젝트 단위 prefix 일괄 삭제: `storage_svc.delete_prefix("{project_id}/")`
-       헬퍼 신규 (boto3 `list_objects_v2 + delete_objects` 페이지네이션)
-     - 또는 트랜잭션 시작 전 `knowledge_documents` 의 모든 `storage_key` 수집 →
-       삭제 후 best-effort 정리 (실패 시 nightly cron 으로 orphan 스캔/회수)
-     - `knowledge_svc.delete_document` (개별 삭제) 는 이미 MinIO cleanup 정상 동작 — 같은 헬퍼 재사용.
-  5. 추정 규모: backend ~350 LOC (마이그레이션 + service 분기 + cron + MinIO 정리),
-     frontend ~200 LOC (preview 모달 + 휴지통 화면).
+  권장 방향은 PROGRESS.md `[P1] Stale 알림 / 영향도 모달 UI 재설계`를 단일 원천으로 둔다.
 
 ---
 
-## 10. 승인 후 진행 방식
+## 10. 다음 진행 방식
 
-1. 사용자 승인 → 본 PLAN을 PROGRESS.md에 정식 등록 (Phase 4 세분화)
-2. **Phase A부터 PR 단위로 순차 진행**. 각 PR 완료 시 사용자 확인
-3. C/D 시점에 운영 DB 백업 절차 사전 합의
-4. F/G 진입 전 Phase 3 (HITL)와의 통합 영향 재검토
+1. Phase 3 잔여 HITL 작업을 먼저 안정화한다. 프론트 pending queue/SessionList 배지와 DB 영속화/audit row는 완료됐고, 다음 블록은 Clarify/Decision UI와 서버 pending 목록 조회 API다.
+2. Stale/Impact UI 재설계는 Phase 7 추적성 화면과 함께 처리한다.
+3. Phase 5 운영화(RBAC/SSO/DOCX)는 HITL 복구/감사 저장 경계가 정리된 뒤 착수한다.
 
 ---
 

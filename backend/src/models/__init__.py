@@ -5,6 +5,7 @@ from src.models.review import RequirementReview
 from src.models.knowledge import KnowledgeDocument, KnowledgeChunk
 from src.models.srs import SrsDocument, SrsSection
 from src.models.session import Session, SessionMessage
+from src.models.hitl import HitlRequest
 from src.models.artifact import (
     Artifact,
     ArtifactVersion,
@@ -27,6 +28,7 @@ __all__ = [
     "SrsSection",
     "Session",
     "SessionMessage",
+    "HitlRequest",
     "Artifact",
     "ArtifactVersion",
     "PullRequest",

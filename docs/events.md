@@ -2,7 +2,7 @@
 
 > **단일 원천 규칙**: 이 문서 + `backend/src/schemas/events.py` + `frontend/src/types/agent-events.ts` 세 파일은 **항상 동기화**되어야 한다. 이벤트 스키마를 변경할 때는 세 파일을 같은 PR에서 수정한다.
 >
-> **대상 엔드포인트**: `POST /api/v1/agent/chat` (SSE), `POST /api/v1/chat/{session_id}/resume` (SSE, Phase 3+)
+> **대상 엔드포인트**: `POST /api/v1/agent/chat` (SSE), `POST /api/v1/agent/resume/{thread_id}` (SSE, Phase 3+)
 >
 > **포맷**: `text/event-stream` — 한 이벤트는 `data: <json>\n\n` 한 줄. JSON은 `{ "type": "...", "data": {...} }` 구조.
 
@@ -19,6 +19,11 @@
 | `sources` | 에이전트가 참조한 RAG chunk 목록 (본문 `[N]` 인용 앵커) | Phase 2 |
 | `interrupt` | HITL — 사용자 응답 대기 (`interrupt()` 호출) | Phase 3 |
 | `artifact_created` | SRS/Design/TC/Requirement 등 산출물 저장 완료 | Phase 2 |
+| `artifact_staged` | artifact working copy를 version snapshot으로 stage | Phase 2 |
+| `pr_created` | staged version 기반 Pull Request 생성 | Phase 2 |
+| `pr_merged` | Pull Request merge 완료, current version 갱신 | Phase 2 |
+| `pr_rejected` | Pull Request 거부 | Phase 2 |
+| `impact_detected` | upstream artifact 변경으로 영향받는 downstream 감지 | Phase 2 |
 | `done` | 스트리밍 종료 (정상/이유 포함) | Phase 1 |
 | `error` | 복구 불가 오류 → 연결 종료 | Phase 1 |
 
@@ -235,7 +240,103 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 | `data.project_id` | UUID | ✅ | |
 | `data.version` | string | 선택 | `"1.0"` 등 |
 
-### 2.8 `done` (Phase 1)
+### 2.8 Artifact Governance 이벤트 (Phase 2)
+
+Git-like artifact 워크플로우용 이벤트. `artifact_kind`는 통합 artifact 모델의 단수형 타입(`record`, `srs`, `design`, `testcase`)을 사용한다.
+
+#### 2.8.1 `artifact_staged`
+
+```json
+{
+  "type": "artifact_staged",
+  "data": {
+    "artifact_id": "uuid-...",
+    "artifact_kind": "record",
+    "project_id": "uuid-...",
+    "version_id": "uuid-...",
+    "version_number": 3,
+    "author_id": "user-..."
+  }
+}
+```
+
+#### 2.8.2 `pr_created`
+
+```json
+{
+  "type": "pr_created",
+  "data": {
+    "pr_id": "uuid-...",
+    "artifact_id": "uuid-...",
+    "artifact_kind": "srs",
+    "project_id": "uuid-...",
+    "title": "SRS 재생성",
+    "author_id": "user-...",
+    "base_version_id": "uuid-...",
+    "head_version_id": "uuid-...",
+    "auto_generated": false
+  }
+}
+```
+
+#### 2.8.3 `pr_merged`
+
+```json
+{
+  "type": "pr_merged",
+  "data": {
+    "pr_id": "uuid-...",
+    "artifact_id": "uuid-...",
+    "artifact_kind": "testcase",
+    "project_id": "uuid-...",
+    "merged_version_id": "uuid-...",
+    "version_number": 4,
+    "merger_id": "user-..."
+  }
+}
+```
+
+#### 2.8.4 `pr_rejected`
+
+```json
+{
+  "type": "pr_rejected",
+  "data": {
+    "pr_id": "uuid-...",
+    "artifact_id": "uuid-...",
+    "artifact_kind": "design",
+    "project_id": "uuid-...",
+    "reviewer_id": "user-...",
+    "reason": "범위 조정 필요"
+  }
+}
+```
+
+#### 2.8.5 `impact_detected`
+
+```json
+{
+  "type": "impact_detected",
+  "data": {
+    "source_artifact_id": "uuid-...",
+    "source_artifact_kind": "record",
+    "project_id": "uuid-...",
+    "impacted": [
+      {
+        "artifact_id": "uuid-...",
+        "artifact_kind": "srs",
+        "display_id": "SRS-001",
+        "reason": "upstream_version_bumped",
+        "pinned_version_number": 2
+      }
+    ]
+  }
+}
+```
+
+`reason`은 `"upstream_version_bumped" | "upstream_status_changed" | "upstream_deleted"` 중 하나.
+
+### 2.9 `done` (Phase 1)
 
 ```json
 { "type": "done", "data": { "finish_reason": "stop" } }
@@ -245,7 +346,7 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
 |---|---|---|---|
 | `data.finish_reason` | `"stop" \| "tool_calls" \| "length" \| "content_filter" \| "interrupt" \| "error"` | ✅ | 종료 사유 |
 
-### 2.9 `error` (Phase 1)
+### 2.10 `error` (Phase 1)
 
 ```json
 {
@@ -289,12 +390,14 @@ done(stop)
 
 ### 3.4 HITL 개입 (Phase 3)
 ```
-token × N → interrupt(clarify) → done(interrupt)
+tool_call → interrupt(confirm|clarify|decision) → done(interrupt)
 ```
-**프론트 응답 후** (`POST /chat/{session_id}/resume`):
+**프론트 응답 후** (`POST /api/v1/agent/resume/{thread_id}`):
 ```
-token × M → done(stop)
+tool_call(resume_from=thread_id) → token × M → tool_result → done(stop)
 ```
+
+**구현 스냅샷 (2026-04-29)**: Confirm 기반 Requirement 후보 승인/거부 흐름은 동작한다. 프론트는 pending HITL을 `sessionStorage` queue에 보존해 dismiss 후 배너/SessionList 배지로 다시 열 수 있다. 백엔드는 `hitl_requests` 테이블에 pending context를 저장하고 resume 후 `resumed` audit row를 보존한다. Clarify/Decision은 스키마와 fallback UI만 있으며 전용 선택 UI는 다음 단계 작업이다. 서버 pending 목록 조회 API는 아직 없어 새 클라이언트가 DB pending 상태를 자동 발견하진 못한다.
 
 ### 3.5 에러
 ```
@@ -323,3 +426,5 @@ token × M → done(stop)
 |---|---|---|
 | 1.0 | 2026-04-21 | 초기 계약: token/tool_call/tool_result/done/error (Phase 1 구현), plan_update/interrupt/artifact_created (Phase 2~3 도입 예정) |
 | 1.1 | 2026-04-22 | `sources` 이벤트 추가 — 본문 `[N]` 인용의 백엔드 소유 메타데이터 채널 (ref/document_id/name/chunk_index + optional file_type/content_preview/score). legacy `[SOURCES]` 블록 프롬프트 의존 제거를 위함. |
+| 1.2 | 2026-04-29 | Artifact Governance 이벤트(`artifact_staged`, `pr_created`, `pr_merged`, `pr_rejected`, `impact_detected`) 문서화. Phase 3 resume 엔드포인트를 실제 구현인 `/api/v1/agent/resume/{thread_id}`로 정정. |
+| 1.3 | 2026-04-29 | HITL backend persistence 도입. `interrupt_id/thread_id` context 는 `hitl_requests`에 pending 저장되고 resume 후 audit row로 보존된다. SSE payload shape 변경 없음. |

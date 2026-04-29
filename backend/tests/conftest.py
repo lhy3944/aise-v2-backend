@@ -53,6 +53,7 @@ def _verify_test_db_ready():
 # 테이블 정리 순서 (FK 의존성 고려). artifacts ↔ artifact_versions 의 순환
 # FK 때문에 artifacts 포인터를 먼저 NULL 로 풀어야 한다.
 CLEANUP_TABLES = [
+    "hitl_requests",
     "session_messages",
     "sessions",
     "srs_sections",

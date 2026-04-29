@@ -11,8 +11,8 @@
 |---|---|---|---|---|
 | **Phase 0** | Lift (프로토타입 이관) | ✅ 완료 | 100% | 2026-04-21 |
 | **Phase 1** | 기반 아키텍처 (LangGraph + 레지스트리 + SSE 계약) | ✅ 완료 | 100% | 2026-04-21 · 게이트 보강 3건(`f45dbd8` DB 부트스트랩 / `dcc54d3` DI / `dff384f` 체크포인터 env) |
-| **Phase 2** | 멀티 에이전트 + 산출물 Editor | ✅ 완료 | 100% | 2026-04-24 — N1/N3 이어 N4 SrsEditor + N5 TestCaseList 완성. 단, staging/PR 워크플로우는 record-only (ChangesWorkspaceModal 제네릭화 후속). |
-| **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | ⏸ | 0% | P2 선행 |
+| **Phase 2** | 멀티 에이전트 + 산출물 Editor | ✅ 완료 | 100% | 2026-04-24 — N1/N3 이어 N4 SrsEditor + N5 TestCaseList 완성. staging/PR 제네릭화는 Phase 4에서 후속 완료. |
+| **Phase 3** | HITL (interrupt + resume + 컴포넌트 3종) | 🟢 진행 중 | 70% | 2026-04-29 — Confirm 기반 Requirement HITL, 프론트 pending 복구 UI, DB 영속화/audit 완료. Clarify/Decision UI와 plan-path HITL 미완료. |
 | **Phase 4** | 품질·버전·영향도 (PLAN_ARTIFACT_LINEAGE.md A~G) | ✅ 완료 | 100% | 2026-04-28 — Phase A~G 7단계 + 후속 #1(soft delete + MinIO) #2(record version UI) 완료. #3(stale UI 재설계) 의사결정 대기 |
 | **Phase 5** | 운영화 (RBAC/SSO/DOCX) | ⏸ | 0% | |
 
@@ -20,9 +20,38 @@
 
 ---
 
+## 현재 브랜치 스냅샷 (2026-04-29)
+
+- **HEAD**: `ef21ce1` (`feat(records): 친절한 가이드 + 자유 입력 추출 + 수동 입력 폼`)
+- **원격 동기화**: `phase2/supervisor-requirement-plan` == `origin/phase2/supervisor-requirement-plan`
+- **작업 시작 시 추적된 변경**: 없음. 본 세션의 문서 싱크 변경은 아래 작업 로그에 기록.
+- **추적되지 않은 로컬 파일**: `.claude/`, `.codex`, `frontend/package-lock.json` — 소스 변경으로 간주하지 않음. `frontend/package.json`은 `pnpm@9.15.0` + `only-allow pnpm` 이므로 npm lockfile은 정리/ignore 후보.
+- **최근 실제 구현**:
+  - `3b95e09` — Phase 3 PR-1: HITL interrupt/resume 인프라, in-memory `hitl_state_svc`, `/api/v1/agent/resume/{thread_id}`
+  - `e785993` — Phase 3 PR-2/PR-3: RequirementAgent confirm 게이트 + `HITLPromptModal`
+  - `ef21ce1` — Records UX 후속: 친절한 추출 가이드, 자유 입력 기반 추출, 수동 레코드 입력 폼
+
+---
+
 ## 알려진 이슈 / 후속 작업
 
 다음 세션에서 다시 확인·보강할 항목. 긴급도는 `P?` 로 표기(P1 = 빠른 대응 권장, P2 = 여유 있음).
+
+### [P1] Clarify/Decision UI + plan-path HITL 미완료 — Phase 3 잔여 (2026-04-29 오픈)
+
+**현재 구현** — `RequirementAgent`가 레코드 후보를 추출한 뒤 `interrupt(confirm)`을 발행하고, 프론트 `HITLPromptModal`에서 승인/거부를 받아 `/api/v1/agent/resume/{thread_id}`로 재개한다. 프론트는 `hitl-store`에 pending interrupt를 보관하므로 모달 dismiss 후에도 하단 배너/SessionList 배지에서 다시 열 수 있다. 백엔드는 `hitl_requests` 테이블에 pending context를 저장하고, resume 시 `resumed` + response + completed_at 으로 audit row를 보존한다. DB 저장 실패/마이그레이션 전 환경은 기존 in-memory fallback을 유지한다.
+
+**한계**
+- 서버에는 pending HITL 목록 조회 API가 아직 없다. 새 브라우저/새 탭에서 DB pending 상태를 자동 발견하는 UX는 미구현.
+- Clarify/Decision 스키마는 있으나, 프론트는 fallback 안내만 표시한다. 실제 선택 UI는 Confirm만 구현됨.
+- plan-path HITL은 `allow_interrupt=False` 상태라 아직 single-agent Requirement 경로 중심이다.
+
+**권장 다음 작업**
+1. **ClarifyCard / DecisionCard 구현**: 기존 fallback 안내 제거, `HitlData.kind`별 구조화 응답 UI 완성.
+2. **pending HITL 조회 API**: `GET /api/v1/agent/hitl?session_id=...` 또는 SessionList 응답 확장으로 DB pending 상태를 새 클라이언트에서도 발견.
+3. **plan-path HITL 활성화**: plan step 중 interrupt 발생 시 plan 상태와 resume 결과를 일관되게 이어 붙인다.
+
+---
 
 ### [P1] Stale 알림 / 영향도 모달 UI 재설계 — Phase 7 과 통합 보류 (2026-04-28 오픈, 2026-04-28 보류)
 
@@ -119,6 +148,58 @@ Phase 1 이후 추가 예정: `hitl_requests`, `agent_executions`, LangGraph che
 ---
 
 ## 작업 로그
+
+### 2026-04-29 — 코드베이스 / 문서 싱크
+
+실제 브랜치가 Phase 3에 진입했으나 상태 테이블이 `0% / 미시작`으로 남아 있던 불일치를 정정.
+
+#### 코드 기준 완료
+- `3b95e09`: HITL interrupt/resume 인프라. `/api/v1/agent/chat`에서 interrupt 발행 후 `done(interrupt)`, `/api/v1/agent/resume/{thread_id}`에서 resume SSE 재개.
+- `e785993`: RequirementAgent confirm gate + 프론트 `HITLPromptModal`. 승인 시 artifact record commit, 거부 시 후보 폐기.
+- `ef21ce1`: 빈 프로젝트/문서 없음 상황을 에러 카드가 아닌 가이드 답변으로 노출. 채팅 자유 입력 기반 레코드 추출(`extract_mode=user_text`)과 우측 Records 수동 입력 폼 추가.
+
+#### 문서 기준 정정
+- Phase 3 상태를 `🟢 진행 중 / 45%`로 조정.
+- `docs/events.md`의 resume 엔드포인트를 실제 구현(`/api/v1/agent/resume/{thread_id}`)에 맞춤.
+- `PLAN_ARTIFACT_LINEAGE.md`의 완료된 후속 과제(soft delete + MinIO cleanup, record version UI)를 잔여 작업에서 제거.
+
+#### 남은 Phase 3 기준
+- HITL 상태 영속화와 감사 이력
+- Clarify/Decision 전용 UI
+- plan-path HITL
+
+### 2026-04-29 — pending HITL 복구 UI (Phase 3 → 55%)
+
+모달 dismiss 시 프론트 로컬 상태가 사라져 resume 진입점이 없어지던 문제를 해결.
+
+#### 변경
+- `frontend/src/stores/hitl-store.ts` 신설: pending interrupt를 `sessionStorage` 기반 `aise-hitl-v1`에 저장. 새 interrupt 수신 시 자동 open, dismiss 시 queue 보존, resume 시작 시 제거.
+- `useChatStream`이 로컬 `pendingHitl` state 대신 `hitl-store`를 사용. Requirement approve 결과(`records_approved_count > 0`) 수신 시 Records 탭 refresh도 트리거.
+- `ChatArea` 하단 입력 위에 "승인 대기 중 · ..." 재열기 배너 추가.
+- `SessionList/SessionItem`에 HITL 대기 배지 추가. 대기 세션 클릭 시 해당 pending modal을 다시 연다.
+
+#### 남은 한계
+- 백엔드 상태 영속화는 다음 항목에서 완료. 단, pending 목록 조회 API는 아직 없어 새 클라이언트가 DB pending 상태를 자동 발견하진 못한다.
+- Clarify/Decision은 아직 fallback 안내 UI만 존재.
+
+### 2026-04-29 — HITL DB 영속화 + audit row (Phase 3 → 70%)
+
+프론트 pending queue가 살아 있어도 백엔드 재시작/멀티 프로세스에서 resume context가 사라질 수 있던 한계를 보강.
+
+#### 변경
+- `backend/src/models/hitl.py` 신설: `HitlRequest` 모델(`pending/resumed/expired/cancelled`, `clarify/confirm/decision`).
+- Alembic `9d8f1e2c3b4a_add_hitl_requests.py` 추가. 기존 prototype `hitl_requests` 테이블(`kind`, `request_payload`, `response_payload`)이 있는 DB도 보존 마이그레이션.
+- `hitl_state_svc`에 `save_persistent/get_persistent/delete_persistent` 추가. DB 저장 우선, 실패 시 기존 in-memory fallback.
+- `run_chat/resume_chat/_stream_resume`가 persisted state를 사용하도록 연결.
+- resume 시작 시 pending row를 삭제하지 않고 `status='resumed'`, `response`, `completed_at`을 기록해 audit 보존.
+
+#### 테스트
+- `test_hitl_state_persists_to_db_and_keeps_audit` 추가 — memory reset 후 DB에서 state 복구, resume 완료 후 audit row 확인.
+- Phase 3 회귀: `tests/test_orchestration.py`, `tests/test_requirement_agent.py`, `tests/test_hitl_interrupt.py` — 27 passed.
+
+#### 남은 한계
+- 서버 pending 목록 조회 API 미구현. 기존 브라우저 tab의 `sessionStorage` queue가 있으면 재열기 가능하지만, 새 클라이언트가 DB pending 상태를 자동 발견하진 못한다.
+- Clarify/Decision 전용 UI와 plan-path HITL은 남음.
 
 ### 2026-04-24 — N4 SrsEditor + N5 TestCaseList (Phase 2 → 100%)
 

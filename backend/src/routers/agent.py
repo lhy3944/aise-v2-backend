@@ -189,7 +189,7 @@ async def _stream_resume(
         yield f"data: {payload}\n\n"
         return
 
-    saved = hitl_state_svc.get(thread_id)
+    saved = await hitl_state_svc.get_persistent(session_factory, thread_id)
     if saved is None:
         payload = (
             f'{{"type":"error","data":{{"message":"hitl thread not found or expired",'

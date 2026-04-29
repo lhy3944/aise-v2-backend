@@ -112,22 +112,37 @@ SELECT count(*) FROM artifacts WHERE project_id = '<UUID>' AND artifact_type = '
 
 ---
 
-## 시나리오 4: 모달 dismiss — pendingHitl 폐기
+## 시나리오 4: 모달 dismiss — pending HITL 재열기
 
-**목적**: 사용자가 모달을 ESC / 배경 클릭으로 닫았을 때 동작 확인 (PR-3 한정 동작).
+**목적**: 사용자가 모달을 ESC / 배경 클릭으로 닫아도 대기 중인 HITL을 UI에서 다시 열 수 있는지 확인.
 
 **단계**:
 
 1. 시나리오 1 의 1~4 단계 동일
 2. 모달 외부 영역 클릭 (또는 ESC 키)
+3. 채팅 입력창 위의 "승인 대기 중 · ..." 배너 확인
+4. 배너의 "열기" 클릭 → 같은 Confirm 모달 재등장 확인
+5. 모달을 다시 닫은 뒤 좌측 SessionList 에 해당 세션 "대기" 배지 확인
+6. 해당 세션 클릭 → Confirm 모달 재등장 확인
+7. "승인" 또는 "거부" 클릭
 
-**현재 동작** (PR-3 시점):
+**기대 UI**:
 
-- 모달 닫힘 → 프론트 `pendingHitl` 클리어
-- 백엔드 `hitl_state` 는 그대로 24h TTL 유지
-- 사용자에게는 "재개" UI 가 없음 → resume 가 사실상 사용자 주도로 불가
+- 모달 dismiss 후에도 pending HITL 이 `hitl-store`에 남음
+- 현재 세션 하단 입력창 위에 재열기 배너 표시
+- 좌측 SessionList 의 해당 세션에 "대기" 배지 표시
+- 배너 또는 세션 클릭으로 모달 재오픈
+- approve/reject 후 배너와 세션 배지가 사라짐
 
-**검증**:
+**기대 SSE**:
+
+시나리오 1 또는 2 의 resume 이벤트와 동일.
+
+**백엔드 상태 참고**:
+
+백엔드 `hitl_requests` row 는 `status='pending'` 으로 저장된다. resume 이 시작되면 row 를 삭제하지 않고 `status='resumed'`, `response`, `completed_at` 을 기록해 audit 으로 남긴다. 단, 서버 pending 목록 조회 API 는 아직 없어 새 브라우저/새 탭에서 DB pending 상태를 자동 발견하진 못한다.
+
+**curl 보조 검증**:
 
 ```bash
 # 백엔드에서 hitl_state 가 살아있는지 직접 호출 가능
@@ -138,7 +153,7 @@ curl -N -X POST http://localhost:9999/api/v1/agent/resume/<interrupt_id> \
 
 → 정상 SSE 재개 (token + tool_result + done) 받아야 함.
 
-**알려진 한계**: dismiss 후 UI 만으로는 재개 불가. PR-4 (ApprovalQueue) 에서 해결 예정.
+**알려진 한계**: pending 목록 조회 API 는 아직 미지원. 기존 탭의 `sessionStorage` queue 가 있는 경우에 재열기 UX가 동작한다.
 
 ---
 
@@ -358,8 +373,8 @@ ORDER BY created_at DESC LIMIT 1;
    - SSE 메시지에 `{"type":"interrupt","data":{...}}` 가 보이는지
    - Console 에 `[useChatStream]` 또는 SSE 파싱 에러 없는지
 3. **DB**
-   - `LANGGRAPH_CHECKPOINT_URL` 미설정 시 hitl_state 는 in-memory — 백엔드 재시작하면 사라짐
-   - 시나리오 4 (dismiss) 검증 시 동일 백엔드 프로세스에서 curl 호출
+   - `hitl_requests` row 가 `pending` 상태로 생성됐는지 확인
+   - resume 후 같은 row 가 `resumed` 상태로 바뀌고 `response`, `completed_at` 이 채워지는지 확인
 4. **프론트 상태**
    - React DevTools 로 `useChatStream` 의 `pendingHitl` 값 확인
    - 모달이 안 뜨면 pendingHitl 이 null 인 채로 onInterrupt 가 호출됐을 수 있음
@@ -371,14 +386,14 @@ ORDER BY created_at DESC LIMIT 1;
 수동 시나리오 전후로 자동 회귀 한 번:
 
 ```bash
-cd backend && PGSSLMODE=disable .venv/Scripts/python.exe -m pytest \
+cd backend && uv run pytest \
   tests/test_orchestration.py \
   tests/test_requirement_agent.py \
   tests/test_hitl_interrupt.py -v
-# 32 passed 기대
+# 27 passed 기대
 ```
 
 ```bash
-cd frontend && pnpm tsc --noEmit
+cd frontend && pnpm exec tsc --noEmit --incremental false
 # 에러 없음 기대
 ```

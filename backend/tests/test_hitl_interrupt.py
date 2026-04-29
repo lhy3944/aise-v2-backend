@@ -17,10 +17,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
 from src.agents import list_agents, load_builtin_agents
 from src.agents.base import AgentCapability, BaseAgent
 from src.agents.registry import _REGISTRY, register_agent
+from src.models.hitl import HitlRequest
+from src.models.project import Project
+from src.models.session import Session as SessionModel
 from src.orchestration.graph import resume_chat, run_chat
 from src.schemas.events import (
     ClarifyData,
@@ -236,3 +240,55 @@ def test_hitl_state_ttl_expiration():
     state.created_at = datetime.now(timezone.utc) - timedelta(hours=25)
     hitl_state_svc.save(state)
     assert hitl_state_svc.get("itp_ttl") is None
+
+
+@pytest.mark.asyncio
+async def test_hitl_state_persists_to_db_and_keeps_audit(db):
+    project = Project(name="hitl-persist", description="x")
+    db.add(project)
+    await db.flush()
+    session = SessionModel(project_id=project.id, title="hitl")
+    db.add(session)
+    await db.commit()
+
+    @asynccontextmanager
+    async def _ctx():
+        yield db
+
+    def _factory():
+        return _ctx()
+
+    state = hitl_state_svc.HitlState(
+        thread_id="itp_db",
+        session_id=str(session.id),
+        project_id=str(project.id),
+        user_input="extract",
+        selected_agent=_AGENT_NAME,
+        interrupt_id="itp_db",
+        interrupt_kind="confirm",
+        payload={"kind": "confirm"},
+        accumulated_state={"records_extracted": [{"content": "A"}]},
+    )
+    await hitl_state_svc.save_persistent(_factory, state)
+
+    # Clear memory to prove recovery comes from DB.
+    hitl_state_svc.reset()
+    saved = await hitl_state_svc.get_persistent(_factory, "itp_db")
+    assert saved is not None
+    assert saved.thread_id == "itp_db"
+    assert saved.accumulated_state["records_extracted"][0]["content"] == "A"
+
+    await hitl_state_svc.delete_persistent(
+        _factory,
+        "itp_db",
+        response={"action": "approve"},
+    )
+    hitl_state_svc.reset()
+    assert await hitl_state_svc.get_persistent(_factory, "itp_db") is None
+
+    row = (
+        await db.execute(select(HitlRequest).where(HitlRequest.thread_id == "itp_db"))
+    ).scalar_one()
+    assert row.status == "resumed"
+    assert row.response == {"action": "approve"}
+    assert row.completed_at is not None

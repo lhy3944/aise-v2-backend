@@ -12,22 +12,23 @@ import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
-import type { HitlData, SourceRef } from '@/types/agent-events';
+import {
+  selectLatestPendingHitlForSession,
+  useHitlStore,
+} from '@/stores/hitl-store';
+import type { SourceRef } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-interface PendingHitl {
-  threadId: string;
-  sessionId: string;
-  data: HitlData;
-}
-
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 /** 백엔드 도구 결과를 사용자 친화적 문자열로 포맷 */
-function formatToolResult(name: string, result: Record<string, unknown>): string {
+function formatToolResult(
+  name: string,
+  result: Record<string, unknown>,
+): string {
   switch (name) {
     case 'create_record':
       return `${result.display_id} 생성 완료`;
@@ -118,7 +119,19 @@ export function useChatStream(sessionId?: string) {
   const pendingFinishStatusRef = useRef<Map<string, 'done' | 'error'>>(
     new Map(),
   );
-  const [pendingHitl, setPendingHitl] = useState<PendingHitl | null>(null);
+  const pendingHitl = useHitlStore((s) => {
+    const active = s.activeThreadId
+      ? s.pendingByThreadId[s.activeThreadId]
+      : null;
+    return active?.sessionId === activeSessionId ? active : null;
+  });
+  const queuedHitl = useHitlStore((s) =>
+    selectLatestPendingHitlForSession(s, activeSessionId),
+  );
+  const upsertHitl = useHitlStore((s) => s.upsert);
+  const dismissActiveHitl = useHitlStore((s) => s.dismissActive);
+  const openHitlThread = useHitlStore((s) => s.openThread);
+  const removeHitl = useHitlStore((s) => s.remove);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(
     () =>
       !!activeSessionId &&
@@ -266,7 +279,13 @@ export function useChatStream(sessionId?: string) {
         },
       });
     },
-    [setExtracting, setCandidates, setExtractError, setActiveTab, setRightPanelPreset],
+    [
+      setExtracting,
+      setCandidates,
+      setExtractError,
+      setActiveTab,
+      setRightPanelPreset,
+    ],
   );
 
   const triggerGenerateSrs = useCallback(
@@ -430,7 +449,7 @@ export function useChatStream(sessionId?: string) {
 
   // Tool call 실행 디스패처
   const executeToolCall = useCallback(
-    (sid: string, name: string, _args: Record<string, unknown>) => {
+    (sid: string, name: string) => {
       if (!currentProject) {
         markToolCallError(
           sid,
@@ -448,7 +467,12 @@ export function useChatStream(sessionId?: string) {
           break;
       }
     },
-    [currentProject, markToolCallError, triggerExtractRecords, triggerGenerateSrs],
+    [
+      currentProject,
+      markToolCallError,
+      triggerExtractRecords,
+      triggerGenerateSrs,
+    ],
   );
 
   // 백엔드 도구 실행 결과 처리 (레코드 CUD + agent 호출)
@@ -463,7 +487,22 @@ export function useChatStream(sessionId?: string) {
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
       // 레코드 CUD 도구 결과 → Records 탭 갱신
-      if (['create_record', 'update_record', 'delete_record', 'update_record_status'].includes(name)) {
+      if (
+        [
+          'create_record',
+          'update_record',
+          'delete_record',
+          'update_record_status',
+        ].includes(name)
+      ) {
+        bumpRefresh();
+      }
+      if (
+        name === 'requirement' &&
+        typeof result.records_approved_count === 'number' &&
+        result.records_approved_count > 0
+      ) {
+        setActiveTab('records');
         bumpRefresh();
       }
 
@@ -479,14 +518,16 @@ export function useChatStream(sessionId?: string) {
                 ...tc,
                 state: newState,
                 result: isError ? undefined : formatToolResult(name, result),
-                error: isError ? (result.error as string | undefined) : undefined,
+                error: isError
+                  ? (result.error as string | undefined)
+                  : undefined,
                 durationMs: durationMs ?? tc.durationMs,
               }
             : tc,
         ),
       }));
     },
-    [bumpRefresh],
+    [bumpRefresh, setActiveTab],
   );
 
   // sendMessage / resumeFromInterrupt 가 공유하는 SSE 콜백 빌더.
@@ -508,7 +549,7 @@ export function useChatStream(sessionId?: string) {
             ...msg,
             toolCalls: [...(msg.toolCalls ?? []), tc],
           }));
-          executeToolCall(sid, toolCall.name, toolCall.arguments);
+          executeToolCall(sid, toolCall.name);
         },
         onToolResult: (toolResult) => {
           handleToolResult(
@@ -533,10 +574,11 @@ export function useChatStream(sessionId?: string) {
           }));
         },
         onInterrupt: (data) => {
-          setPendingHitl({
+          upsertHitl({
             threadId: data.interrupt_id,
             sessionId: sid,
             data,
+            createdAt: new Date().toISOString(),
           });
         },
         onDone: () => {
@@ -548,14 +590,20 @@ export function useChatStream(sessionId?: string) {
         },
       };
     },
-    [enqueueToken, executeToolCall, handleToolResult, requestFinishAfterDrain],
+    [
+      enqueueToken,
+      executeToolCall,
+      handleToolResult,
+      requestFinishAfterDrain,
+      upsertHitl,
+    ],
   );
 
   const resumeFromInterrupt = useCallback(
     (response: Record<string, unknown>) => {
       if (!pendingHitl) return;
       const { threadId, sessionId: hitlSessionId } = pendingHitl;
-      setPendingHitl(null);
+      removeHitl(threadId);
 
       // resume 응답은 새 assistant 메시지 turn 으로 표시 — interrupt 직전
       // 메시지(승인 요청)는 그대로 두고 결과(승인됨/거부됨)를 새 카드로 분리.
@@ -578,6 +626,7 @@ export function useChatStream(sessionId?: string) {
     },
     [
       pendingHitl,
+      removeHitl,
       addMessage,
       setSessionStreaming,
       clearBufferedTokens,
@@ -586,8 +635,15 @@ export function useChatStream(sessionId?: string) {
   );
 
   const cancelInterrupt = useCallback(() => {
-    setPendingHitl(null);
-  }, []);
+    dismissActiveHitl();
+  }, [dismissActiveHitl]);
+
+  const openPendingHitl = useCallback(
+    (threadId: string) => {
+      openHitlThread(threadId);
+    },
+    [openHitlThread],
+  );
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -688,6 +744,8 @@ export function useChatStream(sessionId?: string) {
     stopStreaming,
     setInputValue,
     pendingHitl,
+    queuedHitl,
+    openPendingHitl,
     resumeFromInterrupt,
     cancelInterrupt,
   };

@@ -18,8 +18,7 @@ interface HITLPromptModalProps {
   data: HitlData | null;
   /** 사용자가 응답을 확정한 시점에 호출. response 는 백엔드 resume body. */
   onRespond: (response: Record<string, unknown>) => void;
-  /** 모달 외부 닫기 (Escape/배경 클릭) — pendingHitl 을 그대로 유지하려면
-   *  ChatArea 가 별도 처리해야 한다. 현재는 단순히 cancel 동의로 본다. */
+  /** 모달 외부 닫기 (Escape/배경 클릭) — 응답 없이 pending 상태만 숨긴다. */
   onDismiss: () => void;
 }
 

@@ -30,6 +30,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { useImpact } from '@/hooks/useImpact';
 import { useOverlay } from '@/hooks/useOverlay';
+import { showToast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { artifactService } from '@/services/artifact-service';
 import { srsService } from '@/services/srs-service';
@@ -81,6 +82,9 @@ const EMPTY_TESTCASE_GUIDES = [
   },
 ];
 
+const MISSING_SRS_MESSAGE =
+  '완료된 SRS 문서가 없습니다. 먼저 SRS 를 생성하세요.';
+
 export function TestCaseArtifact() {
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.project_id;
@@ -90,6 +94,7 @@ export function TestCaseArtifact() {
   const [priorityFilter, setPriorityFilter] = useState<TestCasePriority[]>([]);
   const [typeFilter, setTypeFilter] = useState<TestCaseType[]>([]);
   const [hasSrsDocument, setHasSrsDocument] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const setInputValue = useChatStore((s) => s.setInputValue);
 
   const overlay = useOverlay();
@@ -147,6 +152,7 @@ export function TestCaseArtifact() {
         );
         setArtifacts(sorted);
         setHasSrsDocument(srsRes.documents.length > 0);
+        setErrorMessage(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -158,6 +164,13 @@ export function TestCaseArtifact() {
   }, [projectId, refreshNonce, srsRefreshNonce]);
 
   const handlePrepareTestcasePrompt = useCallback(() => {
+    if (!hasSrsDocument) {
+      setErrorMessage(MISSING_SRS_MESSAGE);
+      showToast.error(MISSING_SRS_MESSAGE);
+      return;
+    }
+
+    setErrorMessage(null);
     setInputValue('SRS 기반으로 테스트케이스를 만들어줘');
     requestAnimationFrame(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>(
@@ -165,7 +178,7 @@ export function TestCaseArtifact() {
       );
       textarea?.focus();
     });
-  }, [setInputValue]);
+  }, [hasSrsDocument, setInputValue]);
 
   const filtered = useMemo(
     () =>
@@ -235,32 +248,18 @@ export function TestCaseArtifact() {
       <ArtifactEmptyGuide
         icon={FlaskConical}
         title='테스트케이스가 아직 없습니다'
-        description={
-          hasSrsDocument
-            ? '완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
-            : '테스트케이스는 SRS를 기준 데이터로 사용합니다. 먼저 SRS 문서를 생성해 주세요.'
-        }
+        description='완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
         guides={EMPTY_TESTCASE_GUIDES}
+        errorMessage={errorMessage}
         action={
-          hasSrsDocument ? (
-            <Button
-              size='sm'
-              className='h-8 gap-1.5 px-3 text-xs'
-              onClick={handlePrepareTestcasePrompt}
-            >
-              <MessageSquare className='size-3.5' />
-              채팅에 입력
-            </Button>
-          ) : (
-            <Button
-              size='sm'
-              className='h-8 gap-1.5 px-3 text-xs'
-              onClick={() => setActiveTab('srs')}
-            >
-              <FileText className='size-3.5' />
-              SRS 먼저 생성
-            </Button>
-          )
+          <Button
+            size='sm'
+            className='h-8 gap-1.5 px-3 text-xs'
+            onClick={handlePrepareTestcasePrompt}
+          >
+            <MessageSquare className='size-3.5' />
+            Testcase 생성
+          </Button>
         }
       />
     );

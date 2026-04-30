@@ -1,8 +1,15 @@
 'use client';
 
-import { FlaskConical, Link2, MessageSquare, Pencil } from 'lucide-react';
+import {
+  FileText,
+  FlaskConical,
+  Link2,
+  MessageSquare,
+  Pencil,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import {
   TestCaseEditor,
   TestCaseEditorActions,
@@ -27,6 +34,7 @@ import { cn } from '@/lib/utils';
 import { artifactService } from '@/services/artifact-service';
 import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { useArtifactStore } from '@/stores/artifact-store';
+import { useChatStore } from '@/stores/chat-store';
 import { useProjectStore } from '@/stores/project-store';
 import { EMPTY_BUCKET, useStagingStore } from '@/stores/staging-store';
 import type { Artifact } from '@/types/project';
@@ -54,6 +62,24 @@ const TYPE_CONFIG: Record<TestCaseType, { label: string }> = {
   negative: { label: 'Negative' },
 };
 
+const EMPTY_TESTCASE_GUIDES = [
+  {
+    icon: FileText,
+    title: 'SRS 기반 생성',
+    description: '완료된 SRS의 기능 요구사항을 테스트 관점으로 전환합니다.',
+  },
+  {
+    icon: FlaskConical,
+    title: '검증 시나리오 정리',
+    description: '우선순위, 유형, 사전조건, 절차, 기대결과를 구조화합니다.',
+  },
+  {
+    icon: Link2,
+    title: '상위 문서 추적',
+    description: '생성된 테스트케이스는 기반 SRS와 연결됩니다.',
+  },
+];
+
 export function TestCaseArtifact() {
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.project_id;
@@ -62,6 +88,7 @@ export function TestCaseArtifact() {
   const [loading, setLoading] = useState(true);
   const [priorityFilter, setPriorityFilter] = useState<TestCasePriority[]>([]);
   const [typeFilter, setTypeFilter] = useState<TestCaseType[]>([]);
+  const setInputValue = useChatStore((s) => s.setInputValue);
 
   const overlay = useOverlay();
 
@@ -98,30 +125,41 @@ export function TestCaseArtifact() {
     [_discardDraft, projectId],
   );
 
-  const fetchList = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const res = await artifactService.list(projectId, {
-        artifact_type: 'testcase',
-      });
-      const items = res.artifacts as unknown as TestCaseArtifact[];
-      const sorted = [...items].sort((a, b) =>
-        a.display_id.localeCompare(b.display_id, undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        }),
-      );
-      setArtifacts(sorted);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
   useEffect(() => {
     if (!projectId) return;
-    setLoading(true);
-    void fetchList();
-  }, [projectId, fetchList, refreshNonce]);
+    let cancelled = false;
+
+    artifactService
+      .list(projectId, { artifact_type: 'testcase' })
+      .then((res) => {
+        if (cancelled) return;
+        const items = res.artifacts as unknown as TestCaseArtifact[];
+        const sorted = [...items].sort((a, b) =>
+          a.display_id.localeCompare(b.display_id, undefined, {
+            numeric: true,
+            sensitivity: 'base',
+          }),
+        );
+        setArtifacts(sorted);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshNonce]);
+
+  const handlePrepareTestcasePrompt = useCallback(() => {
+    setInputValue('SRS 기반으로 테스트케이스를 만들어줘');
+    requestAnimationFrame(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        'textarea[name="message"]',
+      );
+      textarea?.focus();
+    });
+  }, [setInputValue]);
 
   const filtered = useMemo(
     () =>
@@ -188,22 +226,22 @@ export function TestCaseArtifact() {
 
   if (artifacts.length === 0) {
     return (
-      <div className='flex h-full flex-col items-center justify-center gap-3 p-6 text-center'>
-        <FlaskConical className='text-fg-muted size-10' />
-        <div>
-          <p className='text-fg-secondary text-sm font-medium'>
-            테스트 케이스 없음
-          </p>
-          <p className='text-fg-muted mt-1 text-xs'>
-            채팅에서 &ldquo;테스트 케이스 생성&rdquo;을 요청하면 SRS 기반으로
-            자동 생성됩니다.
-          </p>
-        </div>
-        <div className='text-fg-muted inline-flex items-center gap-1.5 text-[11px]'>
-          <MessageSquare className='size-3' />
-          예: &ldquo;SRS 기반으로 테스트케이스를 만들어줘&rdquo;
-        </div>
-      </div>
+      <ArtifactEmptyGuide
+        icon={FlaskConical}
+        title='테스트케이스가 아직 없습니다'
+        description='완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
+        guides={EMPTY_TESTCASE_GUIDES}
+        action={
+          <Button
+            size='sm'
+            className='h-8 gap-1.5 px-3 text-xs'
+            onClick={handlePrepareTestcasePrompt}
+          >
+            <MessageSquare className='size-3.5' />
+            채팅에 입력
+          </Button>
+        }
+      />
     );
   }
 

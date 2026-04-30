@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import {
   SrsSectionEditor,
   SrsSectionEditorActions,
@@ -44,6 +45,24 @@ const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   generating: { label: '생성중', tone: 'bg-amber-600 text-white' },
   failed: { label: '실패', tone: 'bg-red-600 text-white' },
 };
+
+const EMPTY_SRS_GUIDES = [
+  {
+    icon: FileText,
+    title: '승인 레코드 반영',
+    description: 'Records 탭에서 승인된 항목을 SRS 초안의 입력으로 사용합니다.',
+  },
+  {
+    icon: Sparkles,
+    title: '초안 생성',
+    description: '섹션별 요구사항을 정리해 첫 번째 SRS 버전을 만듭니다.',
+  },
+  {
+    icon: Link2,
+    title: '출처 연결',
+    description: '생성된 SRS는 기반 레코드와 연결되어 영향도를 추적합니다.',
+  },
+];
 
 function StatusChip({ status }: { status: string }) {
   const cfg = STATUS_LABEL[status] ?? {
@@ -164,9 +183,27 @@ export function SrsArtifact() {
 
   useEffect(() => {
     if (!projectId) return;
-    setLoading(true);
-    void fetchList();
-  }, [projectId, fetchList, refreshNonce]);
+    let cancelled = false;
+
+    srsService
+      .list(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        const sorted = [...res.documents].sort((a, b) => b.version - a.version);
+        setDocuments(sorted);
+        setSelectedSrsId((prev) => {
+          if (prev && sorted.some((d) => d.srs_id === prev)) return prev;
+          return sorted[0]?.srs_id ?? null;
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshNonce]);
 
   // 다른 탭의 "출처 보기" 로 넘어온 pendingFocus 처리 — 해당 SRS version 자동 선택.
   // documents 가 로드된 후에만 적용 가능하므로 documents 의존성에 포함.
@@ -176,8 +213,11 @@ export function SrsArtifact() {
       pendingFocus.versionId &&
       documents.some((d) => d.srs_id === pendingFocus.versionId)
     ) {
-      setSelectedSrsId(pendingFocus.versionId);
-      setPendingFocus(null);
+      const versionId = pendingFocus.versionId;
+      queueMicrotask(() => {
+        setSelectedSrsId(versionId);
+        setPendingFocus(null);
+      });
     }
   }, [pendingFocus, documents, setPendingFocus]);
 
@@ -264,32 +304,28 @@ export function SrsArtifact() {
 
   if (documents.length === 0) {
     return (
-      <div className='flex h-full flex-col items-center justify-center gap-3 p-6 text-center'>
-        <FileText className='text-fg-muted size-10' />
-        <div>
-          <p className='text-fg-secondary text-sm font-medium'>SRS 문서 없음</p>
-          <p className='text-fg-muted mt-1 text-xs'>
-            승인된 레코드를 기반으로 SRS 초안을 생성합니다.
-          </p>
-        </div>
-        <Button
-          size='sm'
-          variant={'default'}
-          onClick={handleGenerate}
-          disabled={generating}
-          className='gap-2 px-5!'
-        >
-          {generating ? (
-            <Spinner size='size-3.5' />
-          ) : (
-            <Sparkles className='size-3.5' />
-          )}
-          <span className='text-xs'>SRS 생성</span>
-        </Button>
-        {errorMessage && (
-          <p className='text-destructive text-xs'>{errorMessage}</p>
-        )}
-      </div>
+      <ArtifactEmptyGuide
+        icon={FileText}
+        title='SRS 문서가 아직 없습니다'
+        description='승인된 레코드를 기반으로 요구사항 명세 초안을 생성하고 버전으로 관리합니다.'
+        guides={EMPTY_SRS_GUIDES}
+        errorMessage={errorMessage}
+        action={
+          <Button
+            size='sm'
+            onClick={handleGenerate}
+            disabled={generating}
+            className='h-8 gap-1.5 px-3 text-xs'
+          >
+            {generating ? (
+              <Spinner size='size-3.5' />
+            ) : (
+              <Sparkles className='size-3.5' />
+            )}
+            SRS 생성
+          </Button>
+        }
+      />
     );
   }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import { ManualRecordModal } from '@/components/artifacts/ManualRecordModal';
 import { RecordVersionsModal } from '@/components/artifacts/workspace/RecordVersionsModal';
@@ -93,63 +94,6 @@ const EMPTY_RECORD_GUIDES = [
     description: '이미 확정된 항목은 폼으로 바로 추가합니다.',
   },
 ];
-
-function EmptyRecordsGuide({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div className='flex h-full items-center justify-center p-5'>
-      <div className='w-full max-w-sm'>
-        <div className='text-center'>
-          <div className='border-line-primary bg-canvas-surface mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border shadow-xs'>
-            <Database className='text-accent-primary size-5' />
-          </div>
-          <p className='text-fg-primary text-sm font-semibold'>
-            레코드가 아직 비어 있습니다
-          </p>
-          <p className='text-fg-muted mx-auto mt-2 max-w-[17rem] text-xs leading-relaxed'>
-            요구사항의 기준점이 되는 문장을 모으면 SRS, 설계, 테스트케이스 생성
-            흐름이 더 안정적으로 이어집니다.
-          </p>
-        </div>
-
-        <div className='mt-5 space-y-2'>
-          {EMPTY_RECORD_GUIDES.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div
-                key={item.title}
-                className='border-line-subtle bg-canvas-surface/60 flex items-start gap-3 rounded-lg border px-3 py-2.5'
-              >
-                <span className='border-line-primary bg-canvas-primary mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border'>
-                  <Icon className='text-fg-secondary size-3.5' />
-                </span>
-                <span className='min-w-0'>
-                  <span className='text-fg-primary block text-xs font-medium'>
-                    {item.title}
-                  </span>
-                  <span className='text-fg-muted mt-0.5 block text-[11px] leading-relaxed'>
-                    {item.description}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className='mt-5 flex justify-center'>
-          <Button
-            variant='outline'
-            size='sm'
-            className='h-8 gap-1.5 px-3 text-xs'
-            onClick={onAdd}
-          >
-            <Plus className='size-3.5' />
-            직접 추가
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const [records, setRecords] = useState<ArtifactRecord[]>([]);
@@ -509,7 +453,24 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     }
 
     if (records.length === 0) {
-      return <EmptyRecordsGuide onAdd={() => setManualOpen(true)} />;
+      return (
+        <ArtifactEmptyGuide
+          icon={Database}
+          title='레코드가 아직 비어 있습니다'
+          description='요구사항의 기준점이 되는 문장을 모으면 SRS, 설계, 테스트케이스 생성 흐름이 더 안정적으로 이어집니다.'
+          guides={EMPTY_RECORD_GUIDES}
+          action={
+            <Button
+              size='sm'
+              className='h-8 gap-1.5 px-3 text-xs'
+              onClick={() => setManualOpen(true)}
+            >
+              <Plus className='size-3.5' />
+              직접 추가
+            </Button>
+          }
+        />
+      );
     }
 
     return renderRecordList();

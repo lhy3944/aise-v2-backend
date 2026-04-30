@@ -1,8 +1,16 @@
 'use client';
 
-import { Layers, Link2, Pencil, RefreshCw, Sparkles } from 'lucide-react';
+import {
+  FileText,
+  Layers,
+  Link2,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import {
   SrsSectionEditor,
   SrsSectionEditorActions,
@@ -41,6 +49,24 @@ const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   generating: { label: '생성중', tone: 'bg-amber-600 text-white' },
   failed: { label: '실패', tone: 'bg-red-600 text-white' },
 };
+
+const EMPTY_DESIGN_GUIDES = [
+  {
+    icon: FileText,
+    title: 'SRS 기준 정렬',
+    description: '완료된 SRS를 바탕으로 설계 산출물의 범위를 잡습니다.',
+  },
+  {
+    icon: Layers,
+    title: '구조화된 설계',
+    description: '아키텍처, 데이터, 인터페이스 관점을 섹션별로 정리합니다.',
+  },
+  {
+    icon: Link2,
+    title: '상위 문서 연결',
+    description: '기반 SRS와 연결되어 변경 영향도를 추적할 수 있습니다.',
+  },
+];
 
 function StatusChip({ status }: { status: string }) {
   const cfg = STATUS_LABEL[status] ?? {
@@ -138,9 +164,27 @@ export function DesignArtifact() {
 
   useEffect(() => {
     if (!projectId) return;
-    setLoading(true);
-    void fetchList();
-  }, [projectId, fetchList, refreshNonce]);
+    let cancelled = false;
+
+    designService
+      .list(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        const sorted = [...res.documents].sort((a, b) => b.version - a.version);
+        setDocuments(sorted);
+        setSelectedDesignId((prev) => {
+          if (prev && sorted.some((d) => d.design_id === prev)) return prev;
+          return sorted[0]?.design_id ?? null;
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshNonce]);
 
   const handleGenerate = useCallback(async () => {
     if (!projectId) return;
@@ -224,33 +268,28 @@ export function DesignArtifact() {
 
   if (documents.length === 0) {
     return (
-      <div className='flex h-full flex-col items-center justify-center gap-3 p-6 text-center'>
-        <Layers className='text-fg-muted size-10' />
-        <div>
-          <p className='text-fg-secondary text-sm font-medium'>
-            Design 문서 없음
-          </p>
-          <p className='text-fg-muted mt-1 text-xs'>
-            완료된 SRS 를 기반으로 설계 산출물 초안을 생성합니다.
-          </p>
-        </div>
-        <Button
-          size='sm'
-          onClick={handleGenerate}
-          disabled={generating}
-          className='gap-2 px-5!'
-        >
-          {generating ? (
-            <Spinner size='size-3.5' />
-          ) : (
-            <Sparkles className='size-3.5' />
-          )}
-          <span className='text-xs'>Design 생성</span>
-        </Button>
-        {errorMessage && (
-          <p className='text-destructive text-xs'>{errorMessage}</p>
-        )}
-      </div>
+      <ArtifactEmptyGuide
+        icon={Layers}
+        title='Design 문서가 아직 없습니다'
+        description='완료된 SRS를 기준으로 설계 초안을 생성하고 상위 요구사항과 연결합니다.'
+        guides={EMPTY_DESIGN_GUIDES}
+        errorMessage={errorMessage}
+        action={
+          <Button
+            size='sm'
+            onClick={handleGenerate}
+            disabled={generating}
+            className='h-8 gap-1.5 px-3 text-xs'
+          >
+            {generating ? (
+              <Spinner size='size-3.5' />
+            ) : (
+              <Sparkles className='size-3.5' />
+            )}
+            Design 생성
+          </Button>
+        }
+      />
     );
   }
 

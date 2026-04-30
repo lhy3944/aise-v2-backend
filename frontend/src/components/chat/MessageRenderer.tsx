@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
 import type { ChatMessage } from '@/stores/chat-store';
+import { AlertCircle } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
 
@@ -126,6 +127,20 @@ function parseStructuredBlocks(content: string): ParsedBlocks {
   };
 }
 
+function ErrorResponseBlock({ message }: { message: string }) {
+  return (
+    <div
+      role='alert'
+      className='border-destructive/25 bg-destructive/5 text-destructive flex w-full min-w-0 items-start gap-2 rounded-md border px-3 py-2.5'
+    >
+      <AlertCircle className='mt-0.5 size-4 shrink-0' />
+      <p className='min-w-0 whitespace-pre-wrap text-sm leading-6'>
+        {message}
+      </p>
+    </div>
+  );
+}
+
 /* ── Message Item ── */
 
 interface MessageItemProps {
@@ -195,6 +210,8 @@ const MessageItem = memo(
     }, [message.content, message.status, isUser]);
 
     const displayContent = parsed.cleanContent;
+    const isErrorResponse =
+      !isUser && message.status === 'error' && !!displayContent;
     // message.sources가 undefined일 때 매 렌더마다 새 배열이 만들어져
     // 아래 useMemo deps가 흔들리는 것을 방지.
     const sources = useMemo(
@@ -299,7 +316,9 @@ const MessageItem = memo(
                   스트리밍 재렌더에도 링크가 유지된다. 하단 출처 카드는
                   스트리밍 완료 후에만 렌더 → 답변이 먼저 타이핑되고
                   출처 리스트는 뒤따라 나타남. */}
-              {displayContent && (
+              {isErrorResponse ? (
+                <ErrorResponseBlock message={displayContent} />
+              ) : displayContent ? (
                 <div className="w-full min-w-0">
                   <CitationSourcesContext.Provider value={sources}>
                     <MessageResponse
@@ -314,7 +333,7 @@ const MessageItem = memo(
                     </MessageResponse>
                   </CitationSourcesContext.Provider>
                 </div>
-              )}
+              ) : null}
 
               {/* 출처 링크 — 스트리밍 완료 후, 본문에 실제 인용된 문서만 표시 */}
               {!showCursor && sources.length > 0 && usedRefs.size > 0 && (

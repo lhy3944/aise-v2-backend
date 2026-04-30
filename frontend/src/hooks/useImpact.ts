@@ -31,11 +31,13 @@ export function useImpact(projectId: string | null | undefined): {
 
   useEffect(() => {
     if (!projectId) {
-      setStale([]);
+      queueMicrotask(() => setStale([]));
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    queueMicrotask(() => {
+      if (!cancelled) setLoading(true);
+    });
     impactService
       .get(projectId)
       .then((res) => {

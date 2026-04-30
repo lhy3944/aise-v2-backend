@@ -62,7 +62,7 @@ export function KnowledgePreviewModal({
 
   useEffect(() => {
     if (doc) {
-      fetchPreview();
+      void Promise.resolve().then(fetchPreview);
     }
   }, [doc, fetchPreview]);
 

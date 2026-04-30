@@ -29,12 +29,14 @@ export function Logo({ showName = false }: LogoProps) {
         priority
         className='hidden size-6 sm:size-9 dark:block'
       />
-      <div className={`relative ml-1 items-center`}>
-        <span className={`text-sm font-bold sm:text-2xl`}>AISE</span>
-        <span className='absolute -top-0.5 -right-2 text-xs font-bold sm:-top-1.5 sm:-right-3.5 sm:text-lg'>
-          +
-        </span>
-      </div>
+      {showName && (
+        <div className='relative ml-1 items-center'>
+          <span className='text-sm font-bold sm:text-2xl'>AISE</span>
+          <span className='absolute -top-0.5 -right-2 text-xs font-bold sm:-top-1.5 sm:-right-3.5 sm:text-lg'>
+            +
+          </span>
+        </div>
+      )}
     </Link>
   );
 }

@@ -30,9 +30,12 @@ export function DiffViewer({
   useEffect(() => {
     let cancelled = false;
     keyRef.current = requestKey;
-    setLoading(true);
-    setError(null);
-    setData(null);
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      setData(null);
+    });
 
     artifactService
       .diff(headVersionId, baseVersionId ?? undefined)

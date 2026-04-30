@@ -116,6 +116,9 @@ export function useChatStream(sessionId?: string) {
   const abortControllersRef = useRef<Map<string, () => void>>(new Map());
   const tokenBufferRef = useRef<Map<string, string>>(new Map());
   const tokenDrainTimerRef = useRef<Map<string, number>>(new Map());
+  const scheduleTokenDrainRef = useRef<
+    (sid: string, immediate?: boolean) => void
+  >(() => {});
   const pendingFinishStatusRef = useRef<Map<string, 'done' | 'error'>>(
     new Map(),
   );
@@ -142,24 +145,26 @@ export function useChatStream(sessionId?: string) {
   // sessionId 변경 시 로딩 상태 동기화
   useEffect(() => {
     if (sessionId) {
-      setPendingSessionId(sessionId);
+      queueMicrotask(() => setPendingSessionId(sessionId));
     }
   }, [sessionId]);
 
   const prevSessionIdRef = useRef(activeSessionId);
-  if (prevSessionIdRef.current !== activeSessionId) {
-    prevSessionIdRef.current = activeSessionId;
-    const needsLoading =
-      !!activeSessionId &&
-      !useChatStore.getState().sessionMessages[activeSessionId];
-    if (needsLoading !== isLoadingMessages) {
-      setIsLoadingMessages(needsLoading);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== activeSessionId) {
+      prevSessionIdRef.current = activeSessionId;
+      const needsLoading =
+        !!activeSessionId &&
+        !useChatStore.getState().sessionMessages[activeSessionId];
+      if (needsLoading !== isLoadingMessages) {
+        queueMicrotask(() => setIsLoadingMessages(needsLoading));
+      }
     }
-  }
+  }, [activeSessionId, isLoadingMessages]);
 
   useEffect(() => {
     if (isLoadingMessages && messages.length > 0) {
-      setIsLoadingMessages(false);
+      queueMicrotask(() => setIsLoadingMessages(false));
     }
   }, [isLoadingMessages, messages.length]);
 
@@ -398,7 +403,7 @@ export function useChatStream(sessionId?: string) {
           tokenBufferRef.current.has(sid) ||
           pendingFinishStatusRef.current.has(sid)
         ) {
-          scheduleTokenDrain(sid);
+          scheduleTokenDrainRef.current(sid);
         }
       }, delay);
 
@@ -406,6 +411,10 @@ export function useChatStream(sessionId?: string) {
     },
     [appendToLastAssistant, finishStreaming, isMobile],
   );
+
+  useEffect(() => {
+    scheduleTokenDrainRef.current = scheduleTokenDrain;
+  }, [scheduleTokenDrain]);
 
   const flushBufferedTokens = useCallback(
     (sid: string) => {

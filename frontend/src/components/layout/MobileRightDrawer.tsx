@@ -1,7 +1,7 @@
 'use client';
 
 import { PanelRightOpen } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RightPanel } from '@/components/layout/RightPanel';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,18 +20,18 @@ export function MobileRightDrawer() {
 
   // 출처 버튼 클릭 시 자동 열기/닫기 (모바일에서만 동작)
   const prevSourceDataRef = useRef(sourceViewerData);
-  if (isMobile && sourceViewerData !== prevSourceDataRef.current) {
-    if (sourceViewerData !== null && !open) {
-      setOpen(true);
-    } else if (
-      sourceViewerData === null &&
-      prevSourceDataRef.current !== null &&
-      open
-    ) {
-      setOpen(false);
+
+  useEffect(() => {
+    const prevSourceData = prevSourceDataRef.current;
+    if (isMobile && sourceViewerData !== prevSourceData) {
+      if (sourceViewerData !== null && !open) {
+        queueMicrotask(() => setOpen(true));
+      } else if (sourceViewerData === null && prevSourceData !== null && open) {
+        queueMicrotask(() => setOpen(false));
+      }
     }
     prevSourceDataRef.current = sourceViewerData;
-  }
+  }, [isMobile, sourceViewerData, open]);
 
   return (
     <Drawer direction='right' open={open} onOpenChange={setOpen}>

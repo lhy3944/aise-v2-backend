@@ -36,7 +36,9 @@ export function RecordVersionsModal({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    queueMicrotask(() => {
+      if (!cancelled) setLoading(true);
+    });
     artifactService
       .listVersions(projectId, artifactId)
       .then((res) => {

@@ -48,7 +48,7 @@ export function ProjectGlossaryTab({ projectId }: ProjectGlossaryTabProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchGlossary();
+    void Promise.resolve().then(fetchGlossary);
   }, [fetchGlossary]);
 
   async function handleAdd(data: GlossaryCreate) {

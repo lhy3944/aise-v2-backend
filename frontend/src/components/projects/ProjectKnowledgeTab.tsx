@@ -126,7 +126,7 @@ export function ProjectKnowledgeTab({ projectId }: ProjectKnowledgeTabProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchDocuments();
+    void Promise.resolve().then(fetchDocuments);
   }, [fetchDocuments]);
 
   // processing 상태 문서가 있으면 5초마다 폴링

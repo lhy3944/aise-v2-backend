@@ -115,7 +115,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   clearSession: (sessionId) =>
     set((s) => {
-      const { [sessionId]: _, ...rest } = s.sessionMessages;
+      const rest = { ...s.sessionMessages };
+      delete rest[sessionId];
       return { sessionMessages: rest };
     }),
 

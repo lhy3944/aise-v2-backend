@@ -8,7 +8,6 @@ import {
   X,
   ChevronRight,
   ChevronDown,
-  Plus,
   FolderPlus,
 } from 'lucide-react';
 import { useState, useRef, useCallback, useMemo } from 'react';
@@ -60,6 +59,7 @@ export function RequirementTable({
   const [newSectionName, setNewSectionName] = useState('');
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
+  const [isDraggingSection, setIsDraggingSection] = useState(false);
   const dragItemRef = useRef<number | null>(null);
   const dragSectionRef = useRef<string | null>(null);
   const dragSourceSectionRef = useRef<string | null>(null);
@@ -228,6 +228,7 @@ export function RequirementTable({
   // --- 섹션 드래그 앤 드롭 ---
   const handleSectionDragStart = useCallback((sectionId: string) => {
     dragSectionRef.current = sectionId;
+    setIsDraggingSection(true);
   }, []);
 
   const handleSectionDragOver = useCallback((e: React.DragEvent, sectionId: string) => {
@@ -243,6 +244,7 @@ export function RequirementTable({
       if (!sourceSectionId || sourceSectionId === targetSectionId) {
         setDragOverSectionId(null);
         dragSectionRef.current = null;
+        setIsDraggingSection(false);
         return;
       }
 
@@ -258,6 +260,7 @@ export function RequirementTable({
 
       setDragOverSectionId(null);
       dragSectionRef.current = null;
+      setIsDraggingSection(false);
     },
     [sections, onSectionReorder],
   );
@@ -265,6 +268,7 @@ export function RequirementTable({
   const handleSectionDragEnd = useCallback(() => {
     setDragOverSectionId(null);
     dragSectionRef.current = null;
+    setIsDraggingSection(false);
   }, []);
 
   // --- 요구사항 행 렌더링 ---
@@ -438,7 +442,7 @@ export function RequirementTable({
                 className={cn(
                   'bg-muted/40 border-line-subtle group/section flex cursor-pointer items-center gap-2 border-b px-3 py-2',
                   dragOverSectionId === section.section_id &&
-                    dragSectionRef.current &&
+                    isDraggingSection &&
                     'bg-accent-primary/10',
                 )}
               >
@@ -531,7 +535,7 @@ export function RequirementTable({
                   className={cn(
                     'text-fg-muted border-line-subtle border-b px-3 py-4 text-center text-xs',
                     dragOverSectionId === section.section_id &&
-                      !dragSectionRef.current &&
+                      !isDraggingSection &&
                       'bg-accent-primary/10',
                   )}
                 >

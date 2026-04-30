@@ -103,7 +103,9 @@ export function PromptDialog({
 
         <form
           id={FORM_ID}
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={(event) => {
+            void handleSubmit(onSubmit)(event);
+          }}
           noValidate
           className='space-y-1.5'
         >

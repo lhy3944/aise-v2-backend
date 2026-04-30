@@ -74,7 +74,7 @@ export function ToolCall({
   const displayMs =
     state === 'running'
       ? liveElapsed
-      : durationMs ?? (startedAt !== undefined ? Date.now() - startedAt : null);
+      : durationMs ?? liveElapsed;
 
   return (
     <div className='border-line-primary my-2 min-w-0 overflow-hidden rounded-lg border'>

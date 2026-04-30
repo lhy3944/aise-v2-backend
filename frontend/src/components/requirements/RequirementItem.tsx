@@ -2,7 +2,6 @@
 
 import { Pencil, Trash2, X, Check } from 'lucide-react';
 import { useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';

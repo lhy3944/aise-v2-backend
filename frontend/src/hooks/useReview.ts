@@ -59,6 +59,6 @@ export function useReview({ projectId }: UseReviewOptions) {
     reviewData,
     isReviewing,
     runReview,
-    // loadLatest — v2에서 "이전 결과" UI 추가 시 복원
+    loadLatest,
   };
 }

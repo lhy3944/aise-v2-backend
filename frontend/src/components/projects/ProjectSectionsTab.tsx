@@ -314,7 +314,7 @@ export function ProjectSectionsTab({ projectId }: ProjectSectionsTabProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchSections();
+    void Promise.resolve().then(fetchSections);
   }, [fetchSections]);
 
   /* ─── Drag & Drop (dnd-kit) ─── */

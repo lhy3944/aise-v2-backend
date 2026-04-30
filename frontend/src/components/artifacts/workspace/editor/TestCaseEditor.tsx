@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, Trash2 } from 'lucide-react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -48,7 +48,6 @@ export function TestCaseEditor({ initial, onSubmit }: TestCaseEditorProps) {
     handleSubmit,
     control,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<TestCaseEditorValues>({
     resolver: zodResolver(schema),
@@ -65,8 +64,8 @@ export function TestCaseEditor({ initial, onSubmit }: TestCaseEditorProps) {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'steps' });
-  const priority = watch('priority');
-  const type = watch('type');
+  const priority = useWatch({ control, name: 'priority' });
+  const type = useWatch({ control, name: 'type' });
 
   const submit = (values: TestCaseEditorValues) => {
     onSubmit({

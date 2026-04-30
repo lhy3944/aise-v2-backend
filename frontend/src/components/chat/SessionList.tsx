@@ -67,7 +67,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   }, [currentProject]);
 
   useEffect(() => {
-    fetchSessions();
+    void Promise.resolve().then(fetchSessions);
   }, [fetchSessions, sessionListNonce]);
 
   // 세션 삭제 후 리패치 + 현재 세션이면 리다이렉트

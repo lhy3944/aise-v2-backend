@@ -69,7 +69,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchData();
+    void Promise.resolve().then(fetchData);
     fetchReadiness(projectId);
   }, [fetchData, fetchReadiness, projectId]);
 

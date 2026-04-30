@@ -32,6 +32,7 @@ import { useImpact } from '@/hooks/useImpact';
 import { useOverlay } from '@/hooks/useOverlay';
 import { cn } from '@/lib/utils';
 import { artifactService } from '@/services/artifact-service';
+import { srsService } from '@/services/srs-service';
 import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import { useChatStore } from '@/stores/chat-store';
@@ -88,11 +89,13 @@ export function TestCaseArtifact() {
   const [loading, setLoading] = useState(true);
   const [priorityFilter, setPriorityFilter] = useState<TestCasePriority[]>([]);
   const [typeFilter, setTypeFilter] = useState<TestCaseType[]>([]);
+  const [hasSrsDocument, setHasSrsDocument] = useState(false);
   const setInputValue = useChatStore((s) => s.setInputValue);
 
   const overlay = useOverlay();
 
   const refreshNonce = useArtifactRefreshStore((s) => s.nonce.testcase);
+  const srsRefreshNonce = useArtifactRefreshStore((s) => s.nonce.srs);
 
   // 출처 보기 → SRS 탭으로 이동
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
@@ -129,11 +132,13 @@ export function TestCaseArtifact() {
     if (!projectId) return;
     let cancelled = false;
 
-    artifactService
-      .list(projectId, { artifact_type: 'testcase' })
-      .then((res) => {
+    Promise.all([
+      artifactService.list(projectId, { artifact_type: 'testcase' }),
+      srsService.list(projectId),
+    ])
+      .then(([artifactRes, srsRes]) => {
         if (cancelled) return;
-        const items = res.artifacts as unknown as TestCaseArtifact[];
+        const items = artifactRes.artifacts as unknown as TestCaseArtifact[];
         const sorted = [...items].sort((a, b) =>
           a.display_id.localeCompare(b.display_id, undefined, {
             numeric: true,
@@ -141,6 +146,7 @@ export function TestCaseArtifact() {
           }),
         );
         setArtifacts(sorted);
+        setHasSrsDocument(srsRes.documents.length > 0);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -149,7 +155,7 @@ export function TestCaseArtifact() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, refreshNonce]);
+  }, [projectId, refreshNonce, srsRefreshNonce]);
 
   const handlePrepareTestcasePrompt = useCallback(() => {
     setInputValue('SRS 기반으로 테스트케이스를 만들어줘');
@@ -229,17 +235,32 @@ export function TestCaseArtifact() {
       <ArtifactEmptyGuide
         icon={FlaskConical}
         title='테스트케이스가 아직 없습니다'
-        description='완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
+        description={
+          hasSrsDocument
+            ? '완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
+            : '테스트케이스는 SRS를 기준 데이터로 사용합니다. 먼저 SRS 문서를 생성해 주세요.'
+        }
         guides={EMPTY_TESTCASE_GUIDES}
         action={
-          <Button
-            size='sm'
-            className='h-8 gap-1.5 px-3 text-xs'
-            onClick={handlePrepareTestcasePrompt}
-          >
-            <MessageSquare className='size-3.5' />
-            채팅에 입력
-          </Button>
+          hasSrsDocument ? (
+            <Button
+              size='sm'
+              className='h-8 gap-1.5 px-3 text-xs'
+              onClick={handlePrepareTestcasePrompt}
+            >
+              <MessageSquare className='size-3.5' />
+              채팅에 입력
+            </Button>
+          ) : (
+            <Button
+              size='sm'
+              className='h-8 gap-1.5 px-3 text-xs'
+              onClick={() => setActiveTab('srs')}
+            >
+              <FileText className='size-3.5' />
+              SRS 먼저 생성
+            </Button>
+          )
         }
       />
     );

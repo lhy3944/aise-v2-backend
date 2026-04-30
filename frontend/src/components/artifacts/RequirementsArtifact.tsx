@@ -48,7 +48,7 @@ export function RequirementsArtifact({ projectId }: RequirementsArtifactProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchRequirements();
+    void Promise.resolve().then(fetchRequirements);
   }, [fetchRequirements]);
 
   // Review hook

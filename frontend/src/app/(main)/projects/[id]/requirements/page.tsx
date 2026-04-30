@@ -31,10 +31,6 @@ export default function RequirementsPage({ params }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const filtered = requirements.filter((r) => r.type === activeTab);
-  const selectedIds = filtered.filter((r) => r.is_selected).map((r) => r.requirement_id);
-  const allSelected = filtered.length > 0 && selectedIds.length === filtered.length;
-
   const fetchRequirements = useCallback(async () => {
     setLoading(true);
     try {
@@ -53,7 +49,7 @@ export default function RequirementsPage({ params }: Props) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchRequirements();
+    void Promise.resolve().then(fetchRequirements);
   }, [fetchRequirements]);
 
   // Review hook

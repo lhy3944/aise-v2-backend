@@ -25,7 +25,7 @@ export function ArtifactEmptyGuide({
   errorMessage,
 }: ArtifactEmptyGuideProps) {
   return (
-    <div className='flex h-full items-center justify-center p-5'>
+    <div className='flex h-full items-start justify-center px-5 pt-10 pb-5'>
       <div className='w-full max-w-sm'>
         <div className='text-center'>
           <div className='border-line-primary bg-canvas-surface mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border shadow-xs'>

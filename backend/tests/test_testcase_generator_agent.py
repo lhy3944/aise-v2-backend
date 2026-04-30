@@ -24,6 +24,7 @@ from src.schemas.api.artifact_testcase import (
     TestCaseContent,
     TestCaseGenerateResponse,
 )
+from src.services.testcase_svc import MISSING_SRS_MESSAGE
 
 
 @pytest.fixture(autouse=True)
@@ -106,14 +107,14 @@ async def test_testcase_generator_surfaces_app_exception_as_state_error():
     agent = get_agent("testcase_generator")
     ctx = AgentContext(db=AsyncMock(), project_id=uuid.uuid4())
 
-    boom = AppException(400, "완료된 SRS 문서가 없습니다. 먼저 SRS를 생성하세요.")
+    boom = AppException(400, MISSING_SRS_MESSAGE)
     with patch(
         "src.services.testcase_svc.generate_testcases",
         new=AsyncMock(side_effect=boom),
     ):
         update = await agent.run({}, ctx)
 
-    assert update == {"error": "완료된 SRS 문서가 없습니다. 먼저 SRS를 생성하세요."}
+    assert update == {"error": MISSING_SRS_MESSAGE}
 
 
 # ---------- End-to-end via the graph ----------
@@ -176,3 +177,50 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
     assert tool_call.data.name == "testcase_generator"
     assert tool_result.data.result == {"testcase_count": 4, "srs_version": 2}
     assert "4개 생성" in token.data.text
+
+
+@pytest.mark.asyncio
+async def test_run_chat_routes_testcase_generation_before_rag_and_reports_missing_srs(
+    monkeypatch, db
+):
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from src.models.project import Project
+    from src.orchestration import graph as graph_mod
+    from src.orchestration.graph import build_graph, run_chat
+
+    async def fail_gate(**kwargs):  # pragma: no cover - asserted by no raise
+        raise AssertionError("retrieval gate should not handle generation commands")
+
+    async def fail_supervisor(state):  # pragma: no cover - asserted by no raise
+        raise AssertionError("supervisor should not handle explicit TC generation")
+
+    monkeypatch.setattr(graph_mod, "evaluate_gate", fail_gate)
+    monkeypatch.setattr(graph_mod, "supervisor_node", fail_supervisor)
+
+    project = Project(name="tc-missing-srs", description="x")
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="SRS 기반으로 테스트케이스 만들어줘",
+            session_factory=session_factory,
+        )
+    ]
+
+    types = [type(e).__name__ for e in events]
+    assert types == ["ToolCallEvent", "ToolResultEvent", "ErrorEvent"]
+    tool_call, tool_result, error = events
+    assert tool_call.data.name == "testcase_generator"
+    assert tool_result.data.name == "testcase_generator"
+    assert tool_result.data.status == "error"
+    assert tool_result.data.result == {"error": MISSING_SRS_MESSAGE}
+    assert error.data.message == MISSING_SRS_MESSAGE

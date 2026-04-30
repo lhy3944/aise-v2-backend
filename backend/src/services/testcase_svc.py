@@ -40,6 +40,9 @@ from src.schemas.api.artifact_testcase import (
 from src.services.llm_svc import chat_completion
 
 
+MISSING_SRS_MESSAGE = "완료된 SRS 문서가 없습니다. 먼저 SRS 를 생성하세요."
+
+
 def _content_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(
         payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
@@ -125,7 +128,7 @@ async def generate_testcases(
     ).scalar_one_or_none()
 
     if srs_artifact is None or srs_artifact.current_version_id is None:
-        raise AppException(400, "완료된 SRS 문서가 없습니다. 먼저 SRS를 생성하세요.")
+        raise AppException(400, MISSING_SRS_MESSAGE)
 
     srs_version = await db.get(ArtifactVersion, srs_artifact.current_version_id)
     if srs_version is None:

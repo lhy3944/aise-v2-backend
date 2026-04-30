@@ -66,6 +66,72 @@ from src.schemas.events import (
 from src.services import hitl_state_svc
 
 
+# ---------- Deterministic routing guards ----------
+
+
+_GENERATION_TERMS = (
+    "생성",
+    "만들",
+    "작성",
+    "뽑",
+    "추출",
+    "generate",
+    "create",
+    "make",
+    "write",
+)
+
+_ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "testcase_generator",
+        (
+            "테스트케이스",
+            "테스트 케이스",
+            "testcase",
+            "test case",
+            "tc",
+            "검증 시나리오",
+            "테스트 시나리오",
+        ),
+    ),
+    (
+        "design_generator",
+        (
+            "design",
+            "디자인",
+            "설계",
+            "아키텍처",
+        ),
+    ),
+    (
+        "srs_generator",
+        (
+            "srs",
+            "요구사항 명세서",
+            "소프트웨어 명세서",
+        ),
+    ),
+)
+
+
+def _explicit_artifact_generation_agent(user_input: str) -> str | None:
+    """Return the agent for explicit artifact generation requests.
+
+    RAG can score highly for prompts like "SRS 기반 테스트케이스 만들어줘"
+    because the project documents are semantically relevant. These commands
+    are workflow actions, not knowledge questions, so route them before the
+    retrieval-first gate.
+    """
+    text = (user_input or "").strip().lower()
+    if not text or not any(term in text for term in _GENERATION_TERMS):
+        return None
+
+    for agent_name, artifact_terms in _ARTIFACT_GENERATION_ROUTES:
+        if any(term in text for term in artifact_terms):
+            return agent_name
+    return None
+
+
 # ---------- Node helpers ----------
 
 
@@ -558,11 +624,21 @@ async def run_chat(
         "history": history or [],
     }
 
+    explicit_agent = _explicit_artifact_generation_agent(user_input)
+    if explicit_agent is not None:
+        initial_state["routing"] = {
+            "action": "single",
+            "agent": explicit_agent,
+            "plan": None,
+            "clarification": None,
+            "reasoning": "deterministic artifact generation intent",
+        }
+
     # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
     # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서
     # 없음·score 미달) supervisor LLM이 판단한다.
     gate_result = None
-    if session_factory is not None:
+    if explicit_agent is None and session_factory is not None:
         try:
             project_uuid_for_gate = uuid.UUID(str(project_id))
         except (ValueError, TypeError):
@@ -583,7 +659,7 @@ async def run_chat(
     if gate_result is not None:
         initial_state["routing"] = gate_result.routing
         initial_state["rag_cache"] = gate_result.rag_cache
-    else:
+    elif explicit_agent is None:
         # 1b. Supervisor — direct call, no graph invocation needed.
         try:
             supervisor_update = await supervisor_node(initial_state)

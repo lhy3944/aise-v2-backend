@@ -39,9 +39,12 @@ import {
   FileText,
   Filter,
   History,
+  MessageSquareText,
   MinusCircle,
+  PenLine,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   XCircle,
 } from 'lucide-react';
@@ -70,6 +73,81 @@ function ConfidenceIndicator({ score }: { score: number | null }) {
       <span className={cn('size-1.5 rounded-full', dot)} />
       {pct}%
     </span>
+  );
+}
+
+const EMPTY_RECORD_GUIDES = [
+  {
+    icon: Sparkles,
+    title: '문서에서 추출',
+    description: '업로드한 지식 문서를 분석해 후보 레코드를 만듭니다.',
+  },
+  {
+    icon: MessageSquareText,
+    title: '대화에서 정리',
+    description: '채팅 중 확정한 요구사항을 레코드 후보로 전환합니다.',
+  },
+  {
+    icon: PenLine,
+    title: '직접 등록',
+    description: '이미 확정된 항목은 폼으로 바로 추가합니다.',
+  },
+];
+
+function EmptyRecordsGuide({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className='flex h-full items-center justify-center p-5'>
+      <div className='w-full max-w-sm'>
+        <div className='text-center'>
+          <div className='border-line-primary bg-canvas-surface mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border shadow-xs'>
+            <Database className='text-accent-primary size-5' />
+          </div>
+          <p className='text-fg-primary text-sm font-semibold'>
+            레코드가 아직 비어 있습니다
+          </p>
+          <p className='text-fg-muted mx-auto mt-2 max-w-[17rem] text-xs leading-relaxed'>
+            요구사항의 기준점이 되는 문장을 모으면 SRS, 설계, 테스트케이스 생성
+            흐름이 더 안정적으로 이어집니다.
+          </p>
+        </div>
+
+        <div className='mt-5 space-y-2'>
+          {EMPTY_RECORD_GUIDES.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.title}
+                className='border-line-subtle bg-canvas-surface/60 flex items-start gap-3 rounded-lg border px-3 py-2.5'
+              >
+                <span className='border-line-primary bg-canvas-primary mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border'>
+                  <Icon className='text-fg-secondary size-3.5' />
+                </span>
+                <span className='min-w-0'>
+                  <span className='text-fg-primary block text-xs font-medium'>
+                    {item.title}
+                  </span>
+                  <span className='text-fg-muted mt-0.5 block text-[11px] leading-relaxed'>
+                    {item.description}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className='mt-5 flex justify-center'>
+          <Button
+            variant='outline'
+            size='sm'
+            className='h-8 gap-1.5 px-3 text-xs'
+            onClick={onAdd}
+          >
+            <Plus className='size-3.5' />
+            직접 추가
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -130,8 +208,24 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   }, [projectId]);
 
   useEffect(() => {
-    fetchRecords();
-  }, [fetchRecords, refreshNonce]);
+    let cancelled = false;
+
+    artifactRecordService
+      .list(projectId)
+      .then((res) => {
+        if (!cancelled) setRecords(res.records);
+      })
+      .catch(() => {
+        // 글로벌 핸들링
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshNonce]);
 
   // Open PRs 로딩
   useEffect(() => {
@@ -322,7 +416,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const toggleCandidate = useCallback((idx: number) => {
     setSelectedCandidates((prev) => {
       const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
+      if (next.has(idx)) {
+        next.delete(idx);
+      } else {
+        next.add(idx);
+      }
       return next;
     });
   }, []);
@@ -411,31 +509,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     }
 
     if (records.length === 0) {
-      return (
-        <div className='flex h-full flex-col items-center justify-center p-6 text-center'>
-          <FileText className='text-fg-muted mb-3 size-10' />
-          <p className='text-fg-secondary text-sm font-medium'>
-            아직 등록된 레코드가 없습니다
-          </p>
-          <p className='text-fg-muted mt-1 max-w-xs text-xs leading-relaxed'>
-            레코드는 세 가지 방법으로 추가할 수 있습니다:
-            <br />• 채팅에 <b>&quot;레코드 추출&quot;</b> 입력 → 지식 문서에서
-            자동 추출
-            <br />• 채팅에 <b>요구사항 문장 직접 입력</b> → 자동 분해 후 후보
-            생성
-            <br />• 아래 <b>&quot;직접 추가&quot;</b> 버튼으로 폼 입력
-          </p>
-          <Button
-            variant='outline'
-            size='sm'
-            className='mt-4 gap-1.5'
-            onClick={() => setManualOpen(true)}
-          >
-            <Plus className='size-3.5' />
-            직접 추가
-          </Button>
-        </div>
-      );
+      return <EmptyRecordsGuide onAdd={() => setManualOpen(true)} />;
     }
 
     return renderRecordList();

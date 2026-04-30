@@ -19,6 +19,7 @@ const AGENT_LABELS: Record<string, string> = {
   knowledge_qa: '지식 검색',
   requirement: '요구사항 추출',
   srs_generator: 'SRS 생성',
+  design_generator: 'Design 생성',
   testcase_generator: '테스트케이스 생성',
   critic: '검증',
   general_chat: '일반 응답',

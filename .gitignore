@@ -18,6 +18,7 @@ dist/
 .ruff_cache/
 .pytest_cache/
 backend/var/logs/
+var/logs/
 
 # === Frontend (Next.js) ===
 frontend/node_modules/
@@ -48,6 +49,7 @@ yarn-error.log*
 
 # === Temporary workspace ===
 _workspace/
+.codex
 
 # === Agent Skills (external install) ===
 .agents/

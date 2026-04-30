@@ -292,6 +292,14 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
             payload["section_count"] = srs["section_count"]
         if "version" in srs:
             payload["srs_version"] = srs["version"]
+    design = state.get("design_generated")
+    if isinstance(design, dict):
+        if "section_count" in design:
+            payload["section_count"] = design["section_count"]
+        if "version" in design:
+            payload["design_version"] = design["version"]
+        if "based_on_srs_version" in design:
+            payload["srs_version"] = design["based_on_srs_version"]
     tcs = state.get("testcases_generated")
     if isinstance(tcs, dict):
         if "testcase_count" in tcs:

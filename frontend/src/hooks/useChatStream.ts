@@ -62,6 +62,22 @@ function formatToolResult(
       }
       return typeof v === 'number' ? `SRS v${v} 생성` : 'SRS 생성 완료';
     }
+    case 'design_generator': {
+      const v = result.design_version;
+      const sections = result.section_count;
+      const srsVersion = result.srs_version;
+      if (
+        typeof v === 'number' &&
+        typeof sections === 'number' &&
+        typeof srsVersion === 'number'
+      ) {
+        return `Design v${v} · ${sections}개 섹션 · SRS v${srsVersion}`;
+      }
+      if (typeof v === 'number' && typeof sections === 'number') {
+        return `Design v${v} · ${sections}개 섹션`;
+      }
+      return typeof v === 'number' ? `Design v${v} 생성` : 'Design 생성 완료';
+    }
     case 'testcase_generator': {
       const count = result.testcase_count;
       const v = result.srs_version;
@@ -594,7 +610,7 @@ export function useChatStream(sessionId?: string) {
           requestFinishAfterDrain(sid, 'done');
         },
         onError: (error) => {
-          enqueueToken(sid, `\n\n⚠️ ${error}`);
+          enqueueToken(sid, `\n\n${error}`);
           requestFinishAfterDrain(sid, 'error');
         },
       };

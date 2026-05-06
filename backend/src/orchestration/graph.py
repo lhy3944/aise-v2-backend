@@ -75,10 +75,39 @@ _GENERATION_TERMS = (
     "작성",
     "뽑",
     "추출",
+    "재생성",
+    "다시 만들",
     "generate",
     "create",
     "make",
     "write",
+)
+
+# 상태/현황 질의 패턴 — 이 패턴이 매칭되면 project_status로 라우팅해야
+# 하므로, _explicit_artifact_generation_agent에서 제외한다.
+_STATUS_QUERY_TERMS = (
+    "어떻게 돼",
+    "어때",
+    "몇 개",
+    "몇개",
+    "상태",
+    "현황",
+    "버전은",
+    "버전이",
+    "진행",
+    "얼마나",
+    "어디까지",
+    "알려줘",
+    "보여줘",
+    "알고 싶",
+    "확인",
+    "조회",
+    "count",
+    "status",
+    "how many",
+    "version",
+    "progress",
+    "current",
 )
 
 _ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -121,9 +150,20 @@ def _explicit_artifact_generation_agent(user_input: str) -> str | None:
     because the project documents are semantically relevant. These commands
     are workflow actions, not knowledge questions, so route them before the
     retrieval-first gate.
+
+    Status-query exclusion: "SRS 버전 어때?" should NOT route to srs_generator.
+    If the input contains status-query patterns, return None so the supervisor
+    can route to project_status instead.
     """
     text = (user_input or "").strip().lower()
-    if not text or not any(term in text for term in _GENERATION_TERMS):
+    if not text:
+        return None
+
+    # 상태/현황 질의면 생성 에이전트가 아니라 project_status로 라우팅.
+    if any(term in text for term in _STATUS_QUERY_TERMS):
+        return None
+
+    if not any(term in text for term in _GENERATION_TERMS):
         return None
 
     for agent_name, artifact_terms in _ARTIFACT_GENERATION_ROUTES:
@@ -736,6 +776,80 @@ async def run_chat(
         yield DoneEvent(data=DoneEventData(finish_reason="stop"))
         return
 
+    # 3a. 생성 에이전트에 대한 사전 확인(confirm) interrupt.
+    # 산출물 생성/수정/삭제는 되돌리기 어려운 작업이므로, 사용자에게
+    # 한 번 더 확인한 후 진행한다. 기존 HITL resume 메커니즘을 그대로
+    # 활용한다 — 사용자가 승인하면 resume_chat이 같은 에이전트를 재실행한다.
+    _GENERATION_CONFIRM_AGENTS = frozenset({
+        "srs_generator",
+        "design_generator",
+        "testcase_generator",
+        "requirement",
+    })
+
+    if selected in _GENERATION_CONFIRM_AGENTS:
+        try:
+            project_uuid = uuid.UUID(str(project_id))
+        except (ValueError, TypeError):
+            project_uuid = None
+
+        try:
+            session_uuid = uuid.UUID(str(session_id))
+        except (ValueError, TypeError):
+            session_uuid = None
+
+        interrupt_id = f"confirm_gen_{uuid.uuid4().hex[:12]}"
+
+        _AGENT_LABELS: dict[str, str] = {
+            "srs_generator": "SRS 문서 생성",
+            "design_generator": "Design 문서 생성",
+            "testcase_generator": "테스트케이스 생성",
+            "requirement": "요구사항 레코드 추출",
+        }
+        action_label = _AGENT_LABELS.get(selected, selected)
+
+        confirm_data = ConfirmData(
+            interrupt_id=interrupt_id,
+            title=f"{action_label}을(를) 진행할까요?",
+            description=(
+                f"요청하신 '{user_input[:100]}'에 대해 {action_label} 작업을 실행합니다. "
+                "이 작업은 실행 후 되돌리기 어려울 수 있습니다."
+            ),
+            severity="warning",
+            actions=ConfirmActions(
+                approve="실행",
+                reject="취소",
+            ),
+        )
+
+        # HITL state 저장 — resume 시 같은 에이전트를 실행하도록.
+        # hitl_response.approved=True 면 바로 에이전트 실행으로 진입.
+        await hitl_state_svc.save_persistent(
+            session_factory,
+            hitl_state_svc.HitlState(
+                thread_id=interrupt_id,
+                session_id=str(session_id),
+                project_id=str(project_id),
+                user_input=user_input,
+                selected_agent=selected,
+                interrupt_id=interrupt_id,
+                interrupt_kind="confirm",
+                payload=confirm_data.model_dump(),
+                history=history or [],
+                routing=initial_state.get("routing"),
+                accumulated_state=dict(initial_state),
+            ),
+        )
+
+        yield InterruptEvent(data=confirm_data)
+        yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
+        return
+    if not selected:
+        # Unknown/unhandled routing (shouldn't happen with current supervisor
+        # fallbacks, but keep the stream well-formed).
+        yield DoneEvent(data=DoneEventData(finish_reason="stop"))
+        return
+
     agent = try_get_agent(selected)
     if agent is None:
         yield ErrorEvent(
@@ -941,6 +1055,28 @@ async def resume_chat(
     state: AgentState = dict(saved.accumulated_state)  # type: ignore[assignment]
     state["hitl_interrupt_id"] = thread_id
     state["hitl_response"] = response
+
+    # 생성 에이전트 confirm 거부 시 — 에이전트 실행 없이 취소 메시지 반환.
+    # 프론트엔드 HITLPromptModal 은 { action: 'reject' } 또는
+    # { action: 'approve' } 를 전송하므로 두 형식 모두 지원.
+    is_approved = response.get("approved") is True or response.get("action") == "approve"
+    if saved.interrupt_kind == "confirm" and not is_approved:
+        _AGENT_LABELS: dict[str, str] = {
+            "srs_generator": "SRS 문서 생성",
+            "design_generator": "Design 문서 생성",
+            "testcase_generator": "테스트케이스 생성",
+            "requirement": "요구사항 레코드 추출",
+        }
+        action_label = _AGENT_LABELS.get(saved.selected_agent, saved.selected_agent)
+        cancel_msg = f"{action_label}이(가) 취소되었습니다."
+        yield TokenEvent(data=TokenEventData(text=cancel_msg))
+        await hitl_state_svc.delete_persistent(
+            session_factory,
+            thread_id,
+            response=response,
+        )
+        yield DoneEvent(data=DoneEventData(finish_reason="stop"))
+        return
 
     # 재개 직전에 hitl_state 삭제 — 재개 도중 새 interrupt 가 발행되면
     # _drive_agent_stream 가 새 thread_id 로 다시 save 한다.

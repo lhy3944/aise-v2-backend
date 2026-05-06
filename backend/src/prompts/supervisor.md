@@ -30,16 +30,23 @@ genuinely cannot cover the request. Only use `clarify` as a last resort.
    개야", "SRS 상태 어때", "진행 상황 알려줘", "어디까지 됐어"), route to
    the `project_status` agent. Do NOT route these to `knowledge_qa` — the
    knowledge agent only searches uploaded documents, NOT live system state.
-2. If the request is clearly a knowledge-repository question (asks about
+2. If the request is a **short generation command** without an explicit
+   artifact type (e.g. "만들어줘", "생성해줘", "만들어", "해줘"), you MUST
+   look at the **conversation history** to infer the artifact type. For
+   example, if the previous turn mentioned "테스트케이스", then "만들어줘"
+   means testcase generation — route to `testcase_generator`. If history
+   mentions "SRS", route to `srs_generator`. Only use `clarify` if history
+   provides NO artifact context at all.
+3. If the request is clearly a knowledge-repository question (asks about
    project docs, uploaded materials, domain terms), route to the
    knowledge agent.
-3. If the request needs multiple agents in order, use `plan`.
-4. If the request is a greeting, self-introduction ("who are you"),
+4. If the request needs multiple agents in order, use `plan`.
+5. If the request is a greeting, self-introduction ("who are you"),
    capability question ("what can you do"), thanks, or any clear
    non-knowledge small-talk, route to the `general_chat` agent — do
    NOT use `clarify` for these. `general_chat` also handles polite
    refusals for out-of-scope requests (code gen, stock quotes, etc).
-5. Use `clarify` only when none of the above applies and the intent is
+6. Use `clarify` only when none of the above applies and the intent is
    truly unclear.
 
 ## RequirementAgent extract_mode (only when agent == "requirement")

@@ -210,6 +210,61 @@ def _is_artifact_status_query(user_input: str) -> bool:
     return has_status_pattern
 
 
+# 대화 맥락에서 최근 언급된 산출물 타입을 추출해 짧은 생성 요청에 반영.
+# "테스트케이스 없어?" → "만들어줘" 의 흐름에서 "만들어줘"에
+# 산출물 키워드가 없더라도 테스트케이스 생성으로 자동 라우팅.
+_CONTEXT_ARTIFACT_MAP: dict[str, str] = {
+    "srs": "srs_generator",
+    "요구사항 명세서": "srs_generator",
+    "design": "design_generator",
+    "디자인": "design_generator",
+    "설계": "design_generator",
+    "테스트케이스": "testcase_generator",
+    "테스트 케이스": "testcase_generator",
+    "testcase": "testcase_generator",
+    "tc": "testcase_generator",
+    "레코드": "requirement",
+    "record": "requirement",
+    "요구사항": "requirement",
+}
+
+
+def _resolve_from_context(user_input: str, history: list[dict]) -> str | None:
+    """Resolve a short generation request using conversation context.
+
+    When user_input contains a generation term ("만들어줘", "생성해줘", etc.)
+    but no artifact keyword, scan recent history for the last mentioned
+    artifact type and return the corresponding agent name.
+
+    "만들어줘" after "테스트케이스 없어?" → "testcase_generator"
+    "만들어줘" after "SRS 상태 어때?"  → "srs_generator"
+    "만들어줘" with no prior context    → None (let supervisor decide)
+    """
+    text = (user_input or "").strip().lower()
+    if not text:
+        return None
+
+    # 생성 의도가 있어야 함.
+    if not any(term in text for term in _GENERATION_TERMS):
+        return None
+
+    # 이미 산출물 키워드가 있으면 맥락 해석 불필요.
+    for group in _ARTIFACT_STATUS_KEYWORDS:
+        if any(term in text for term in group):
+            return None
+
+    # 최근 대화에서 산출물 키워드 검색 (최근 6턴, 역순).
+    for turn in reversed(history[-6:] or []):
+        content = str(turn.get("content", "")).strip().lower()
+        if not content:
+            continue
+        for keyword, agent_name in _CONTEXT_ARTIFACT_MAP.items():
+            if keyword in content:
+                return agent_name
+
+    return None
+
+
 # ---------- Node helpers ----------
 
 
@@ -738,6 +793,24 @@ async def run_chat(
             "clarification": None,
             "reasoning": "deterministic artifact status query",
         }
+
+    # 0c. 대화 맥락 해석 — "만들어줘" 같은 짧은 생성 요청에 직전 대화에서
+    # 언급된 산출물 타입을 자동 보완. "테스트케이스 없어?" → "만들어줘" 의
+    # 흐름에서 testcase_generator로 직결.
+    if (
+        explicit_agent is None
+        and not _is_artifact_status_query(user_input)
+        and "routing" not in initial_state
+    ):
+        context_agent = _resolve_from_context(user_input, history or [])
+        if context_agent is not None:
+            initial_state["routing"] = {
+                "action": "single",
+                "agent": context_agent,
+                "plan": None,
+                "clarification": None,
+                "reasoning": "context-resolved artifact generation intent",
+            }
 
     # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
     # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서

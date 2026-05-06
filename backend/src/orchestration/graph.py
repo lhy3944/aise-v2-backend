@@ -86,6 +86,8 @@ _GENERATION_TERMS = (
 
 # 상태/현황 질의 패턴 — 이 패턴이 매칭되면 project_status로 라우팅해야
 # 하므로, _explicit_artifact_generation_agent에서 제외한다.
+# 주의: "있어", "없어" 같은 너무 짧은 패턴은 "만들어" 등과 충돌하므로
+# 질문형 어미(~건가, ~나, ~나요, ~가)만 포함한다.
 _STATUS_QUERY_TERMS = (
     "어떻게 돼",
     "어때",
@@ -103,12 +105,25 @@ _STATUS_QUERY_TERMS = (
     "알고 싶",
     "확인",
     "조회",
+    "없는건가",
+    "없나",
+    "있나",
+    "없나요",
+    "있나요",
+    "없는가",
+    "있는가",
+    "되어 있",
+    "돼 있",
+    "없는지",
+    "있는지",
     "count",
     "status",
     "how many",
     "version",
     "progress",
     "current",
+    "any",
+    "exist",
 )
 
 _ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (

@@ -103,10 +103,15 @@ async def list_projects(
     return ProjectListResponse(projects=responses)
 
 
-async def _get_project_model(db: AsyncSession, project_id: uuid.UUID) -> Project:
+async def _get_project_model(
+    db: AsyncSession, project_id: uuid.UUID, *, include_deleted: bool = False
+) -> Project:
     """프로젝트 DB 모델 조회 (내부용)"""
+    conditions = [Project.id == project_id]
+    if not include_deleted:
+        conditions.append(Project.status != "deleted")
     return await get_or_404(
-        db, Project, Project.id == project_id,
+        db, Project, *conditions,
         error_msg="프로젝트를 찾을 수 없습니다.",
     )
 
@@ -183,7 +188,7 @@ async def delete_project(
     실제 row 삭제는 `hard_delete_project` 에서. 사용자는 30일 내 복원 가능 (휴지통).
     `confirm_name` 이 주어지면 프로젝트 이름과 일치해야 진행 (운영 안전망).
     """
-    project = await _get_project_model(db, project_id)
+    project = await _get_project_model(db, project_id, include_deleted=True)
     if confirm_name is not None and confirm_name.strip() != project.name:
         raise AppException(
             400,
@@ -202,7 +207,7 @@ async def restore_project(
     db: AsyncSession, project_id: uuid.UUID
 ) -> ProjectResponse:
     """soft-deleted 프로젝트를 복원 (status='active')."""
-    project = await _get_project_model(db, project_id)
+    project = await _get_project_model(db, project_id, include_deleted=True)
     if project.status != "deleted":
         raise AppException(409, "삭제 상태가 아닌 프로젝트는 복원할 수 없습니다.")
     project.status = "active"
@@ -219,7 +224,7 @@ async def get_delete_preview(
 
     UI 의 삭제 확인 모달에서 보여주는 데이터. 카운트만 집계 — 실제 삭제 X.
     """
-    project = await _get_project_model(db, project_id)
+    project = await _get_project_model(db, project_id, include_deleted=True)
 
     async def _count(model, *conds) -> int:
         stmt = select(func.count()).select_from(model).where(*conds)
@@ -301,7 +306,7 @@ async def hard_delete_project(
 
     DB CASCADE 가 모든 자식 row 를 정리하지만 MinIO 객체는 별도 정리 필요.
     """
-    project = await _get_project_model(db, project_id)
+    project = await _get_project_model(db, project_id, include_deleted=True)
 
     # 1. MinIO prefix 정리 (DB 삭제 전에 시도 — 실패해도 DB 는 진행)
     minio_deleted = 0

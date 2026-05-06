@@ -13,6 +13,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { HitlData } from '@/types/agent-events';
+import { XIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 const ALL_SECTIONS = '__all__';
@@ -64,6 +65,19 @@ function sectionLabel(candidate: RecordCandidate): string {
   return candidate.section_name?.trim() || UNCATEGORIZED_SECTION;
 }
 
+function HeaderCloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type='button'
+      aria-label='닫기'
+      className='text-fg-muted hover:text-fg-primary focus-visible:ring-ring absolute top-4 right-4 rounded-xs p-1 opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none'
+      onClick={onClick}
+    >
+      <XIcon className='size-4' />
+    </button>
+  );
+}
+
 interface HITLPromptModalProps {
   open: boolean;
   data: HitlData | null;
@@ -112,7 +126,8 @@ export function HITLPromptModal({
   return (
     <AlertDialog open={open} onOpenChange={(o) => !o && onDismiss()}>
       <AlertDialogContent className='max-w-[480px]'>
-        <AlertDialogHeader>
+        <HeaderCloseButton onClick={onDismiss} />
+        <AlertDialogHeader className='pr-8'>
           <AlertDialogTitle className='text-fg-primary'>
             {fallbackTitle}
           </AlertDialogTitle>
@@ -202,7 +217,8 @@ function ConfirmPrompt({
             : 'max-w-[480px] data-[size=default]:sm:max-w-[480px]',
         )}
       >
-        <AlertDialogHeader>
+        <HeaderCloseButton onClick={onDismiss} />
+        <AlertDialogHeader className='pr-8'>
           <AlertDialogTitle
             className={cn(
               'text-fg-primary',
@@ -211,9 +227,15 @@ function ConfirmPrompt({
           >
             {data.title}
           </AlertDialogTitle>
-          <AlertDialogDescription className='whitespace-pre-line'>
-            {data.description}
-          </AlertDialogDescription>
+          {hasCandidates ? (
+            <AlertDialogDescription className='sr-only'>
+              {data.description}
+            </AlertDialogDescription>
+          ) : (
+            <AlertDialogDescription className='whitespace-pre-line'>
+              {data.description}
+            </AlertDialogDescription>
+          )}
         </AlertDialogHeader>
 
         {data.impact && data.impact.length > 0 && (

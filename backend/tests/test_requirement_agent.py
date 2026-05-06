@@ -209,6 +209,7 @@ async def test_run_stream_extract_then_interrupt():
     assert len(events[0]["update"]["records_extracted"]) == 2
     assert events[1]["data"].kind == "confirm"
     assert "2개 요구사항 후보" in events[1]["data"].title
+    assert "섹션 분포" not in events[1]["data"].description
     assert len(events[1]["data"].context["records_extracted"]) == 2
 
 
@@ -410,6 +411,7 @@ async def test_run_stream_user_text_mode_passes_user_input_to_extractor():
     # ConfirmData interrupt + 채팅 입력 안내 문구 검증
     interrupt_ev = next(e for e in events if e.get("kind") == "interrupt")
     assert "채팅 입력에서" in interrupt_ev["data"].description
+    assert "섹션 분포" not in interrupt_ev["data"].description
 
 
 @pytest.mark.asyncio

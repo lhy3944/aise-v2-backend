@@ -15,6 +15,9 @@ import { cn } from '@/lib/utils';
 import type { HitlData } from '@/types/agent-events';
 import { useMemo, useState } from 'react';
 
+const ALL_SECTIONS = '__all__';
+const UNCATEGORIZED_SECTION = '미분류';
+
 interface RecordCandidate {
   content: string;
   section_name?: string | null;
@@ -55,6 +58,10 @@ function asRecordCandidates(value: unknown): RecordCandidate[] {
 function formatConfidence(value?: number | null): string | null {
   if (typeof value !== 'number') return null;
   return `${Math.round(value * 100)}%`;
+}
+
+function sectionLabel(candidate: RecordCandidate): string {
+  return candidate.section_name?.trim() || UNCATEGORIZED_SECTION;
 }
 
 interface HITLPromptModalProps {
@@ -142,12 +149,32 @@ function ConfirmPrompt({
     () => asRecordCandidates(data.context?.records_extracted),
     [data.context],
   );
+  const sectionFilters = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const candidate of candidates) {
+      const label = sectionLabel(candidate);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Array.from(counts, ([label, count]) => ({ label, count }));
+  }, [candidates]);
+  const [sectionFilter, setSectionFilter] = useState(ALL_SECTIONS);
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(candidates.map((_, i) => i)),
   );
 
   const hasCandidates = candidates.length > 0;
   const selectedCount = selected.size;
+  const visibleCandidates = useMemo(
+    () =>
+      candidates
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(
+          ({ candidate }) =>
+            sectionFilter === ALL_SECTIONS ||
+            sectionLabel(candidate) === sectionFilter,
+        ),
+    [candidates, sectionFilter],
+  );
 
   const toggle = (index: number, checked: boolean) => {
     setSelected((prev) => {
@@ -169,7 +196,11 @@ function ConfirmPrompt({
   return (
     <AlertDialog open={open} onOpenChange={(o) => !o && onDismiss()}>
       <AlertDialogContent
-        className={cn(hasCandidates ? 'max-w-[720px]' : 'max-w-[480px]')}
+        className={cn(
+          hasCandidates
+            ? 'w-[calc(100vw-2rem)] max-w-[920px] data-[size=default]:sm:max-w-[920px]'
+            : 'max-w-[480px] data-[size=default]:sm:max-w-[480px]',
+        )}
       >
         <AlertDialogHeader>
           <AlertDialogTitle
@@ -199,11 +230,42 @@ function ConfirmPrompt({
 
         {hasCandidates && (
           <div className='border-line-primary bg-canvas-secondary/50 mt-3 rounded-md border'>
-            <div className='border-line-primary flex items-center justify-between gap-3 border-b px-3 py-2'>
-              <span className='text-fg-secondary text-xs'>
-                선택됨 {selectedCount}/{candidates.length}
-              </span>
-              <div className='flex items-center gap-2'>
+            <div className='border-line-primary flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2'>
+              <div className='flex flex-wrap items-center gap-1.5'>
+                <button
+                  type='button'
+                  aria-pressed={sectionFilter === ALL_SECTIONS}
+                  className={cn(
+                    'border-line-subtle rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                    sectionFilter === ALL_SECTIONS
+                      ? 'bg-accent-primary text-accent-foreground border-accent-primary'
+                      : 'bg-canvas-primary text-fg-secondary hover:text-fg-primary',
+                  )}
+                  onClick={() => setSectionFilter(ALL_SECTIONS)}
+                >
+                  전체 {candidates.length}
+                </button>
+                {sectionFilters.map((filter) => (
+                  <button
+                    key={filter.label}
+                    type='button'
+                    aria-pressed={sectionFilter === filter.label}
+                    className={cn(
+                      'border-line-subtle rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                      sectionFilter === filter.label
+                        ? 'bg-accent-primary text-accent-foreground border-accent-primary'
+                        : 'bg-canvas-primary text-fg-secondary hover:text-fg-primary',
+                    )}
+                    onClick={() => setSectionFilter(filter.label)}
+                  >
+                    {filter.label} {filter.count}
+                  </button>
+                ))}
+              </div>
+              <div className='flex items-center gap-3'>
+                <span className='text-fg-secondary text-xs'>
+                  선택됨 {selectedCount}/{candidates.length}
+                </span>
                 <button
                   type='button'
                   className='text-accent-primary text-xs font-medium'
@@ -224,7 +286,7 @@ function ConfirmPrompt({
             </div>
             <div className='max-h-[52vh] overflow-y-auto px-2 py-2'>
               <ul className='space-y-1.5'>
-                {candidates.map((candidate, index) => {
+                {visibleCandidates.map(({ candidate, index }) => {
                   const confidence = formatConfidence(
                     candidate.confidence_score,
                   );

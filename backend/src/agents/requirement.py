@@ -250,13 +250,14 @@ class RequirementAgent(BaseAgent):
         if mode == "user_text":
             description = (
                 f"채팅 입력에서 {len(candidates)}개 요구사항 후보를 추출했습니다. "
-                f"섹션 분포: {_section_histogram(candidates)}. "
-                "승인 시 모든 후보가 records 로 등록되며, 거부 시 폐기됩니다."
+                "승인할 후보를 선택하세요. 선택한 후보만 records 로 등록되며, "
+                "거부 시 폐기됩니다."
             )
         else:
             description = (
-                f"섹션 분포: {_section_histogram(candidates)}. "
-                "승인 시 모든 후보가 records 로 등록되며, 거부 시 폐기됩니다."
+                f"{len(candidates)}개 요구사항 후보를 추출했습니다. "
+                "승인할 후보를 선택하세요. 선택한 후보만 records 로 등록되며, "
+                "거부 시 폐기됩니다."
             )
 
         yield {

@@ -400,6 +400,11 @@ export function useChatStream(sessionId?: string) {
                 ...tc,
                 state: 'completed' as const,
                 result: formatToolInterrupt(tc.name, data),
+                durationMs:
+                  tc.durationMs ??
+                  (tc.startedAt !== undefined
+                    ? Math.max(0, Date.now() - tc.startedAt)
+                    : undefined),
               }
             : tc,
         ),

@@ -24,7 +24,7 @@ from src.schemas.api.artifact_testcase import (
     TestCaseContent,
     TestCaseGenerateResponse,
 )
-from src.services.testcase_svc import MISSING_SRS_MESSAGE
+from src.services.artifact_messages import MISSING_SRS_MESSAGE
 
 
 @pytest.fixture(autouse=True)

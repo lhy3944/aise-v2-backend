@@ -307,7 +307,7 @@ export function SrsArtifact() {
       <ArtifactEmptyGuide
         icon={FileText}
         title='SRS 문서가 아직 없습니다'
-        description='승인된 레코드를 기반으로 요구사항 명세 초안을 생성하고 버전으로 관리합니다.'
+        description='승인된 레코드로 SRS 초안을 생성합니다.'
         guides={EMPTY_SRS_GUIDES}
         errorMessage={errorMessage}
         action={

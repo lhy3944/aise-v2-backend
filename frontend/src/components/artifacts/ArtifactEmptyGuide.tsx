@@ -32,7 +32,7 @@ export function ArtifactEmptyGuide({
             <Icon className='text-accent-primary size-5' />
           </div>
           <p className='text-fg-primary text-sm font-semibold'>{title}</p>
-          <p className='text-fg-muted mx-auto mt-2 max-w-[17rem] text-xs leading-relaxed'>
+          <p className='text-fg-muted mx-auto mt-2 max-w-full text-xs leading-relaxed whitespace-nowrap'>
             {description}
           </p>
         </div>

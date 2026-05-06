@@ -37,10 +37,8 @@ from src.schemas.api.artifact_testcase import (
     TestCaseContent,
     TestCaseGenerateResponse,
 )
+from src.services.artifact_messages import MISSING_SRS_MESSAGE
 from src.services.llm_svc import chat_completion
-
-
-MISSING_SRS_MESSAGE = "완료된 SRS 문서가 없습니다. 먼저 SRS 를 생성하세요."
 
 
 def _content_hash(payload: dict[str, Any]) -> str:

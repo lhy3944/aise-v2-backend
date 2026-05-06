@@ -20,6 +20,7 @@ from src.agents.registry import get_agent
 from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext
 from src.schemas.api.srs import SrsDocumentResponse, SrsSectionResponse
+from src.services.artifact_messages import MISSING_RECORDS_MESSAGE
 
 
 @pytest.fixture(autouse=True)
@@ -86,14 +87,14 @@ async def test_srs_generator_surfaces_app_exception_as_state_error():
     project_id = uuid.uuid4()
     ctx = AgentContext(db=AsyncMock(), project_id=project_id)
 
-    boom = AppException(400, "레코드가 없습니다. 먼저 레코드를 추출하세요.")
+    boom = AppException(400, MISSING_RECORDS_MESSAGE)
     with patch(
         "src.services.srs_svc.generate_srs",
         new=AsyncMock(side_effect=boom),
     ):
         update = await agent.run({"project_id": str(project_id)}, ctx)
 
-    assert update == {"error": "레코드가 없습니다. 먼저 레코드를 추출하세요."}
+    assert update == {"error": MISSING_RECORDS_MESSAGE}
 
 
 # ---------- End-to-end via the graph ----------

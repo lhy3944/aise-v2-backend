@@ -42,6 +42,7 @@ from src.schemas.api.srs import (
     SrsListResponse,
     SrsSectionResponse,
 )
+from src.services.artifact_messages import MISSING_RECORDS_MESSAGE
 from src.services.llm_svc import chat_completion
 
 
@@ -168,7 +169,7 @@ async def generate_srs(
     )).scalars().all()
 
     if not records:
-        raise AppException(400, "레코드가 없습니다. 먼저 레코드를 추출하세요.")
+        raise AppException(400, MISSING_RECORDS_MESSAGE)
 
     # Phase E lineage — 각 record 의 current_version_id 의 version_number 일괄 조회.
     record_version_ids = [

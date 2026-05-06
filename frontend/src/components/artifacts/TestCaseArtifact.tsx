@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
+import { MISSING_SRS_MESSAGE } from '@/constants/artifact-messages';
 import { useImpact } from '@/hooks/useImpact';
 import { useOverlay } from '@/hooks/useOverlay';
 import { showToast } from '@/lib/toast';
@@ -81,9 +82,6 @@ const EMPTY_TESTCASE_GUIDES = [
     description: '생성된 테스트케이스는 기반 SRS와 연결됩니다.',
   },
 ];
-
-const MISSING_SRS_MESSAGE =
-  '완료된 SRS 문서가 없습니다. 먼저 SRS 를 생성하세요.';
 
 export function TestCaseArtifact() {
   const currentProject = useProjectStore((s) => s.currentProject);
@@ -248,7 +246,7 @@ export function TestCaseArtifact() {
       <ArtifactEmptyGuide
         icon={FlaskConical}
         title='테스트케이스가 아직 없습니다'
-        description='완료된 SRS를 기준으로 검증 가능한 시나리오를 생성하고 추적합니다.'
+        description='완료된 SRS로 검증 시나리오를 생성합니다.'
         guides={EMPTY_TESTCASE_GUIDES}
         errorMessage={errorMessage}
         action={

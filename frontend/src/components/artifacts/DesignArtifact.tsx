@@ -271,7 +271,7 @@ export function DesignArtifact() {
       <ArtifactEmptyGuide
         icon={Layers}
         title='Design 문서가 아직 없습니다'
-        description='완료된 SRS를 기준으로 설계 초안을 생성하고 상위 요구사항과 연결합니다.'
+        description='완료된 SRS로 설계 초안을 생성합니다.'
         guides={EMPTY_DESIGN_GUIDES}
         errorMessage={errorMessage}
         action={

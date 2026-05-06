@@ -457,7 +457,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
         <ArtifactEmptyGuide
           icon={Database}
           title='레코드가 아직 비어 있습니다'
-          description='요구사항의 기준점이 되는 문장을 모으면 SRS, 설계, 테스트케이스 생성 흐름이 더 안정적으로 이어집니다.'
+          description='요구사항 문장으로 산출물 생성을 준비합니다.'
           guides={EMPTY_RECORD_GUIDES}
           action={
             <Button

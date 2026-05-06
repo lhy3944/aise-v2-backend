@@ -114,7 +114,7 @@ export function TestCaseEditor({ initial, onSubmit }: TestCaseEditorProps) {
             <SelectTrigger size='sm' className='h-8 w-full text-xs'>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper" side="bottom" align="start">
               <SelectItem value='high' className='text-xs'>
                 High
               </SelectItem>
@@ -141,7 +141,7 @@ export function TestCaseEditor({ initial, onSubmit }: TestCaseEditorProps) {
             <SelectTrigger size='sm' className='h-8 w-full text-xs'>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper" side="bottom" align="start">
               <SelectItem value='functional' className='text-xs'>
                 Functional
               </SelectItem>

@@ -118,10 +118,7 @@ export function HITLPromptModal({
   // PR-4 에서 옵션 select / 다중 선택 UI 도입 예정.
   const fallbackTitle =
     data.kind === 'clarify' ? '추가 정보가 필요합니다' : '선택이 필요합니다';
-  const fallbackDesc =
-    data.kind === 'clarify'
-      ? data.question
-      : data.question;
+  const fallbackDesc = data.kind === 'clarify' ? data.question : data.question;
 
   return (
     <AlertDialog open={open} onOpenChange={(o) => !o && onDismiss()}>
@@ -251,8 +248,29 @@ function ConfirmPrompt({
         )}
 
         {hasCandidates && (
-          <div className='border-line-primary bg-canvas-secondary/50 mt-3 rounded-md border'>
+          <div className='border-line-primary bg-canvas-secondary/50 rounded-md border'>
             <div className='border-line-primary flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2'>
+              <div className='flex w-full items-center justify-end gap-3'>
+                <span className='text-fg-secondary text-xs'>
+                  선택됨 {selectedCount}/{candidates.length}
+                </span>
+                <button
+                  type='button'
+                  className='text-accent-primary text-xs font-medium'
+                  onClick={() =>
+                    setSelected(new Set(candidates.map((_, i) => i)))
+                  }
+                >
+                  전체 선택
+                </button>
+                <button
+                  type='button'
+                  className='text-fg-muted hover:text-fg-secondary text-xs font-medium'
+                  onClick={() => setSelected(new Set())}
+                >
+                  선택 해제
+                </button>
+              </div>
               <div className='flex flex-wrap items-center gap-1.5'>
                 <button
                   type='button'
@@ -283,27 +301,6 @@ function ConfirmPrompt({
                     {filter.label} {filter.count}
                   </button>
                 ))}
-              </div>
-              <div className='flex items-center gap-3'>
-                <span className='text-fg-secondary text-xs'>
-                  선택됨 {selectedCount}/{candidates.length}
-                </span>
-                <button
-                  type='button'
-                  className='text-accent-primary text-xs font-medium'
-                  onClick={() =>
-                    setSelected(new Set(candidates.map((_, i) => i)))
-                  }
-                >
-                  전체 선택
-                </button>
-                <button
-                  type='button'
-                  className='text-fg-muted hover:text-fg-secondary text-xs font-medium'
-                  onClick={() => setSelected(new Set())}
-                >
-                  선택 해제
-                </button>
               </div>
             </div>
             <div className='max-h-[52vh] overflow-y-auto px-2 py-2'>

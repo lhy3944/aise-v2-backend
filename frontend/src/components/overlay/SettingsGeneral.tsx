@@ -100,7 +100,7 @@ export function SettingsGeneral() {
               <SelectTrigger className='w-[160px]'>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" side="bottom" align="start">
                 <SelectItem value='ko'>한국어</SelectItem>
                 <SelectItem value='en'>English</SelectItem>
               </SelectContent>
@@ -161,7 +161,7 @@ export function SettingsGeneral() {
               <SelectTrigger className='w-[180px]'>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" side="bottom" align="start">
                 {MARKDOWN_THEME_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
@@ -215,7 +215,7 @@ export function SettingsGeneral() {
               <SelectTrigger className='w-[180px]'>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" side="bottom" align="start">
                 {CHAT_FONT_SIZE_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}

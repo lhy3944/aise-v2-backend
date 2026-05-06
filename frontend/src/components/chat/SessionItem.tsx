@@ -75,9 +75,7 @@ export function SessionItem({
         className='flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 justify-start'
       >
         <MessageSquare className='h-3.5 w-3.5 shrink-0' fill='currentColor' />
-        <span className='min-w-0 flex-1 truncate text-[13px]'>
-          {session.title}
-        </span>
+        <span className='min-w-0 truncate text-[13px]'>{session.title}</span>
         {pendingHitlCount > 0 && (
           <span className='border-warning/30 bg-warning/10 text-warning inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium'>
             <CircleAlert className='h-3 w-3' />

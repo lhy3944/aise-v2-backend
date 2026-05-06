@@ -306,7 +306,7 @@ export function SrsArtifact() {
     return (
       <ArtifactEmptyGuide
         icon={FileText}
-        title='SRS 문서가 아직 없습니다'
+        title='SRS 문서가 존재하지 않습니다.'
         description='승인된 레코드로 SRS 초안을 생성합니다.'
         guides={EMPTY_SRS_GUIDES}
         errorMessage={errorMessage}
@@ -366,7 +366,7 @@ export function SrsArtifact() {
             {selectedDoc && staleByArtifactId[selectedDoc.artifact_id] && (
               <StaleBadge impact={staleByArtifactId[selectedDoc.artifact_id]} />
             )}
-            <SelectContent>
+            <SelectContent position="popper" side="bottom" align="start">
               {documents.map((doc) => {
                 return (
                   <SelectItem

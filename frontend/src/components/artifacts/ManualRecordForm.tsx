@@ -126,7 +126,7 @@ export function ManualRecordForm({
                 >
                   <SelectValue placeholder='섹션을 선택하세요' />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" side="bottom" align="start">
                   {sections.map((s) => (
                     <SelectItem key={s.section_id} value={s.section_id}>
                       {s.name}

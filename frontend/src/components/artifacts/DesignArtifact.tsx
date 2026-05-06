@@ -270,7 +270,7 @@ export function DesignArtifact() {
     return (
       <ArtifactEmptyGuide
         icon={Layers}
-        title='Design 문서가 아직 없습니다'
+        title='Design 문서가 존재하지 않습니다.'
         description='완료된 SRS로 설계 초안을 생성합니다.'
         guides={EMPTY_DESIGN_GUIDES}
         errorMessage={errorMessage}
@@ -323,7 +323,7 @@ export function DesignArtifact() {
             {selectedDoc && staleByArtifactId[selectedDoc.artifact_id] && (
               <StaleBadge impact={staleByArtifactId[selectedDoc.artifact_id]} />
             )}
-            <SelectContent>
+            <SelectContent position="popper" side="bottom" align="start">
               {documents.map((doc) => {
                 return (
                   <SelectItem

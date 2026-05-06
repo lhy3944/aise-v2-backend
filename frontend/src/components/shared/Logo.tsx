@@ -7,7 +7,7 @@ interface LogoProps {
   showName?: boolean;
 }
 
-export function Logo({ showName = false }: LogoProps) {
+export function Logo({ showName = true }: LogoProps) {
   return (
     <Link href='/' className='flex items-center gap-2'>
       {/* 라이트 모드 로고 */}

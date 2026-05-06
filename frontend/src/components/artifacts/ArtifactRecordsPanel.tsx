@@ -252,8 +252,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
     (record: ArtifactRecord) => {
       overlay.modal({
         title: `버전 히스토리 — ${record.display_id}`,
-        description:
-          '이 레코드의 모든 머지된 버전과 변경 내역(diff) 입니다.',
+        description: '이 레코드의 모든 머지된 버전과 변경 내역(diff) 입니다.',
         size: 'lg',
         content: (
           <RecordVersionsModal
@@ -456,7 +455,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       return (
         <ArtifactEmptyGuide
           icon={Database}
-          title='레코드가 아직 비어 있습니다'
+          title='레코드가 존재하지 않습니다.'
           description='요구사항 문장으로 산출물 생성을 준비합니다.'
           guides={EMPTY_RECORD_GUIDES}
           action={
@@ -600,45 +599,45 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
             <Plus className='size-3' />
             추가
           </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant='ghost' size='sm' className='h-7 gap-1.5 text-xs'>
-              <Filter className='size-3' />
-              필터
-              {sectionFilters.length > 0 && (
-                <Badge className='ml-0.5 h-4 min-w-4 rounded-full px-1 text-[10px]'>
-                  {sectionFilters.length}
-                </Badge>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align='end' className='w-48 text-xs'>
-            <DropdownMenuCheckboxItem
-              checked={sectionFilters.length === 0}
-              onCheckedChange={() => setSectionFilters([])}
-              onSelect={(e) => e.preventDefault()}
-              className='text-xs'
-            >
-              전체
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            {sections.map(([id, name]) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant='ghost' size='sm' className='h-7 gap-1.5 text-xs'>
+                <Filter className='size-3' />
+                필터
+                {sectionFilters.length > 0 && (
+                  <Badge className='ml-0.5 h-4 min-w-4 rounded-full px-1 text-[10px]'>
+                    {sectionFilters.length}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' className='w-48 text-xs'>
               <DropdownMenuCheckboxItem
-                key={id}
-                checked={sectionFilters.includes(id)}
-                onCheckedChange={(checked) =>
-                  setSectionFilters((prev) =>
-                    checked ? [...prev, id] : prev.filter((s) => s !== id),
-                  )
-                }
+                checked={sectionFilters.length === 0}
+                onCheckedChange={() => setSectionFilters([])}
                 onSelect={(e) => e.preventDefault()}
                 className='text-xs'
               >
-                {name}
+                전체
               </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuSeparator />
+              {sections.map(([id, name]) => (
+                <DropdownMenuCheckboxItem
+                  key={id}
+                  checked={sectionFilters.includes(id)}
+                  onCheckedChange={(checked) =>
+                    setSectionFilters((prev) =>
+                      checked ? [...prev, id] : prev.filter((s) => s !== id),
+                    )
+                  }
+                  onSelect={(e) => e.preventDefault()}
+                  className='text-xs'
+                >
+                  {name}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -741,8 +740,8 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                               onClick={() => handleShowVersions(record)}
                               title='버전 히스토리'
                             >
-                              <History className='size-3' />
-                              v{record.current_version_number}
+                              <History className='size-3' />v
+                              {record.current_version_number}
                             </Button>
                           )}
                         {record.status !== 'approved' && (
@@ -821,7 +820,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
           bumpRefresh();
         }}
         onError={(msg) => {
-          overlay.alert({ type: 'error', title: '레코드 추가 실패', description: msg });
+          overlay.alert({
+            type: 'error',
+            title: '레코드 추가 실패',
+            description: msg,
+          });
         }}
       />
     </div>

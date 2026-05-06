@@ -245,7 +245,7 @@ export function TestCaseArtifact() {
     return (
       <ArtifactEmptyGuide
         icon={FlaskConical}
-        title='테스트케이스가 아직 없습니다'
+        title='테스트케이스가 존재하지 않습니다.'
         description='완료된 SRS로 검증 시나리오를 생성합니다.'
         guides={EMPTY_TESTCASE_GUIDES}
         errorMessage={errorMessage}

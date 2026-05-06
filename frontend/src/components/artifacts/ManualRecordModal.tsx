@@ -1,6 +1,11 @@
 'use client';
 
 import {
+  ManualRecordForm,
+  type ManualRecordFormValues,
+} from '@/components/artifacts/ManualRecordForm';
+import { ManualRecordFormActions } from '@/components/artifacts/ManualRecordFormActions';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -8,11 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  ManualRecordForm,
-  type ManualRecordFormValues,
-} from '@/components/artifacts/ManualRecordForm';
-import { ManualRecordFormActions } from '@/components/artifacts/ManualRecordFormActions';
 import { artifactRecordService } from '@/services/artifact-record-service';
 import type { ArtifactRecordCreate } from '@/types/project';
 import { useState } from 'react';
@@ -67,14 +67,11 @@ export function ManualRecordModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
-      <DialogContent className='flex flex-col gap-0 p-0 sm:max-w-[520px]'>
+      <DialogContent className='flex flex-col gap-0 p-0 sm:max-w-[720px]'>
         <DialogHeader className='border-line-primary border-b p-6 pb-4'>
-          <DialogTitle className='text-fg-primary'>
-            레코드 직접 추가
-          </DialogTitle>
+          <DialogTitle className='text-fg-primary'>레코드 추가</DialogTitle>
           <DialogDescription>
-            섹션을 선택하고 요구사항 본문을 직접 입력하세요. 추가된 레코드는
-            &apos;수동 입력&apos; 으로 표시됩니다.
+            섹션을 선택하고 요구사항 본문을 직접 입력하세요.
           </DialogDescription>
         </DialogHeader>
         <div className='flex-1 overflow-y-auto p-6'>

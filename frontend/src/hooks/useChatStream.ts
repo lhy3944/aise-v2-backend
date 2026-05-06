@@ -16,7 +16,7 @@ import {
   selectLatestPendingHitlForSession,
   useHitlStore,
 } from '@/stores/hitl-store';
-import type { SourceRef } from '@/types/agent-events';
+import type { HitlData, SourceRef } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
@@ -51,6 +51,10 @@ function formatToolResult(
       return typeof count === 'number' ? `청크 ${count}개 참조` : '완료';
     }
     case 'requirement': {
+      const approved = result.records_approved_count;
+      if (typeof approved === 'number') {
+        return `승인 ${approved}건`;
+      }
       const count = result.records_count;
       return typeof count === 'number' ? `후보 ${count}건 추출` : '완료';
     }
@@ -98,6 +102,16 @@ function formatToolResult(
     default:
       return '완료';
   }
+}
+
+function formatToolInterrupt(name: string, data: HitlData): string {
+  if (name === 'requirement' && data.kind === 'confirm') {
+    const records = data.context?.records_extracted;
+    if (Array.isArray(records)) {
+      return `후보 ${records.length}건 승인 대기`;
+    }
+  }
+  return '사용자 확인 대기';
 }
 
 /**
@@ -375,6 +389,25 @@ export function useChatStream(sessionId?: string) {
     [],
   );
 
+  const markToolCallInterrupted = useCallback(
+    (sid: string, data: HitlData) => {
+      const updateLast = useChatStore.getState().updateLastAssistantMessage;
+      updateLast(sid, (msg) => ({
+        ...msg,
+        toolCalls: msg.toolCalls?.map((tc) =>
+          tc.state === 'running'
+            ? {
+                ...tc,
+                state: 'completed' as const,
+                result: formatToolInterrupt(tc.name, data),
+              }
+            : tc,
+        ),
+      }));
+    },
+    [],
+  );
+
   // Records 갱신 트리거
   const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
 
@@ -599,6 +632,7 @@ export function useChatStream(sessionId?: string) {
           }));
         },
         onInterrupt: (data) => {
+          markToolCallInterrupted(sid, data);
           upsertHitl({
             threadId: data.interrupt_id,
             sessionId: sid,
@@ -619,6 +653,7 @@ export function useChatStream(sessionId?: string) {
       enqueueToken,
       executeToolCall,
       handleToolResult,
+      markToolCallInterrupted,
       requestFinishAfterDrain,
       upsertHitl,
     ],

@@ -276,6 +276,7 @@ class ConfirmData(BaseModel):
     title: str
     description: str
     impact: list[ConfirmImpact] | None = None
+    context: dict[str, Any] | None = None
     severity: ConfirmSeverity = "info"
     actions: ConfirmActions
 

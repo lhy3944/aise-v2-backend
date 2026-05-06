@@ -67,6 +67,16 @@ def _uuid(value: str) -> uuid.UUID:
     return uuid.UUID(str(value))
 
 
+def _is_missing_hitl_table(exc: SQLAlchemyError) -> bool:
+    text = str(exc)
+    return "hitl_requests" in text and (
+        "UndefinedTableError" in text
+        or "does not exist" in text
+        or "relation" in text
+        or "릴레이션" in text
+    )
+
+
 def _from_row(row: HitlRequest) -> HitlState:
     return HitlState(
         thread_id=row.thread_id,
@@ -159,11 +169,17 @@ async def save_persistent(session_factory: Any, state: HitlState) -> None:
             existing.expires_at = _expires_at(state.created_at)
             existing.completed_at = None
             await db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         await _rollback_quietly(db)
-        logger.opt(exception=True).warning(
-            "HITL DB save failed; falling back to in-memory state"
-        )
+        if _is_missing_hitl_table(exc):
+            logger.warning(
+                "HITL DB table 'hitl_requests' is missing; "
+                "falling back to in-memory state. Run Alembic migrations."
+            )
+        else:
+            logger.opt(exception=True).warning(
+                "HITL DB save failed; falling back to in-memory state"
+            )
 
 
 async def get_persistent(session_factory: Any, thread_id: str) -> HitlState | None:
@@ -195,11 +211,17 @@ async def get_persistent(session_factory: Any, thread_id: str) -> HitlState | No
 
             save(state)
             return state
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         await _rollback_quietly(db)
-        logger.opt(exception=True).warning(
-            "HITL DB load failed; falling back to in-memory state"
-        )
+        if _is_missing_hitl_table(exc):
+            logger.warning(
+                "HITL DB table 'hitl_requests' is missing; "
+                "falling back to in-memory state. Run Alembic migrations."
+            )
+        else:
+            logger.opt(exception=True).warning(
+                "HITL DB load failed; falling back to in-memory state"
+            )
         return get(thread_id)
 
 
@@ -232,11 +254,17 @@ async def delete_persistent(
             row.response = _json_safe(response)
             row.completed_at = _now()
             await db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         await _rollback_quietly(db)
-        logger.opt(exception=True).warning(
-            "HITL DB completion update failed; in-memory state already removed"
-        )
+        if _is_missing_hitl_table(exc):
+            logger.warning(
+                "HITL DB table 'hitl_requests' is missing; "
+                "in-memory state already removed. Run Alembic migrations."
+            )
+        else:
+            logger.opt(exception=True).warning(
+                "HITL DB completion update failed; in-memory state already removed"
+            )
 
 
 __all__ = [

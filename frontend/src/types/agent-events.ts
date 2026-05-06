@@ -237,6 +237,7 @@ export interface ConfirmData {
   title: string;
   description: string;
   impact?: ConfirmImpact[];
+  context?: Record<string, unknown>;
   severity: ConfirmSeverity;
   actions: ConfirmActions;
 }

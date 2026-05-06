@@ -67,6 +67,24 @@ def _to_create(c: dict[str, Any]) -> ArtifactRecordCreate:
     )
 
 
+def _selected_candidates(
+    candidates: list[dict[str, Any]], hitl_response: dict[str, Any]
+) -> list[dict[str, Any]]:
+    raw_indices = hitl_response.get("selected_indices")
+    if not isinstance(raw_indices, list):
+        return candidates
+
+    selected: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for raw in raw_indices:
+        if not isinstance(raw, int) or raw in seen:
+            continue
+        seen.add(raw)
+        if 0 <= raw < len(candidates):
+            selected.append(candidates[raw])
+    return selected
+
+
 def _resolve_extract_mode(state: AgentState) -> str:
     """state.routing.extract_mode 를 안전하게 읽는다 (디폴트 'document')."""
     routing = state.get("routing") or {}
@@ -144,9 +162,10 @@ class RequirementAgent(BaseAgent):
         if hitl_response is not None:
             action = (hitl_response or {}).get("action")
             candidates: list[dict[str, Any]] = list(state.get("records_extracted") or [])
-            if action == "approve" and candidates:
+            selected_candidates = _selected_candidates(candidates, hitl_response or {})
+            if action == "approve" and selected_candidates:
                 try:
-                    items = [_to_create(c) for c in candidates]
+                    items = [_to_create(c) for c in selected_candidates]
                     request = ArtifactRecordApproveRequest(items=items)
                     result = await artifact_record_svc.approve_records(
                         ctx.db, ctx.project_id, request,
@@ -213,7 +232,7 @@ class RequirementAgent(BaseAgent):
             }
             return
 
-        candidates = [c.model_dump() for c in response.candidates]
+        candidates = [c.model_dump(mode="json") for c in response.candidates]
         if not candidates:
             msg = no_candidates_guide()
             yield {"kind": "token", "text": msg}
@@ -248,6 +267,7 @@ class RequirementAgent(BaseAgent):
                 description=description,
                 severity="info",
                 actions=ConfirmActions(approve="승인", reject="거부"),
+                context={"records_extracted": candidates},
             ),
         }
 

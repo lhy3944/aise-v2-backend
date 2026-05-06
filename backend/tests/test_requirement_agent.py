@@ -209,6 +209,7 @@ async def test_run_stream_extract_then_interrupt():
     assert len(events[0]["update"]["records_extracted"]) == 2
     assert events[1]["data"].kind == "confirm"
     assert "2개 요구사항 후보" in events[1]["data"].title
+    assert len(events[1]["data"].context["records_extracted"]) == 2
 
 
 @pytest.mark.asyncio
@@ -259,6 +260,59 @@ async def test_run_stream_resume_approve_calls_approve_records():
     final = next(e for e in events if e.get("kind") == "final")
     assert final["update"]["records_approved_count"] == 2
     assert "2개 요구사항 후보를 승인" in final["update"]["final_answer"]
+
+
+@pytest.mark.asyncio
+async def test_run_stream_resume_approve_filters_selected_indices():
+    """resume + selected_indices → 선택된 후보만 approve_records 로 전달."""
+    from src.schemas.api.artifact_record import (
+        ArtifactRecordListResponse,
+        ArtifactRecordResponse,
+    )
+
+    agent = get_agent("requirement")
+    project_id = uuid.uuid4()
+    ctx = AgentContext(db=AsyncMock(), project_id=project_id)
+
+    candidates = [
+        _candidate("FR", "첫 번째").model_dump(mode="json"),
+        _candidate("QA", "두 번째").model_dump(mode="json"),
+        _candidate("NFR", "세 번째").model_dump(mode="json"),
+    ]
+    state = {
+        "project_id": str(project_id),
+        "records_extracted": candidates,
+        "hitl_response": {"action": "approve", "selected_indices": [1]},
+        "hitl_interrupt_id": "itp_test",
+    }
+
+    approve_mock = AsyncMock(
+        return_value=ArtifactRecordListResponse(
+            records=[
+                ArtifactRecordResponse(
+                    artifact_id=str(uuid.uuid4()),
+                    project_id=str(project_id),
+                    content="두 번째",
+                    display_id="REC-001",
+                    status="approved",
+                    is_auto_extracted=True,
+                    order_index=0,
+                    created_at="2026-04-28T00:00:00Z",
+                    updated_at="2026-04-28T00:00:00Z",
+                )
+            ],
+            total=1,
+        )
+    )
+    with patch("src.services.artifact_record_svc.approve_records", new=approve_mock):
+        events = [ev async for ev in agent.run_stream(state, ctx)]
+
+    approve_mock.assert_awaited_once()
+    request = approve_mock.await_args.args[2]
+    assert len(request.items) == 1
+    assert request.items[0].content == "두 번째"
+    final = next(e for e in events if e.get("kind") == "final")
+    assert final["update"]["records_approved_count"] == 1
 
 
 @pytest.mark.asyncio

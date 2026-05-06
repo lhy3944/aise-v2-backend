@@ -155,6 +155,17 @@ HITL 3종(Clarify/Confirm/Decision)을 `data.kind`로 구분.
       { "label": "TC-012, TC-013, TC-017", "detail": "TestCase 3개 재생성 필요" },
       { "label": "SRS §3.2", "detail": "Functional Requirements 섹션" }
     ],
+    "context": {
+      "records_extracted": [
+        {
+          "content": "사용자는 로그인할 수 있어야 한다.",
+          "section_name": "기능 요구사항",
+          "source_document_name": "requirements.md",
+          "source_location": "p.3",
+          "confidence_score": 0.91
+        }
+      ]
+    },
     "severity": "warning",
     "actions": { "approve": "승인", "reject": "거부", "modify": "수정 후 진행" }
   }
@@ -394,7 +405,7 @@ tool_call → interrupt(confirm|clarify|decision) → done(interrupt)
 ```
 **프론트 응답 후** (`POST /api/v1/agent/resume/{thread_id}`):
 ```
-tool_call(resume_from=thread_id) → token × M → tool_result → done(stop)
+token × M → tool_result → done(stop)
 ```
 
 **구현 스냅샷 (2026-04-29)**: Confirm 기반 Requirement 후보 승인/거부 흐름은 동작한다. 프론트는 pending HITL을 `sessionStorage` queue에 보존해 dismiss 후 배너/SessionList 배지로 다시 열 수 있다. 백엔드는 `hitl_requests` 테이블에 pending context를 저장하고 resume 후 `resumed` audit row를 보존한다. Clarify/Decision은 스키마와 fallback UI만 있으며 전용 선택 UI는 다음 단계 작업이다. 서버 pending 목록 조회 API는 아직 없어 새 클라이언트가 DB pending 상태를 자동 발견하진 못한다.
@@ -428,3 +439,4 @@ tool_call(resume_from=thread_id) → token × M → tool_result → done(stop)
 | 1.1 | 2026-04-22 | `sources` 이벤트 추가 — 본문 `[N]` 인용의 백엔드 소유 메타데이터 채널 (ref/document_id/name/chunk_index + optional file_type/content_preview/score). legacy `[SOURCES]` 블록 프롬프트 의존 제거를 위함. |
 | 1.2 | 2026-04-29 | Artifact Governance 이벤트(`artifact_staged`, `pr_created`, `pr_merged`, `pr_rejected`, `impact_detected`) 문서화. Phase 3 resume 엔드포인트를 실제 구현인 `/api/v1/agent/resume/{thread_id}`로 정정. |
 | 1.3 | 2026-04-29 | HITL backend persistence 도입. `interrupt_id/thread_id` context 는 `hitl_requests`에 pending 저장되고 resume 후 audit row로 보존된다. SSE payload shape 변경 없음. |
+| 1.4 | 2026-05-06 | `confirm.context` 선택 필드 추가. Requirement 후보 승인 모달은 `records_extracted` context 를 받아 후보 목록/선택 상태를 표시한다. Resume 응답은 중복 tool UI 방지를 위해 새 `tool_call` 없이 `tool_result`만 발행한다. |

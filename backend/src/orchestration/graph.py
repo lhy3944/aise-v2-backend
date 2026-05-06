@@ -286,6 +286,9 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
     extracted = state.get("records_extracted")
     if extracted is not None:
         payload["records_count"] = len(extracted)
+    approved_count = state.get("records_approved_count")
+    if isinstance(approved_count, int):
+        payload["records_approved_count"] = approved_count
     srs = state.get("srs_generated")
     if isinstance(srs, dict):
         if "section_count" in srs:
@@ -947,15 +950,9 @@ async def resume_chat(
     started = time.perf_counter()
     expose = getattr(agent.capability, "expose_as_tool", True)
     call_id = f"call_{uuid.uuid4().hex[:12]}"
-    if expose:
-        yield ToolCallEvent(
-            data=ToolCallEventData(
-                tool_call_id=call_id,
-                name=saved.selected_agent,
-                arguments={"resume_from": thread_id},
-                agent=saved.selected_agent,
-            )
-        )
+    # Resume continues the tool invocation that emitted the HITL interrupt.
+    # Emitting another tool_call creates a duplicate tool card in the chat UI,
+    # so resume only emits the eventual tool_result for side effects.
 
     final_update: dict[str, Any] = {}
     interrupted_data: ClarifyData | ConfirmData | DecisionData | None = None

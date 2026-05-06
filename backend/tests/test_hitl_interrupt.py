@@ -206,6 +206,8 @@ async def test_resume_chat_restores_state_and_completes(fake_session_factory):
     tool_results = [e for e in events if isinstance(e, ToolResultEvent)]
     assert len(tool_results) == 1
     assert tool_results[0].data.status == "success"
+    tool_calls = [e for e in events if isinstance(e, ToolCallEvent)]
+    assert len(tool_calls) == 0
 
     # 정상 종료 후 hitl_state 는 삭제돼야 함
     assert hitl_state_svc.get(_INTERRUPT_ID) is None

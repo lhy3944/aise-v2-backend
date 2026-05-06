@@ -41,6 +41,7 @@ _REGISTRY: dict[str, "BaseAgent"] = {}
 _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "src.agents.general_chat",
     "src.agents.knowledge_qa",
+    "src.agents.project_status",
     "src.agents.requirement",
     "src.agents.srs_generator",
     "src.agents.design_generator",

@@ -247,6 +247,7 @@ def build_graph(
     workflow = StateGraph(AgentState)
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("knowledge_qa", _make_agent_node("knowledge_qa", session_factory))
+    workflow.add_node("project_status", _make_agent_node("project_status", session_factory))
     workflow.add_node("requirement", _make_agent_node("requirement", session_factory))
 
     workflow.add_edge(START, "supervisor")
@@ -255,6 +256,7 @@ def build_graph(
         route_after_supervisor,
         {
             "knowledge_qa": "knowledge_qa",
+            "project_status": "project_status",
             "requirement": "requirement",
             # Supervisor may emit `plan`; until increment 2 wires the
             # planner node, we terminate the graph so the fallback
@@ -264,6 +266,7 @@ def build_graph(
         },
     )
     workflow.add_edge("knowledge_qa", END)
+    workflow.add_edge("project_status", END)
     workflow.add_edge("requirement", END)
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())

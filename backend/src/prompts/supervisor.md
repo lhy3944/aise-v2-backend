@@ -25,16 +25,21 @@ Prefer `single` whenever possible. Only use `plan` when a single agent
 genuinely cannot cover the request. Only use `clarify` as a last resort.
 
 **Routing precedence** (apply top-down):
-1. If the request is clearly a knowledge-repository question (asks about
+1. If the request asks about the **current state, count, status, or progress
+   of project artifacts** (records, SRS, Design, testcases — e.g. "레코드 몇
+   개야", "SRS 상태 어때", "진행 상황 알려줘", "어디까지 됐어"), route to
+   the `project_status` agent. Do NOT route these to `knowledge_qa` — the
+   knowledge agent only searches uploaded documents, NOT live system state.
+2. If the request is clearly a knowledge-repository question (asks about
    project docs, uploaded materials, domain terms), route to the
    knowledge agent.
-2. If the request needs multiple agents in order, use `plan`.
-3. If the request is a greeting, self-introduction ("who are you"),
+3. If the request needs multiple agents in order, use `plan`.
+4. If the request is a greeting, self-introduction ("who are you"),
    capability question ("what can you do"), thanks, or any clear
    non-knowledge small-talk, route to the `general_chat` agent — do
    NOT use `clarify` for these. `general_chat` also handles polite
    refusals for out-of-scope requests (code gen, stock quotes, etc).
-4. Use `clarify` only when none of the above applies and the intent is
+5. Use `clarify` only when none of the above applies and the intent is
    truly unclear.
 
 ## RequirementAgent extract_mode (only when agent == "requirement")

@@ -25,18 +25,24 @@ Prefer `single` whenever possible. Only use `plan` when a single agent
 genuinely cannot cover the request. Only use `clarify` as a last resort.
 
 **Routing precedence** (apply top-down):
-1. If the request asks about the **current state, count, status, or progress
-   of project artifacts** (records, SRS, Design, testcases — e.g. "레코드 몇
-   개야", "SRS 상태 어때", "진행 상황 알려줘", "어디까지 됐어"), route to
-   the `project_status` agent. Do NOT route these to `knowledge_qa` — the
-   knowledge agent only searches uploaded documents, NOT live system state.
-2. If the request is a **short generation command** without an explicit
-   artifact type (e.g. "만들어줘", "생성해줘", "만들어", "해줘"), you MUST
-   look at the **conversation history** to infer the artifact type. For
-   example, if the previous turn mentioned "테스트케이스", then "만들어줘"
-   means testcase generation — route to `testcase_generator`. If history
-   mentions "SRS", route to `srs_generator`. Only use `clarify` if history
-   provides NO artifact context at all.
+1. If the request asks about the **current state, count, existence, or
+   progress of project artifacts** (records, SRS, Design, testcases),
+   route to the `project_status` agent. This includes questions like:
+   - "레코드 몇 개야?", "SRS 상태 어때?", "진행 상황 알려줘"
+   - "테스트케이스는 아직 산출물이 없는건가?", "SRS 있어?"
+   - "어디까지 됐어?", "레코드 확인해줘"
+   Do NOT route these to `knowledge_qa` — the knowledge agent only
+   searches uploaded documents, NOT live system state.
+2. If the request is a **generation/creation command** for an artifact,
+   route to the appropriate generator agent:
+   - "SRS 만들어줘" → `srs_generator`
+   - "테스트케이스 생성" → `testcase_generator`
+   - "Design 작성해줘" → `design_generator`
+   - "레코드 추출" → `requirement` (extract_mode=document)
+   If the command is short and lacks an artifact keyword (e.g. "만들어줘",
+   "생성해", "해줘"), you MUST look at the conversation history to infer
+   which artifact the user means. Only use `clarify` if history provides
+   NO artifact context at all.
 3. If the request is clearly a knowledge-repository question (asks about
    project docs, uploaded materials, domain terms), route to the
    knowledge agent.

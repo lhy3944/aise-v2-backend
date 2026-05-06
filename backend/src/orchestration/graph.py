@@ -86,34 +86,20 @@ _GENERATION_TERMS = (
 
 # 상태/현황 질의 패턴 — 이 패턴이 매칭되면 project_status로 라우팅해야
 # 하므로, _explicit_artifact_generation_agent에서 제외한다.
-# 주의: "있어", "없어" 같은 너무 짧은 패턴은 "만들어" 등과 충돌하므로
-# 질문형 어미(~건가, ~나, ~나요, ~가)만 포함한다.
+# 유지보수 부담을 최소화하기 위해 핵심 패턴만 유지.
+# 세부 질의 해석은 supervisor LLM이 담당한다.
 _STATUS_QUERY_TERMS = (
-    "어떻게 돼",
     "어때",
     "몇 개",
     "몇개",
     "상태",
     "현황",
-    "버전은",
-    "버전이",
     "진행",
-    "얼마나",
-    "어디까지",
     "알려줘",
     "보여줘",
-    "알고 싶",
     "확인",
-    "조회",
-    "없는건가",
     "없나",
     "있나",
-    "없나요",
-    "있나요",
-    "없는가",
-    "있는가",
-    "되어 있",
-    "돼 있",
     "없는지",
     "있는지",
     "count",
@@ -121,9 +107,6 @@ _STATUS_QUERY_TERMS = (
     "how many",
     "version",
     "progress",
-    "current",
-    "any",
-    "exist",
 )
 
 _ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -202,13 +185,15 @@ _ARTIFACT_STATUS_KEYWORDS: tuple[tuple[str, ...], ...] = (
 def _is_artifact_status_query(user_input: str) -> bool:
     """Check if the input is a status query about project artifacts.
 
-    Must contain BOTH:
-    1. An artifact keyword (SRS, 레코드, etc.)
-    2. A status-query pattern (어떻게 돼, 몇 개, etc.)
+    Two conditions must BOTH hold:
+    1. Contains an artifact keyword (SRS, 레코드, 테스트케이스, etc.)
+    2. Does NOT contain a generation term (생성, 만들, 작성, etc.)
+       AND (contains a status pattern OR ends with a question mark)
 
-    "SRS 버전 어떻게 돼?" → True  (artifact + status pattern)
-    "SRS 만들어줘"        → False (artifact but no status pattern)
-    "어떻게 돼?"          → False (status pattern but no artifact)
+    "SRS 버전 어떻게 돼?" → True  (artifact, no gen term, question)
+    "테스트케이스 없는건가?" → True  (artifact, no gen term, question)
+    "SRS 만들어줘"        → False (artifact but has gen term)
+    "어떻게 돼?"          → False (question but no artifact)
     """
     text = (user_input or "").strip().lower()
     if not text:
@@ -221,8 +206,13 @@ def _is_artifact_status_query(user_input: str) -> bool:
     if not has_artifact:
         return False
 
+    # 생성 의도가 있으면 상태 질의가 아님.
+    if any(term in text for term in _GENERATION_TERMS):
+        return False
+
     has_status_pattern = any(term in text for term in _STATUS_QUERY_TERMS)
-    return has_status_pattern
+    is_question = text.endswith("?") or text.endswith("?")
+    return has_status_pattern or is_question
 
 
 # 대화 맥락에서 최근 언급된 산출물 타입을 추출해 짧은 생성 요청에 반영.

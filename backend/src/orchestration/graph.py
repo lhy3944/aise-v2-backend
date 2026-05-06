@@ -172,6 +172,43 @@ def _explicit_artifact_generation_agent(user_input: str) -> str | None:
     return None
 
 
+# 산출물 관련 키워드가 포함된 상태 질의를 결정적으로 project_status로
+# 직결하기 위한 매핑. retrieval gate나 supervisor LLM이 "SRS" 키워드를
+# 보고 srs_generator로 잘못 라우팅하는 것을 방지한다.
+_ARTIFACT_STATUS_KEYWORDS: tuple[tuple[str, ...], ...] = (
+    ("srs", "요구사항 명세서"),
+    ("design", "디자인", "설계"),
+    ("테스트케이스", "테스트 케이스", "testcase", "tc"),
+    ("레코드", "record"),
+)
+
+
+def _is_artifact_status_query(user_input: str) -> bool:
+    """Check if the input is a status query about project artifacts.
+
+    Must contain BOTH:
+    1. An artifact keyword (SRS, 레코드, etc.)
+    2. A status-query pattern (어떻게 돼, 몇 개, etc.)
+
+    "SRS 버전 어떻게 돼?" → True  (artifact + status pattern)
+    "SRS 만들어줘"        → False (artifact but no status pattern)
+    "어떻게 돼?"          → False (status pattern but no artifact)
+    """
+    text = (user_input or "").strip().lower()
+    if not text:
+        return False
+
+    has_artifact = any(
+        any(term in text for term in group)
+        for group in _ARTIFACT_STATUS_KEYWORDS
+    )
+    if not has_artifact:
+        return False
+
+    has_status_pattern = any(term in text for term in _STATUS_QUERY_TERMS)
+    return has_status_pattern
+
+
 # ---------- Node helpers ----------
 
 
@@ -686,6 +723,19 @@ async def run_chat(
             "plan": None,
             "clarification": None,
             "reasoning": "deterministic artifact generation intent",
+        }
+
+    # 0b. 상태 질의 결정적 가드 — "SRS 버전 어떻게 돼?" 같은 질문은
+    # retrieval gate가나 supervisor LLM이 "SRS" 키워드만 보고
+    # srs_generator/knowledge_qa로 잘못 라우팅하는 것을 방지한다.
+    # 산출물 키워드 + 상태 질의 패턴이 모두 있으면 project_status로 직결.
+    if explicit_agent is None and _is_artifact_status_query(user_input):
+        initial_state["routing"] = {
+            "action": "single",
+            "agent": "project_status",
+            "plan": None,
+            "clarification": None,
+            "reasoning": "deterministic artifact status query",
         }
 
     # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을

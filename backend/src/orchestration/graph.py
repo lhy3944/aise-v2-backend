@@ -43,6 +43,7 @@ from src.orchestration.supervisor import (
 )
 from src.schemas.events import (
     ClarifyData,
+    ConfirmActions,
     ConfirmData,
     DecisionData,
     DoneEvent,

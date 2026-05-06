@@ -815,8 +815,9 @@ async def run_chat(
     # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
     # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서
     # 없음·score 미달) supervisor LLM이 판단한다.
+    # 위 결정적 가드(0a/0b/0c)가 이미 routing을 설정한 경우 gate를 건너뛴다.
     gate_result = None
-    if explicit_agent is None and session_factory is not None:
+    if explicit_agent is None and "routing" not in initial_state and session_factory is not None:
         try:
             project_uuid_for_gate = uuid.UUID(str(project_id))
         except (ValueError, TypeError):
@@ -837,8 +838,9 @@ async def run_chat(
     if gate_result is not None:
         initial_state["routing"] = gate_result.routing
         initial_state["rag_cache"] = gate_result.rag_cache
-    elif explicit_agent is None:
+    elif "routing" not in initial_state:
         # 1b. Supervisor — direct call, no graph invocation needed.
+        # 위 결정적 가드가 이미 routing을 설정했으면 supervisor 생략.
         try:
             supervisor_update = await supervisor_node(initial_state)
         except Exception as e:  # pragma: no cover — defensive

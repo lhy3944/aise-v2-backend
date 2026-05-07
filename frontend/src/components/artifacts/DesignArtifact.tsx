@@ -16,7 +16,6 @@ import {
   SrsSectionEditorActions,
   type SrsSectionEditorValues,
 } from '@/components/artifacts/workspace/editor/SrsSectionEditor';
-import { StaleBadge } from '@/components/artifacts/workspace/StaleBadge';
 import { MessageResponse } from '@/components/ui/ai-elements/message';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -321,7 +320,7 @@ export function DesignArtifact() {
               </SelectValue>
             </SelectTrigger>
             {selectedDoc && staleByArtifactId[selectedDoc.artifact_id] && (
-              <StaleBadge impact={staleByArtifactId[selectedDoc.artifact_id]} />
+              <span className='bg-stale-warning size-1.5 rounded-full' title='입력 변경으로 갱신 필요' />
             )}
             <SelectContent position="popper" side="bottom" align="start">
               {documents.map((doc) => {

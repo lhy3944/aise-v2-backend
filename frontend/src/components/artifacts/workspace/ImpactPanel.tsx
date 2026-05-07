@@ -32,9 +32,10 @@ const AUTO_REGENERATABLE = new Set(['srs', 'design']);
 interface ImpactPanelProps {
   projectId: string;
   onClose?: () => void;
+  onApplyComplete?: () => void;
 }
 
-export function ImpactPanel({ projectId, onClose }: ImpactPanelProps) {
+export function ImpactPanel({ projectId, onClose, onApplyComplete }: ImpactPanelProps) {
   const { stale, loading } = useImpact(projectId);
   const bumpAll = useArtifactRefreshStore((s) => s.bumpAll);
 
@@ -81,6 +82,8 @@ export function ImpactPanel({ projectId, onClose }: ImpactPanelProps) {
       // 새 ArtifactVersion 이 생겼으니 모든 화면 새로고침 트리거
       bumpAll();
       setSelected(new Set());
+      // 재생성 완료 후 모달 자동 닫힘
+      onApplyComplete?.();
     } catch {
       // 글로벌 핸들링
     } finally {

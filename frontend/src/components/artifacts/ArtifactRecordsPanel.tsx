@@ -42,9 +42,11 @@ import {
   History,
   MessageSquareText,
   MinusCircle,
+  MoreHorizontal,
   PenLine,
   Pencil,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
   XCircle,
@@ -667,7 +669,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                         record.status === 'excluded' && 'opacity-50',
                       )}
                     >
-                      {/* Top row: ID + confidence + status */}
+                      {/* Top row: ID + confidence + status + menu */}
                       <div className='text-fg-muted flex items-center gap-2 text-[11px]'>
                         <span className='text-fg-secondary font-mono font-medium'>
                           {record.display_id}
@@ -693,13 +695,102 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                         )}
                         <span
                           className={cn(
-                            'ml-auto inline-flex items-center gap-1 [&>svg]:size-3',
+                            'inline-flex items-center gap-1 [&>svg]:size-3',
                             statusCfg.color,
                           )}
                         >
                           <StatusIcon />
                           {statusCfg.label}
                         </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              className='text-fg-muted hover:text-fg-primary ml-auto size-7 shrink-0'
+                            >
+                              <MoreHorizontal className='size-4' />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align='end' className='w-40'>
+                            <DropdownMenuCheckboxItem
+                              checked={false}
+                              onCheckedChange={() => handleEdit(record)}
+                              onSelect={(e) => e.preventDefault()}
+                              className='gap-2'
+                            >
+                              <Pencil className='size-3.5' />
+                              편집
+                            </DropdownMenuCheckboxItem>
+                            {record.current_version_number != null &&
+                              record.current_version_number > 0 && (
+                                <DropdownMenuCheckboxItem
+                                  checked={false}
+                                  onCheckedChange={() =>
+                                    handleShowVersions(record)
+                                  }
+                                  onSelect={(e) => e.preventDefault()}
+                                  className='gap-2'
+                                >
+                                  <History className='size-3.5' />
+                                  버전 히스토리 (v
+                                  {record.current_version_number})
+                                </DropdownMenuCheckboxItem>
+                              )}
+                            <DropdownMenuSeparator />
+                            {record.status !== 'approved' && (
+                              <DropdownMenuCheckboxItem
+                                checked={false}
+                                onCheckedChange={() =>
+                                  handleStatusChange(record, 'approved')
+                                }
+                                onSelect={(e) => e.preventDefault()}
+                                className='gap-2'
+                              >
+                                <CheckCircle2 className='size-3.5 text-green-600' />
+                                승인
+                              </DropdownMenuCheckboxItem>
+                            )}
+                            {record.status !== 'excluded' && (
+                              <DropdownMenuCheckboxItem
+                                checked={false}
+                                onCheckedChange={() =>
+                                  handleStatusChange(record, 'excluded')
+                                }
+                                onSelect={(e) => e.preventDefault()}
+                                className='gap-2'
+                              >
+                                <XCircle className='size-3.5 text-amber-600' />
+                                제외
+                              </DropdownMenuCheckboxItem>
+                            )}
+                            {record.status === 'excluded' && (
+                              <DropdownMenuCheckboxItem
+                                checked={false}
+                                onCheckedChange={() =>
+                                  handleStatusChange(record, 'draft')
+                                }
+                                onSelect={(e) => e.preventDefault()}
+                                className='gap-2'
+                              >
+                                <RotateCcw className='size-3.5' />
+                                복원
+                              </DropdownMenuCheckboxItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuCheckboxItem
+                              checked={false}
+                              onCheckedChange={() =>
+                                handleDelete(record.artifact_id)
+                              }
+                              onSelect={(e) => e.preventDefault()}
+                              className='gap-2 text-destructive focus:text-destructive'
+                            >
+                              <Trash2 className='size-3.5' />
+                              삭제
+                            </DropdownMenuCheckboxItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
                       {/* Content (드래프트가 있으면 로컬 편집본 우선 표시) */}
@@ -720,75 +811,6 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                         </p>
                       )}
 
-                      {/* Actions (visible on hover) */}
-                      <div className='mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100'>
-                        <Button
-                          variant='ghost'
-                          size='sm'
-                          className='text-fg-secondary h-6 gap-1 px-2 text-[10px]'
-                          onClick={() => handleEdit(record)}
-                        >
-                          <Pencil className='size-3' />
-                          편집
-                        </Button>
-                        {record.current_version_number != null &&
-                          record.current_version_number > 0 && (
-                            <Button
-                              variant='ghost'
-                              size='sm'
-                              className='text-fg-secondary h-6 gap-1 px-2 text-[10px]'
-                              onClick={() => handleShowVersions(record)}
-                              title='버전 히스토리'
-                            >
-                              <History className='size-3' />v
-                              {record.current_version_number}
-                            </Button>
-                          )}
-                        {record.status !== 'approved' && (
-                          <Button
-                            variant='ghost'
-                            size='sm'
-                            className='h-6 gap-1 px-2 text-[10px] text-green-600'
-                            onClick={() =>
-                              handleStatusChange(record, 'approved')
-                            }
-                          >
-                            <CheckCircle2 className='size-3' />
-                            승인
-                          </Button>
-                        )}
-                        {record.status !== 'excluded' && (
-                          <Button
-                            variant='ghost'
-                            size='sm'
-                            className='h-6 gap-1 px-2 text-[10px] text-amber-600'
-                            onClick={() =>
-                              handleStatusChange(record, 'excluded')
-                            }
-                          >
-                            <XCircle className='size-3' />
-                            제외
-                          </Button>
-                        )}
-                        {record.status === 'excluded' && (
-                          <Button
-                            variant='ghost'
-                            size='sm'
-                            className='h-6 gap-1 px-2 text-[10px]'
-                            onClick={() => handleStatusChange(record, 'draft')}
-                          >
-                            복원
-                          </Button>
-                        )}
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='text-fg-muted hover:text-destructive ml-auto size-6'
-                          onClick={() => handleDelete(record.artifact_id)}
-                        >
-                          <Trash2 className='size-3' />
-                        </Button>
-                      </div>
                     </div>
                   );
                 })}

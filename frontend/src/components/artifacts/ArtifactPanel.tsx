@@ -22,11 +22,11 @@ import {
   FileText,
   FlaskConical,
   Layers,
+  RefreshCw,
 } from 'lucide-react';
 
 const ARTIFACT_TABS: Array<{
   value: ArtifactType;
-  /** action store 의 generating[kind] 와 매핑되는 키. records 는 자동 생성 액션이 없어 null. */
   kind: ArtifactKind | null;
   label: string;
   icon: typeof Database;
@@ -42,6 +42,13 @@ const ARTIFACT_TABS: Array<{
   },
 ];
 
+const STALE_TAB_MAP: Record<string, ArtifactType[]> = {
+  srs: ['srs'],
+  design: ['design'],
+  testcase: ['testcase'],
+  record: ['records'],
+};
+
 export function ArtifactPanel() {
   const currentProject = useProjectStore((s) => s.currentProject);
   const activeTab = useArtifactStore((s) => s.activeTab);
@@ -49,8 +56,12 @@ export function ArtifactPanel() {
   const generating = useArtifactActionStore((s) => s.generating);
   const overlay = useOverlay();
 
-  // 영향도(stale) — 1건 이상이면 탭바 옆에 알림 버튼.
   const { stale: staleList } = useImpact(currentProject?.project_id ?? null);
+
+  // 현재 활성 탭에 해당하는 stale 항목 필터링
+  const activeTabStale = staleList.filter((s) =>
+    (STALE_TAB_MAP[s.artifact_type] ?? []).includes(activeTab),
+  );
 
   const openImpactModal = () => {
     if (!currentProject) return;
@@ -64,6 +75,7 @@ export function ArtifactPanel() {
         <ImpactPanel
           projectId={projectId}
           onClose={() => overlay.closeModal()}
+          onApplyComplete={() => overlay.closeModal()}
         />
       ),
     });
@@ -90,54 +102,65 @@ export function ArtifactPanel() {
       className='flex h-full flex-col'
     >
       {/* Tab Bar */}
-      <div className='flex shrink-0 items-end gap-2 px-2 pt-2'>
-        <div className='relative min-w-0 flex-1'>
-          <ScrollArea className='w-full px-2'>
-            <div className='pb-2.5'>
-              <TabsList
-                variant='line'
-                className='border-line-subtle w-max min-w-full'
-              >
-                {ARTIFACT_TABS.map((tab) => {
-                  const isGenerating = tab.kind ? generating[tab.kind] : false;
-                  return (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className='data-[state=active]:text-accent-primary after:bg-accent-primary gap-1.5 px-3 text-xs whitespace-nowrap'
-                    >
-                      {isGenerating ? (
-                        <Spinner
-                          size='size-3.5'
-                          className='text-accent-primary'
-                        />
-                      ) : (
-                        <tab.icon className='size-3.5' />
-                      )}
-                      {tab.label}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </div>
-            <ScrollBar orientation='horizontal' className='h-0.5' />
-          </ScrollArea>
-          <div className='from-background pointer-events-none absolute inset-y-0 left-0 w-4 bg-linear-to-r to-transparent' />
-          <div className='from-background pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l to-transparent' />
-        </div>
-        {staleList.length > 0 && (
+      <div className='relative min-w-0 px-2 pt-2'>
+        <ScrollArea className='w-full px-2'>
+          <div className='pb-2.5'>
+            <TabsList
+              variant='line'
+              className='border-line-subtle w-max min-w-full'
+            >
+              {ARTIFACT_TABS.map((tab) => {
+                const isGenerating = tab.kind ? generating[tab.kind] : false;
+                const tabStale = staleList.filter((s) =>
+                  (STALE_TAB_MAP[s.artifact_type] ?? []).includes(tab.value),
+                );
+                return (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                    className='data-[state=active]:text-accent-primary after:bg-accent-primary gap-1.5 px-3 text-xs whitespace-nowrap'
+                  >
+                    {isGenerating ? (
+                      <Spinner
+                        size='size-3.5'
+                        className='text-accent-primary'
+                      />
+                    ) : (
+                      <tab.icon className='size-3.5' />
+                    )}
+                    {tab.label}
+                    {tabStale.length > 0 && (
+                      <span className='bg-stale-warning size-1.5 rounded-full' />
+                    )}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </div>
+          <ScrollBar orientation='horizontal' className='h-0.5' />
+        </ScrollArea>
+        <div className='from-canvas-primary pointer-events-none absolute inset-y-0 left-0 w-4 bg-linear-to-r to-transparent' />
+        <div className='from-canvas-primary pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l to-transparent' />
+      </div>
+
+      {/* Stale Banner — 활성 탭에 stale이 있으면 탭바 아래에 배너 표시 */}
+      {activeTabStale.length > 0 && (
+        <div className='border-b border-stale-warning/30 bg-stale-warning-bg flex shrink-0 items-center gap-2 px-4 py-1.5'>
+          <AlertTriangle className='text-stale-warning size-3.5 shrink-0' />
+          <span className='text-stale-warning text-xs font-medium'>
+            {activeTabStale.length}개 산출물이 변경된 입력을 참조 중
+          </span>
           <Button
             variant='ghost'
             size='sm'
-            className='mb-2 h-7 shrink-0 gap-1.5 border border-amber-500/40 bg-amber-500/10 px-2 text-[11px] font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-400'
+            className='text-stale-warning hover:bg-stale-warning/10 ml-auto h-6 gap-1 px-2 text-xs font-medium'
             onClick={openImpactModal}
-            title='영향도 분석 — 자동 재생성'
           >
-            <AlertTriangle className='size-3.5' />
-            stale {staleList.length}
+            <RefreshCw className='size-3' />
+            재생성
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className='flex min-h-0 flex-1 flex-col'>

@@ -5,7 +5,9 @@ import {
   FlaskConical,
   Link2,
   MessageSquare,
+  MoreHorizontal,
   Pencil,
+  Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -16,7 +18,6 @@ import {
   type TestCaseEditorPayload,
 } from '@/components/artifacts/workspace/editor/TestCaseEditor';
 import { lineageInline } from '@/components/artifacts/workspace/lineagePreview';
-import { StaleBadge } from '@/components/artifacts/workspace/StaleBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -388,34 +389,47 @@ export function TestCaseArtifact() {
                       title={unstagedDraft ? 'Unstaged 변경' : 'Staged 변경'}
                     />
                   )}
-                  {staleByArtifactId[tc.artifact_id] && (
-                    <StaleBadge impact={staleByArtifactId[tc.artifact_id]} />
-                  )}
                   <span className='opacity-40'>·</span>
                   <span className={cn('font-medium', priorityCfg.tone)}>
                     {priorityCfg.label}
                   </span>
                   <span className='opacity-40'>·</span>
                   <span className='text-fg-muted'>{typeCfg.label}</span>
-                  <Button
-                    variant='ghost'
-                    size='sm'
-                    className='text-fg-secondary ml-auto h-6 gap-1 px-2 text-[10px] opacity-0 transition-opacity group-hover:opacity-100'
-                    onClick={() => handleEdit(tc)}
-                  >
-                    <Pencil className='size-3' />
-                    편집
-                  </Button>
-                  {unstagedDraft && (
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      className='text-fg-muted hover:text-destructive h-6 gap-1 px-2 text-[10px] opacity-0 transition-opacity group-hover:opacity-100'
-                      onClick={() => discardArtifactDraft(tc.artifact_id)}
-                    >
-                      드래프트 폐기
-                    </Button>
-                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant='ghost'
+                        size='icon'
+                        className='text-fg-muted hover:text-fg-primary ml-auto size-7 shrink-0'
+                      >
+                        <MoreHorizontal className='size-4' />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align='end' className='w-40'>
+                      <DropdownMenuCheckboxItem
+                        checked={false}
+                        onCheckedChange={() => handleEdit(tc)}
+                        onSelect={(e) => e.preventDefault()}
+                        className='gap-2'
+                      >
+                        <Pencil className='size-3.5' />
+                        편집
+                      </DropdownMenuCheckboxItem>
+                      {unstagedDraft && (
+                        <DropdownMenuCheckboxItem
+                          checked={false}
+                          onCheckedChange={() =>
+                            discardArtifactDraft(tc.artifact_id)
+                          }
+                          onSelect={(e) => e.preventDefault()}
+                          className='gap-2 text-destructive focus:text-destructive'
+                        >
+                          <Trash2 className='size-3.5' />
+                          드래프트 폐기
+                        </DropdownMenuCheckboxItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </header>
 
                 <h4 className='text-fg-primary text-sm font-semibold'>

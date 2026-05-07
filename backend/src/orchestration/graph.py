@@ -19,6 +19,7 @@ reads the env once and caches the saver for the process lifetime.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 import uuid
@@ -30,6 +31,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from loguru import logger
 from psycopg_pool import AsyncConnectionPool
+from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.agents import load_builtin_agents
@@ -939,16 +941,61 @@ async def run_chat(
         }
         action_label = _AGENT_LABELS.get(selected, selected)
 
+        # 조사 자동 선택: 받침 있으면 '을', 없으면 '를'
+        def _with_particle(word: str) -> str:
+            if not word:
+                return word
+            last = word[-1]
+            has_final = (ord(last) - 0xAC00) % 28 != 0
+            return f"{word}{'을' if has_final else '를'}"
+
+        # 기존 산출물 개수 조회 — 있으면 "재생성" 안내
+        existing_count = 0
+        _ARTIFACT_TYPE_MAP: dict[str, str] = {
+            "srs_generator": "srs",
+            "design_generator": "design",
+            "testcase_generator": "testcase",
+            "requirement": "record",
+        }
+        artifact_type = _ARTIFACT_TYPE_MAP.get(selected)
+        if session_factory is not None and project_uuid is not None and artifact_type:
+            async with session_factory() as db:
+                from src.models.artifact import Artifact as ArtifactModel
+                count_row = await db.execute(
+                    select(sa_func.count()).where(
+                        ArtifactModel.project_id == project_uuid,
+                        ArtifactModel.artifact_type == artifact_type,
+                        ArtifactModel.lifecycle_status == "active",
+                    )
+                )
+                existing_count = count_row.scalar() or 0
+
+        is_regenerate = existing_count > 0
+        if is_regenerate:
+            title = f"기존 {existing_count}개의 산출물이 있습니다. {_with_particle(action_label)} 다시 진행할까요?"
+            description = (
+                f"승인하면 기존 {existing_count}개가 삭제되고 새로 생성됩니다. "
+                "이 작업은 되돌리기 어렵습니다."
+            )
+            approve_label = "재생성"
+            intro_text = f"이미 {existing_count}개의 결과가 있습니다. 다시 {_with_particle(action_label)} 진행할까요?"
+        else:
+            title = f"{_with_particle(action_label)} 진행할까요?"
+            description = (
+                f"{action_label} 작업을 실행합니다. "
+                "이 작업은 실행 후 되돌리기 어려울 수 있습니다."
+            )
+            approve_label = "실행"
+            intro_text = f"{_with_particle(action_label)} 진행하기 전에 확인이 필요합니다."
+
         confirm_data = ConfirmData(
             interrupt_id=interrupt_id,
-            title=f"{action_label}을(를) 진행할까요?",
-            description=(
-                f"요청하신 '{user_input[:100]}'에 대해 {action_label} 작업을 실행합니다. "
-                "이 작업은 실행 후 되돌리기 어려울 수 있습니다."
-            ),
-            severity="warning",
+            title=title,
+            description=description,
+            severity="danger" if is_regenerate else "warning",
+            context={"artifact_kind": selected, "existing_count": existing_count, "is_regenerate": is_regenerate},
             actions=ConfirmActions(
-                approve="실행",
+                approve=approve_label,
                 reject="취소",
             ),
         )
@@ -972,6 +1019,13 @@ async def run_chat(
             ),
         )
 
+        # interrupt 전에 짧은 설명 텍스트를 스트리밍 —
+        # Confirm 카드가 자연스럽게 등장하도록 에이전트가 먼저 상황을 설명.
+        # 첫 토큰 전 대기 → 스피너 노출, 토큰 분할 → 타이핑 효과.
+        await asyncio.sleep(0.6)
+        yield TokenEvent(data=TokenEventData(text=intro_text[:8]))
+        yield TokenEvent(data=TokenEventData(text=intro_text[8:]))
+        yield TokenEvent(data=TokenEventData(text="\n\n"))
         yield InterruptEvent(data=confirm_data)
         yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
         return
@@ -1216,6 +1270,38 @@ async def resume_chat(
         thread_id,
         response=response,
     )
+
+    # 재생성 승인 시: 기존 산출물 삭제 후 에이전트 실행.
+    # payload의 is_regenerate/context에서 기존 산출물 타입을 확인한다.
+    payload = saved.payload or {}
+    context = payload.get("context") or {}
+    if context.get("is_regenerate") and session_factory is not None:
+        _ARTIFACT_TYPE_MAP: dict[str, str] = {
+            "srs_generator": "srs",
+            "design_generator": "design",
+            "testcase_generator": "testcase",
+            "requirement": "record",
+        }
+        artifact_type = _ARTIFACT_TYPE_MAP.get(saved.selected_agent)
+        if artifact_type:
+            async with session_factory() as db:
+                from src.models.artifact import Artifact as ArtifactModel
+                result = await db.execute(
+                    select(ArtifactModel).where(
+                        ArtifactModel.project_id == project_uuid,
+                        ArtifactModel.artifact_type == artifact_type,
+                        ArtifactModel.lifecycle_status == "active",
+                    )
+                )
+                old_artifacts = result.scalars().all()
+                for a in old_artifacts:
+                    a.lifecycle_status = "deleted"
+                await db.commit()
+                if old_artifacts:
+                    logger.info(
+                        f"regenerate: deleted {len(old_artifacts)} existing "
+                        f"{artifact_type} artifacts for project {project_uuid}"
+                    )
 
     started = time.perf_counter()
     expose = getattr(agent.capability, "expose_as_tool", True)

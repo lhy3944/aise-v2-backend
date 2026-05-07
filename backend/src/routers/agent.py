@@ -98,6 +98,7 @@ async def _stream_chat(
     tool_call_order: list[str] = []
     sources_acc: list[dict[str, Any]] | None = None
     had_error = False
+    hitl_data_acc: dict[str, Any] | None = None
 
     try:
         async for event in run_chat(
@@ -130,26 +131,39 @@ async def _stream_chat(
                         entry["result"] = event.data.result
             elif etype == "sources":
                 sources_acc = [s.model_dump() for s in event.data.sources]
+            elif etype == "interrupt":
+                hitl_data_acc = event.data.model_dump()
+                logger.info(f"[hitl_persist] interrupt captured: id={hitl_data_acc.get('interrupt_id', '?')}")
             elif etype == "error":
                 had_error = True
             yield f"data: {event.model_dump_json()}\n\n"
     finally:
         content = "".join(assistant_parts)
         tool_calls_acc = [tool_calls_by_id[tcid] for tcid in tool_call_order]
-        # 빈 content + tool_call/sources/에러도 없으면 저장하지 않음
-        if content or tool_calls_acc or sources_acc or had_error:
+        logger.info(f"[hitl_persist] finally: content={bool(content)}, tc={len(tool_calls_acc)}, src={bool(sources_acc)}, err={had_error}, hitl={bool(hitl_data_acc)}")
+        if content or tool_calls_acc or sources_acc or had_error or hitl_data_acc:
             try:
                 async with session_factory() as db:
-                    tool_data = {"sources": sources_acc} if sources_acc else None
-                    await session_svc.add_message(
+                    tool_data: dict[str, Any] = {}
+                    if sources_acc:
+                        tool_data["sources"] = sources_acc
+                    if hitl_data_acc:
+                        tool_data["hitl_data"] = hitl_data_acc
+                    msg = await session_svc.add_message(
                         db,
                         session_id,
                         role="assistant",
                         content=content,
                         tool_calls=tool_calls_acc or None,
-                        tool_data=tool_data,
+                        tool_data=tool_data or None,
                     )
                     await db.commit()
+                    logger.info(
+                        "[hitl_persist] saved msg id=%s, tool_data keys=%s, hitl_id=%s",
+                        msg.id,
+                        list(tool_data.keys()) if tool_data else [],
+                        hitl_data_acc.get("interrupt_id") if hitl_data_acc else None,
+                    )
             except Exception:
                 logger.exception(
                     "Failed to persist assistant message for session %s", session_id
@@ -213,6 +227,7 @@ async def _stream_resume(
     tool_call_order: list[str] = []
     sources_acc: list[dict[str, Any]] | None = None
     had_error = False
+    hitl_data_acc: dict[str, Any] | None = None
 
     try:
         async for event in resume_chat(
@@ -240,30 +255,42 @@ async def _stream_resume(
                         entry["result"] = event.data.result
             elif etype == "sources":
                 sources_acc = [s.model_dump() for s in event.data.sources]
+            elif etype == "interrupt":
+                hitl_data_acc = event.data.model_dump()
+                logger.info(f"[hitl_persist] interrupt captured: id={hitl_data_acc.get('interrupt_id', '?')}")
             elif etype == "error":
                 had_error = True
             yield f"data: {event.model_dump_json()}\n\n"
     finally:
         content = "".join(assistant_parts)
         tool_calls_acc = [tool_calls_by_id[tcid] for tcid in tool_call_order]
-        if content or tool_calls_acc or sources_acc or had_error:
-            try:
-                async with session_factory() as db:
-                    tool_data = {"sources": sources_acc} if sources_acc else None
+        is_approved = body.response.get("approved") is True or body.response.get("action") == "approve"
+        try:
+            async with session_factory() as db:
+                # 원본 hitl 메시지에 responded 플래그 업데이트
+                await session_svc.mark_hitl_responded(
+                    db, session_uuid, thread_id, is_approved,
+                )
+                if content or tool_calls_acc or sources_acc or had_error or hitl_data_acc:
+                    tool_data: dict[str, Any] = {}
+                    if sources_acc:
+                        tool_data["sources"] = sources_acc
+                    if hitl_data_acc:
+                        tool_data["hitl_data"] = hitl_data_acc
                     await session_svc.add_message(
                         db,
                         session_uuid,
                         role="assistant",
                         content=content,
                         tool_calls=tool_calls_acc or None,
-                        tool_data=tool_data,
+                        tool_data=tool_data or None,
                     )
-                    await db.commit()
-            except Exception:
-                logger.exception(
-                    "Failed to persist resume assistant message for session %s",
-                    session_uuid,
-                )
+                await db.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist resume assistant message for session %s",
+                session_uuid,
+            )
 
 
 @router.post("/resume/{thread_id}")

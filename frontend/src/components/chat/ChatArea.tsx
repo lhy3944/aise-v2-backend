@@ -3,7 +3,6 @@
 import { ChatInput } from '@/components/chat/ChatInput';
 import { MessageRenderer } from '@/components/chat/MessageRenderer';
 import { PromptSuggestions } from '@/components/chat/PromptSuggestions';
-import { HITLPromptModal } from '@/components/hitl/HITLPromptModal';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatScroll } from '@/hooks/useChatScroll';
 import { useChatStream } from '@/hooks/useChatStream';
@@ -11,18 +10,13 @@ import { useTurnLayout } from '@/hooks/useTurnLayout';
 import { cn } from '@/lib/utils';
 import { usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
-import type { HitlData } from '@/types/agent-events';
 import { Spinner } from '@/components/ui/spinner';
-import { ArrowDown, CircleAlert } from 'lucide-react';
+import { ArrowDown, ShieldAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useMemo, useRef } from 'react';
 
 interface ChatAreaProps {
   sessionId?: string;
-}
-
-function getHitlTitle(data: HitlData) {
-  if (data.kind === 'confirm') return data.title;
-  return data.question;
 }
 
 export function ChatArea({ sessionId }: ChatAreaProps) {
@@ -37,11 +31,7 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
     sendMessage,
     stopStreaming,
     setInputValue,
-    pendingHitl,
-    queuedHitl,
-    openPendingHitl,
     resumeFromInterrupt,
-    cancelInterrupt,
   } = useChatStream(sessionId);
 
   const { scrollRef, setScrollEl, isAtBottom, scrollToBottom } =
@@ -49,11 +39,40 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
   const { pastMessages, currentTurn, currentTurnRef, answerAreaRef } =
     useTurnLayout(messages, scrollRef);
 
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
   const hasMessages = messages.length > 0;
   const showLoadingScreen = isLoadingMessages && !hasMessages && !isStreaming;
   const showEmptyScreen = !hasMessages && !isLoadingMessages;
   const maxW = fullWidthMode ? 'max-w-[896px]' : 'max-w-[768px]';
-  const hiddenHitl = pendingHitl ? null : queuedHitl;
+
+  // 미응답 HITL 카드가 있는 첫 번째 메시지의 interrupt_id
+  const pendingHitlInterruptId = useMemo(() => {
+    for (const msg of messages) {
+      if (msg.hitlData && msg.hitlResponded !== true) {
+        return msg.hitlData.interrupt_id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const handleHitlRespond = (
+    response: Record<string, unknown>,
+    threadId: string,
+    _sessionId: string,
+  ) => {
+    resumeFromInterrupt(response, threadId, sessionId);
+  };
+
+  const scrollToHitlCard = () => {
+    if (!pendingHitlInterruptId || !chatContainerRef.current) return;
+    const el = chatContainerRef.current.querySelector(
+      `[data-hitl-interrupt-id="${pendingHitlInterruptId}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
   // 첫 세션 응답 대기 중인지 판단 — 사용자/스트리밍 어시스턴트 쌍만 존재하고 아직 내용이 없을 때
   const isFirstSessionResponse =
@@ -94,23 +113,21 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
               >
                 <div className='flex justify-center py-4'>
                   <h1 className='text-fg-primary flex items-center justify-center text-4xl font-bold'>
-                    {['A', 'I', 'S', 'E', '\u00A0', '3', '.', '0'].map(
-                      (char, i) => (
-                        <motion.span
-                          key={i}
-                          className='inline-block'
-                          animate={{ y: [0, -6, 0] }}
-                          transition={{
-                            duration: 0.4,
-                            repeat: Infinity,
-                            repeatDelay: 5,
-                            delay: i * 0.1,
-                          }}
-                        >
-                          {char}
-                        </motion.span>
-                      ),
-                    )}
+                    {['A', 'I', 'S', 'E', ' ', '3', '.', '0'].map((char, i) => (
+                      <motion.span
+                        key={i}
+                        className='inline-block'
+                        animate={{ y: [0, -6, 0] }}
+                        transition={{
+                          duration: 0.4,
+                          repeat: Infinity,
+                          repeatDelay: 5,
+                          delay: i * 0.1,
+                        }}
+                      >
+                        {char}
+                      </motion.span>
+                    ))}
                   </h1>
                 </div>
 
@@ -145,6 +162,7 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1, transition: { duration: 0.3 } }}
               className='relative h-full'
+              ref={chatContainerRef}
             >
               <ScrollArea className='h-full' viewportRef={setScrollEl}>
                 <div
@@ -156,7 +174,8 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
                   {pastMessages.length > 0 && (
                     <MessageRenderer
                       messages={pastMessages}
-                      // 과거 메시지는 이미 답변이 이어진 상태 → Clarify/Suggestions 등 인터랙티브 블록 비활성화
+                      onHitlRespond={handleHitlRespond}
+                      isSessionStreaming={isStreaming}
                     />
                   )}
 
@@ -175,7 +194,9 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
                         <MessageRenderer
                           messages={[currentTurn.answer]}
                           onSendMessage={sendMessage}
+                          onHitlRespond={handleHitlRespond}
                           firstResponseSkeleton={isFirstSessionResponse}
+                          isSessionStreaming={isStreaming}
                         />
                       </div>
                     </section>
@@ -210,21 +231,27 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
           <div
             className={cn('mx-auto transition-[max-width] duration-300', maxW)}
           >
-            {hiddenHitl && (
-              <button
-                type='button'
-                onClick={() => openPendingHitl(hiddenHitl.threadId)}
-                className='border-line-primary bg-canvas-surface text-fg-secondary hover:text-fg-primary hover:bg-canvas-secondary mb-2 flex w-full min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-xs transition-colors'
-              >
-                <CircleAlert className='text-warning h-4 w-4 shrink-0' />
-                <span className='min-w-0 flex-1 truncate'>
-                  승인 대기 중 · {getHitlTitle(hiddenHitl.data)}
-                </span>
-                <span className='text-fg-primary shrink-0 font-medium'>
-                  열기
-                </span>
-              </button>
-            )}
+            <AnimatePresence>
+              {pendingHitlInterruptId && (
+                <motion.button
+                  key='hitl-banner'
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{
+                    opacity: 0,
+                    height: 0,
+                    transition: { duration: 0.15 },
+                  }}
+                  transition={{ duration: 0.2 }}
+                  onClick={scrollToHitlCard}
+                  className='border-line-primary bg-canvas-surface text-fg-secondary hover:text-fg-primary hover:bg-canvas-secondary mb-2 flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors overflow-hidden'
+                >
+                  <ShieldAlert className='size-4 shrink-0 text-warning' />
+                  <span className='flex-1 text-left'>승인 대기 중</span>
+                  <ArrowDown className='size-4 shrink-0 rotate-180' />
+                </motion.button>
+              )}
+            </AnimatePresence>
             <ChatInput
               onSubmit={sendMessage}
               onAction={sendMessage}
@@ -236,14 +263,6 @@ export function ChatArea({ sessionId }: ChatAreaProps) {
           </div>
         </div>
       )}
-
-      {/* === HITL 일시 정지 모달 (Phase 3 PR-3) === */}
-      <HITLPromptModal
-        open={pendingHitl !== null}
-        data={pendingHitl?.data ?? null}
-        onRespond={resumeFromInterrupt}
-        onDismiss={cancelInterrupt}
-      />
     </div>
   );
 }

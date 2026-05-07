@@ -143,6 +143,29 @@ async def add_message(
     return msg
 
 
+async def mark_hitl_responded(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    interrupt_id: str,
+    approved: bool,
+) -> None:
+    """세션 내 hitl_data가 일치하는 메시지에 responded/approved 플래그 설정."""
+    result = await db.execute(
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session_id)
+        .where(SessionMessage.tool_data["hitl_data"]["interrupt_id"].astext == interrupt_id)
+    )
+    msg = result.scalar_one_or_none()
+    if msg is None or msg.tool_data is None:
+        return
+    td = dict(msg.tool_data)
+    hitl = td.get("hitl_data")
+    if isinstance(hitl, dict):
+        hitl["responded"] = True
+        hitl["approved"] = approved
+    msg.tool_data = td
+
+
 async def get_history(db: AsyncSession, session_id: uuid.UUID, limit: int = 50) -> list[dict]:
     """세션 최근 N개 메시지를 history 형식으로 반환"""
     result = await db.execute(

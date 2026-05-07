@@ -217,11 +217,7 @@ async def generate_testcases(
                 artifact_type="testcase",
                 display_id=display_id,
                 content=payload,
-                # Phase E: 생성 시 즉시 v1 ArtifactVersion 을 만들어 clean 으로 두면
-                # SRS clean version 을 source 로 한 lineage 가 ArtifactVersion 에
-                # 기록될 수 있다. 사용자 수동 편집 -> dirty -> staged -> merge 흐름은
-                # 그대로 유지.
-                working_status="clean",
+                working_status="dirty",
                 lifecycle_status="active",
             )
             db.add(artifact)
@@ -249,6 +245,7 @@ async def generate_testcases(
             db.add(v1)
             await db.flush()
             artifact.current_version_id = v1.id
+            artifact.working_status = "clean"
 
             testcases.append(artifact)
             count_in_section += 1

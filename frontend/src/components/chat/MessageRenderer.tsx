@@ -2,6 +2,7 @@
 
 import { CitationAwareSpan } from '@/components/chat/CitationAwareSpan';
 import { CitationSourcesContext } from '@/components/chat/CitationContext';
+import { ConfirmCard } from '@/components/chat/ConfirmCard';
 import { ExtractedRequirements } from '@/components/chat/ExtractedRequirements';
 import { PlanProgress } from '@/components/chat/PlanProgress';
 import {
@@ -22,6 +23,7 @@ import { WaveDots } from '@/components/ui/ai-elements/wave-dots';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
+import type { ConfirmData } from '@/types/agent-events';
 import type { ChatMessage } from '@/stores/chat-store';
 import { memo, useMemo } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
@@ -29,8 +31,12 @@ import { Shimmer } from '../ui/ai-elements/shimmer';
 interface MessageRendererProps {
   messages: ChatMessage[];
   onSendMessage?: (text: string) => void;
+  /** HITL 인라인 카드 응답 콜백 */
+  onHitlRespond?: (response: Record<string, unknown>, threadId: string, sessionId: string) => void;
   /** 첫 세션 응답 대기 중일 때 skeleton UI 표시 여부 */
   firstResponseSkeleton?: boolean;
+  /** 현재 세션 스트리밍 중 — 산출물 생성 pending 표시용 */
+  isSessionStreaming?: boolean;
 }
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -132,7 +138,9 @@ interface MessageItemProps {
   message: ChatMessage;
   isLast: boolean;
   onSendMessage?: (text: string) => void;
+  onHitlRespond?: (response: Record<string, unknown>, threadId: string, sessionId: string) => void;
   firstResponseSkeleton?: boolean;
+  isSessionStreaming?: boolean;
 }
 
 const MessageItem = memo(
@@ -140,7 +148,9 @@ const MessageItem = memo(
     message,
     isLast,
     onSendMessage,
+    onHitlRespond,
     firstResponseSkeleton,
+    isSessionStreaming,
   }: MessageItemProps) {
     const isUser = message.role === 'user';
     const showCursor = !isUser && message.status === 'streaming';
@@ -197,10 +207,7 @@ const MessageItem = memo(
     const displayContent = parsed.cleanContent;
     // message.sources가 undefined일 때 매 렌더마다 새 배열이 만들어져
     // 아래 useMemo deps가 흔들리는 것을 방지.
-    const sources = useMemo(
-      () => message.sources ?? [],
-      [message.sources],
-    );
+    const sources = useMemo(() => message.sources ?? [], [message.sources]);
 
     // sources에 존재하는 ref 번호 집합 — rehype 플러그인이 이 집합에
     // 포함된 [N]만 클릭 가능한 span으로 변환.
@@ -221,7 +228,8 @@ const MessageItem = memo(
     }, [displayContent, allowedRefs]);
 
     const rehypePlugins = useMemo(
-      () => (allowedRefs.size > 0 ? [createCitationPlugin(allowedRefs)] : undefined),
+      () =>
+        allowedRefs.size > 0 ? [createCitationPlugin(allowedRefs)] : undefined,
       [allowedRefs],
     );
 
@@ -234,7 +242,17 @@ const MessageItem = memo(
       <Message from={message.role}>
         <MessageContent from={message.role}>
           {isUser ? (
-            <MessageBubble>{message.content}</MessageBubble>
+            <div className='group/bubble'>
+              <MessageBubble className='relative px-8'>
+                {message.content}
+                <div className='absolute top-1 right-1 opacity-0 transition-opacity group-hover/bubble:opacity-100'>
+                  <MessageActions
+                    content={message.content}
+                    className='opacity-100!'
+                  />
+                </div>
+              </MessageBubble>
+            </div>
           ) : (
             <>
               {/* 응답 대기 인디케이터 — 토큰/툴콜 어느 것도 아직 도착 전일
@@ -244,18 +262,18 @@ const MessageItem = memo(
                 !message.content &&
                 (!message.toolCalls || message.toolCalls.length === 0) && (
                   <>
-                    <div className="mb-3 flex items-center gap-2">
-                      <Spinner variant="ring" />
-                      <Shimmer className="text-sm" duration={1.5} spread={1.5}>
+                    <div className='mb-3 flex items-center gap-2'>
+                      <Spinner variant='ring' />
+                      <Shimmer className='text-sm' duration={1.5} spread={1.5}>
                         응답을 생성하고 있습니다
                       </Shimmer>
                       <WaveDots />
                     </div>
                     {firstResponseSkeleton && (
-                      <div className="flex w-full flex-col gap-2">
-                        <Skeleton className="h-4 w-[85%]" />
-                        <Skeleton className="h-4 w-[70%]" />
-                        <Skeleton className="h-4 w-[55%]" />
+                      <div className='flex w-full flex-col gap-2'>
+                        <Skeleton className='h-4 w-[85%]' />
+                        <Skeleton className='h-4 w-[70%]' />
+                        <Skeleton className='h-4 w-[55%]' />
                       </div>
                     )}
                   </>
@@ -274,7 +292,7 @@ const MessageItem = memo(
 
               {/* Tool Calls — SSE 도착 순서상 token보다 먼저 오므로 상단 */}
               {message.toolCalls && message.toolCalls.length > 0 && (
-                <div className="w-full min-w-0">
+                <div className='w-full min-w-0'>
                   {message.toolCalls.map((tc, i) => (
                     <ToolCall
                       key={`${tc.name}-${i}`}
@@ -300,13 +318,13 @@ const MessageItem = memo(
                   스트리밍 완료 후에만 렌더 → 답변이 먼저 타이핑되고
                   출처 리스트는 뒤따라 나타남. */}
               {displayContent && (
-                <div className="w-full min-w-0">
+                <div className='w-full min-w-0'>
                   <CitationSourcesContext.Provider value={sources}>
                     <MessageResponse
                       streaming={
                         message.status === 'streaming' && !!displayContent
                       }
-                      className="w-full"
+                      className='w-full'
                       rehypePlugins={rehypePlugins}
                       components={mdComponents}
                     >
@@ -318,7 +336,7 @@ const MessageItem = memo(
 
               {/* 출처 링크 — 스트리밍 완료 후, 본문에 실제 인용된 문서만 표시 */}
               {!showCursor && sources.length > 0 && usedRefs.size > 0 && (
-                <div className="w-full min-w-0">
+                <div className='w-full min-w-0'>
                   <SourceReference sources={sources} usedRefs={usedRefs} />
                 </div>
               )}
@@ -335,8 +353,8 @@ const MessageItem = memo(
 
               {/* 스트리밍 중 구조화 블록 생성 인디케이터 */}
               {parsed.hasIncompleteBlock && (
-                <div className="border-line-primary w-full bg-canvas-surface flex items-center gap-1 rounded-lg border px-4 py-3">
-                  <span className="text-fg-muted text-xs">
+                <div className='border-line-primary w-full bg-canvas-surface flex items-center gap-1 rounded-lg border px-4 py-3'>
+                  <span className='text-fg-muted text-xs'>
                     처리중입니다. 잠시만 기다려주세요
                   </span>
                   <WaveDots />
@@ -353,10 +371,25 @@ const MessageItem = memo(
 
               {/* SUGGESTIONS 추천 질문 — 마지막 메시지에서만 표시 */}
               {isLast && parsed.suggestions.length > 0 && onSendMessage && (
-                <div className="w-full min-w-0">
+                <div className='w-full min-w-0'>
                   <SuggestionChips
                     suggestions={parsed.suggestions}
                     onSelect={onSendMessage}
+                  />
+                </div>
+              )}
+
+              {/* HITL Confirm 인라인 카드 */}
+              {message.hitlData?.kind === 'confirm' && onHitlRespond && (
+                <div className='w-full min-w-0'>
+                  <ConfirmCard
+                    data={message.hitlData as ConfirmData}
+                    onRespond={(response) =>
+                      onHitlRespond(response, message.hitlData!.interrupt_id, message.id)
+                    }
+                    responded={message.hitlResponded}
+                    approved={message.hitlApproved}
+                    artifactPending={!!(message.hitlResponded && message.hitlApproved && isSessionStreaming)}
                   />
                 </div>
               )}
@@ -375,13 +408,17 @@ const MessageItem = memo(
     prev.message === next.message &&
     prev.isLast === next.isLast &&
     prev.onSendMessage === next.onSendMessage &&
-    prev.firstResponseSkeleton === next.firstResponseSkeleton,
+    prev.onHitlRespond === next.onHitlRespond &&
+    prev.firstResponseSkeleton === next.firstResponseSkeleton &&
+    prev.isSessionStreaming === next.isSessionStreaming,
 );
 
 export const MessageRenderer = memo(function MessageRenderer({
   messages,
   onSendMessage,
+  onHitlRespond,
   firstResponseSkeleton,
+  isSessionStreaming,
 }: MessageRendererProps) {
   if (messages.length === 0) return null;
 
@@ -400,9 +437,9 @@ export const MessageRenderer = memo(function MessageRenderer({
   }
 
   return (
-    <div className="flex flex-col gap-12">
+    <div className='flex flex-col gap-12'>
       {turns.map((turn) => (
-        <div key={turn[0].id} className="flex flex-col gap-5">
+        <div key={turn[0].id} className='flex flex-col gap-5'>
           {turn.map((msg) => {
             const msgIsLast = messages[lastIndex] === msg;
             return (
@@ -411,9 +448,11 @@ export const MessageRenderer = memo(function MessageRenderer({
                 message={msg}
                 isLast={msgIsLast}
                 onSendMessage={onSendMessage}
+                onHitlRespond={onHitlRespond}
                 firstResponseSkeleton={
                   msgIsLast ? firstResponseSkeleton : false
                 }
+                isSessionStreaming={isSessionStreaming}
               />
             );
           })}

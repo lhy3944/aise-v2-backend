@@ -9,14 +9,12 @@ import { streamExtractArtifactRecords } from '@/services/artifact-record-service
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
+import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
-import {
-  selectLatestPendingHitlForSession,
-  useHitlStore,
-} from '@/stores/hitl-store';
-import type { HitlData, SourceRef } from '@/types/agent-events';
+import { useHitlStore } from '@/stores/hitl-store';
+import type { ArtifactKind, HitlData, SourceRef } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
@@ -158,12 +156,8 @@ export function useChatStream(sessionId?: string) {
       : null;
     return active?.sessionId === activeSessionId ? active : null;
   });
-  const queuedHitl = useHitlStore((s) =>
-    selectLatestPendingHitlForSession(s, activeSessionId),
-  );
   const upsertHitl = useHitlStore((s) => s.upsert);
-  const dismissActiveHitl = useHitlStore((s) => s.dismissActive);
-  const openHitlThread = useHitlStore((s) => s.openThread);
+
   const removeHitl = useHitlStore((s) => s.remove);
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(
     () =>
@@ -224,11 +218,29 @@ export function useChatStream(sessionId?: string) {
             td && 'sources' in td
               ? (td.sources as SourceRef[] | null | undefined)
               : undefined;
+          const hitlDataField =
+            td && 'hitl_data' in td && td.hitl_data != null
+              ? (td.hitl_data as HitlData)
+              : undefined;
           const tdEntries = td
-            ? Object.entries(td).filter(([k]) => k !== 'sources')
+            ? Object.entries(td).filter(([k]) => k !== 'sources' && k !== 'hitl_data')
             : [];
           const tdRest = Object.fromEntries(tdEntries);
           const hasOtherToolData = tdEntries.length > 0;
+
+          // HITL responded/approved: 백엔드 hitl_data에 포함된 플래그.
+          // null/undefined → 아직 응답하지 않음 → hitlResponded=false (카드 표시)
+          const hitlMeta = hitlDataField
+            ? (hitlDataField as unknown as Record<string, unknown>)
+            : null;
+          const hitlResponded =
+            hitlMeta != null
+              ? hitlMeta.responded === true
+              : undefined;
+          const hitlApproved =
+            hitlMeta != null
+              ? (hitlMeta.approved as boolean | null)
+              : undefined;
 
           return {
             id: m.id,
@@ -256,6 +268,9 @@ export function useChatStream(sessionId?: string) {
               ? { type: 'requirements' as const, data: tdRest }
               : undefined,
             sources: sourcesField ?? undefined,
+            hitlData: hitlDataField,
+            hitlResponded,
+            hitlApproved,
             createdAt: m.created_at,
           };
         });
@@ -408,6 +423,7 @@ export function useChatStream(sessionId?: string) {
               }
             : tc,
         ),
+        hitlData: data,
       }));
     },
     [],
@@ -569,6 +585,18 @@ export function useChatStream(sessionId?: string) {
         bumpRefresh();
       }
 
+      // 생성 에이전트 완료 → 해당 artifact 탭 즉시 갱신
+      const agentToKind: Record<string, ArtifactKind> = {
+        requirement: 'record',
+        srs_generator: 'srs',
+        design_generator: 'design',
+        testcase_generator: 'testcase',
+      };
+      const kind = agentToKind[name];
+      if (kind && status !== 'error') {
+        useArtifactRefreshStore.getState().bump(kind);
+      }
+
       // SSE `tool_result.status`를 우선. legacy agent_svc 결과 모양
       // (`result.success: false`)은 backward-compat를 위해 OR 결합.
       const isError = status === 'error' || result.success === false;
@@ -665,13 +693,26 @@ export function useChatStream(sessionId?: string) {
   );
 
   const resumeFromInterrupt = useCallback(
-    (response: Record<string, unknown>) => {
-      if (!pendingHitl) return;
-      const { threadId, sessionId: hitlSessionId } = pendingHitl;
+    (response: Record<string, unknown>, hitlThreadId?: string, hitlSessionId?: string) => {
+      const threadId = hitlThreadId ?? pendingHitl?.threadId;
+      const sid = hitlSessionId ?? pendingHitl?.sessionId;
+      if (!threadId || !sid) return;
+
       removeHitl(threadId);
 
-      // resume 응답은 새 assistant 메시지 turn 으로 표시 — interrupt 직전
-      // 메시지(승인 요청)는 그대로 두고 결과(승인됨/거부됨)를 새 카드로 분리.
+      // 인라인 카드에서 응답한 경우: interrupt_id로 특정 메시지를 찾아 완료 상태로 업데이트
+      const isApproved = response.action === 'approve';
+      const updateByInterruptId = useChatStore.getState().updateMessageByInterruptId;
+      updateByInterruptId(sid, threadId, (msg) => ({
+        ...msg,
+        hitlResponded: true,
+        hitlApproved: isApproved,
+      }));
+
+      // 거부 시에는 resume 스트림 없이 종료
+      if (!isApproved) return;
+
+      // 승인 시: resume 응답은 새 assistant 메시지 turn 으로 표시
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'assistant',
@@ -679,15 +720,15 @@ export function useChatStream(sessionId?: string) {
         status: 'streaming',
         createdAt: new Date().toISOString(),
       };
-      addMessage(hitlSessionId, assistantMsg);
-      setSessionStreaming(hitlSessionId, true);
-      clearBufferedTokens(hitlSessionId);
+      addMessage(sid, assistantMsg);
+      setSessionStreaming(sid, true);
+      clearBufferedTokens(sid);
 
       const abort = streamAgentResume(
         { thread_id: threadId, response },
-        buildStreamCallbacks(hitlSessionId),
+        buildStreamCallbacks(sid),
       );
-      abortControllersRef.current.set(hitlSessionId, abort);
+      abortControllersRef.current.set(sid, abort);
     },
     [
       pendingHitl,
@@ -697,17 +738,6 @@ export function useChatStream(sessionId?: string) {
       clearBufferedTokens,
       buildStreamCallbacks,
     ],
-  );
-
-  const cancelInterrupt = useCallback(() => {
-    dismissActiveHitl();
-  }, [dismissActiveHitl]);
-
-  const openPendingHitl = useCallback(
-    (threadId: string) => {
-      openHitlThread(threadId);
-    },
-    [openHitlThread],
   );
 
   const sendMessage = useCallback(
@@ -808,10 +838,6 @@ export function useChatStream(sessionId?: string) {
     sendMessage,
     stopStreaming,
     setInputValue,
-    pendingHitl,
-    queuedHitl,
-    openPendingHitl,
     resumeFromInterrupt,
-    cancelInterrupt,
   };
 }

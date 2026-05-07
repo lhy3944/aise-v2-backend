@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { PlanStep, SourceRef } from '@/types/agent-events';
+import type { HitlData, PlanStep, SourceRef } from '@/types/agent-events';
 
 export interface ToolCallData {
   name: string;
@@ -34,6 +34,12 @@ export interface ChatMessage {
   plan?: PlanStep[];
   /** plan 내 현재 실행 중 step 인덱스 (0-based). */
   currentPlanStep?: number;
+  /** HITL interrupt 데이터 — 인라인 카드로 렌더링. */
+  hitlData?: HitlData | null;
+  /** HITL 카드 응답 완료 여부 */
+  hitlResponded?: boolean;
+  /** HITL 카드 승인 여부 (true=승인, false=거부) */
+  hitlApproved?: boolean | null;
   createdAt: string;
 }
 
@@ -53,6 +59,7 @@ interface ChatState {
   addMessage: (sessionId: string, message: ChatMessage) => void;
   appendToLastAssistant: (sessionId: string, token: string) => void;
   updateLastAssistantMessage: (sessionId: string, updater: (msg: ChatMessage) => ChatMessage) => void;
+  updateMessageByInterruptId: (sessionId: string, interruptId: string, updater: (msg: ChatMessage) => ChatMessage) => void;
   clearSession: (sessionId: string) => void;
   getMessages: (sessionId: string) => ChatMessage[];
 
@@ -111,6 +118,19 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         msgs[msgs.length - 1] = updater(last);
       }
       return { sessionMessages: { ...s.sessionMessages, [sessionId]: msgs } };
+    }),
+
+  updateMessageByInterruptId: (sessionId, interruptId, updater) =>
+    set((s) => {
+      const msgs = [...(s.sessionMessages[sessionId] ?? [])];
+      const idx = msgs.findIndex(
+        (m) => m.hitlData?.interrupt_id === interruptId,
+      );
+      if (idx !== -1) {
+        msgs[idx] = updater(msgs[idx]);
+        return { sessionMessages: { ...s.sessionMessages, [sessionId]: msgs } };
+      }
+      return s;
     }),
 
   clearSession: (sessionId) =>

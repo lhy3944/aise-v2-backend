@@ -1,31 +1,59 @@
 'use client';
 
-import { FieldDiffRow } from '@/components/artifacts/workspace/diff/FieldDiffRow';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import dynamic from 'next/dynamic';
+
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { artifactService } from '@/services/artifact-service';
 import type { DiffFieldEntry, DiffResult } from '@/types/project';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+const MonacoDiffEditor = dynamic(
+  () => import('@monaco-editor/react').then((m) => m.DiffEditor),
+  {
+    ssr: false,
+    loading: () => undefined,
+  },
+);
+
+const TEXT_FIELD_PATTERNS = ['content', 'text'];
+
+function isTextField(path: string): boolean {
+  return TEXT_FIELD_PATTERNS.some(
+    (p) => path === p || path.startsWith(p + '.'),
+  );
+}
+
 interface DiffViewerProps {
   headVersionId: string;
   baseVersionId?: string | null;
-  /** 변경 없음 항목 기본 숨김 여부 (기본 true) */
-  hideUnchanged?: boolean;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export function DiffViewer({
   headVersionId,
   baseVersionId,
-  hideUnchanged = true,
+  onLoadingChange,
 }: DiffViewerProps) {
   const [data, setData] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showUnchanged, setShowUnchanged] = useState(!hideUnchanged);
+  const [splitView, setSplitView] = useState(true);
+  const [showMeta, setShowMeta] = useState(false);
+
+  // splitView + versionId 조합으로 key 생성 — 뷰 전환/버전 전환 시 리마운트
+  const [editorKey, setEditorKey] = useState(
+    `${headVersionId}::${baseVersionId ?? ''}::true`,
+  );
 
   const requestKey = `${headVersionId}::${baseVersionId ?? ''}`;
   const keyRef = useRef<string>('');
+  const onLoadingChangeRef = useRef(onLoadingChange);
+
+  useEffect(() => {
+    onLoadingChangeRef.current = onLoadingChange;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +62,7 @@ export function DiffViewer({
       if (cancelled) return;
       setLoading(true);
       setError(null);
-      setData(null);
+      onLoadingChangeRef.current?.(true);
     });
 
     artifactService
@@ -43,11 +71,14 @@ export function DiffViewer({
         if (cancelled || keyRef.current !== requestKey) return;
         setData(res);
         setLoading(false);
+        setEditorKey(`${headVersionId}::${baseVersionId ?? ''}::${splitView}`);
+        onLoadingChangeRef.current?.(false);
       })
       .catch((err: unknown) => {
         if (cancelled || keyRef.current !== requestKey) return;
         setError(err instanceof Error ? err.message : 'diff 불러오기 실패');
         setLoading(false);
+        onLoadingChangeRef.current?.(false);
       });
 
     return () => {
@@ -55,132 +86,195 @@ export function DiffViewer({
     };
   }, [headVersionId, baseVersionId, requestKey]);
 
-  const { visibleEntries, counts } = useMemo(() => {
+  const { oldText, newText, metaEntries, metaChangedCount } = useMemo(() => {
     const entries = data?.entries ?? [];
-    const counts = {
-      added: 0,
-      removed: 0,
-      modified: 0,
-      unchanged: 0,
-    };
-    for (const e of entries) counts[e.kind] += 1;
-    const visible = showUnchanged
-      ? entries
-      : entries.filter((e) => e.kind !== 'unchanged');
-    return { visibleEntries: visible, counts };
-  }, [data, showUnchanged]);
+    let oldText = '';
+    let newText = '';
+    const metaEntries: DiffFieldEntry[] = [];
+    let metaChangedCount = 0;
 
-  if (loading) {
-    return (
-      <div className='flex h-40 items-center justify-center'>
-        <Spinner size='size-5' className='text-fg-muted' />
-      </div>
-    );
-  }
+    for (const e of entries) {
+      if (isTextField(e.field_path)) {
+        if (typeof e.before === 'string') oldText = e.before;
+        if (typeof e.after === 'string') newText = e.after;
+      } else if (e.kind !== 'unchanged') {
+        metaEntries.push(e);
+        metaChangedCount += 1;
+      }
+    }
+
+    return { oldText, newText, metaEntries, metaChangedCount };
+  }, [data]);
+
+  const isDark =
+    typeof document !== 'undefined' &&
+    document.documentElement.classList.contains('dark');
+
+  const hasTextChange = oldText !== newText;
+
+  const handleToggleView = () => {
+    const next = !splitView;
+    setSplitView(next);
+    // 데이터가 이미 있으면 즉시 key 업데이트해서 리마운트
+    if (!loading) {
+      setEditorKey(`${headVersionId}::${baseVersionId ?? ''}::${next}`);
+    }
+  };
 
   if (error) {
     return (
-      <div className='border-destructive/40 bg-destructive/5 text-destructive rounded-md border p-3 text-xs'>
+      <div className='text-destructive rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs'>
         {error}
       </div>
     );
   }
 
-  if (!data || data.entries.length === 0) {
-    return (
-      <p className='text-fg-muted p-3 text-center text-xs'>
-        비교할 변경이 없습니다.
-      </p>
-    );
-  }
-
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
-      <DiffHeader
-        result={data}
-        counts={counts}
-        showUnchanged={showUnchanged}
-        onToggleUnchanged={() => setShowUnchanged((v) => !v)}
-      />
-      <ScrollArea className='min-h-0 flex-1'>
-        <div className='flex flex-col gap-2 pr-2'>
-          {visibleEntries.length === 0 ? (
-            <p className='text-fg-muted py-4 text-center text-xs'>
-              표시할 변경이 없습니다. 변경 없음 항목을 표시해 보세요.
-            </p>
-          ) : (
-            visibleEntries.map((entry) => (
-              <FieldDiffRow key={entry.field_path} entry={entry} />
-            ))
-          )}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-
-interface DiffHeaderProps {
-  result: DiffResult;
-  counts: Record<DiffFieldEntry['kind'], number>;
-  showUnchanged: boolean;
-  onToggleUnchanged: () => void;
-}
-
-function DiffHeader({ result, counts, showUnchanged, onToggleUnchanged }: DiffHeaderProps) {
-  const hasUnchanged = counts.unchanged > 0;
-  return (
-    <div className='border-line-primary bg-canvas-primary/40 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border px-2.5 py-2'>
-      <VersionChip label='base' value={result.base_version_id} />
-      <span className='text-fg-muted text-[10px]'>→</span>
-      <VersionChip label='head' value={result.head_version_id} />
-      <div className='ml-auto flex items-center gap-2 text-[11px]'>
-        <CountChip tone='emerald' count={counts.added} label='추가' />
-        <CountChip tone='red' count={counts.removed} label='삭제' />
-        <CountChip tone='amber' count={counts.modified} label='변경' />
-        {hasUnchanged && (
-          <button
-            type='button'
-            onClick={onToggleUnchanged}
-            className='text-fg-muted hover:text-fg-secondary underline-offset-2 hover:underline'
+      {/* 툴바 */}
+      <div className='text-fg-muted flex shrink-0 items-center gap-3 text-[11px]'>
+        {hasTextChange && (
+          <Button variant={'outline'} size={'xs'} onClick={handleToggleView}>
+            {splitView ? '인라인 뷰' : '나란히 보기'}
+          </Button>
+        )}
+        {!loading && metaChangedCount > 0 && (
+          <Button
+            variant={'outline'}
+            size={'xs'}
+            onClick={() => setShowMeta((v) => !v)}
           >
-            {showUnchanged
-              ? `변경 없음 숨기기 (${counts.unchanged})`
-              : `변경 없음 표시 (${counts.unchanged})`}
-          </button>
+            {showMeta
+              ? `메타데이터 숨기기 (${metaChangedCount})`
+              : `메타데이터 변경 보기 (${metaChangedCount})`}
+          </Button>
         )}
       </div>
+
+      {/* 에디터 */}
+      <div className='border-line-primary relative min-h-0 flex-1 overflow-hidden rounded-lg border'>
+        {loading && (
+          <div className='absolute inset-0 z-10 flex items-center justify-center bg-canvas-primary/70'>
+            <Spinner size='size-5' className='text-fg-muted' />
+          </div>
+        )}
+        {!loading && !hasTextChange && (oldText || newText) && (
+          <div className='absolute inset-0 z-10 flex items-center justify-center'>
+            <p className='text-fg-muted text-xs'>텍스트 변경 없음</p>
+          </div>
+        )}
+        <MonacoDiffEditor
+          key={editorKey}
+          original={oldText}
+          modified={newText}
+          language='plaintext'
+          theme={isDark ? 'vs-dark' : 'light'}
+          loading={false}
+          options={{
+            readOnly: true,
+            renderSideBySide: hasTextChange ? splitView : false,
+            renderSideBySideInlineBreakpoint: 0,
+            renderOverviewRuler: hasTextChange,
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            lineNumbers: splitView ? 'on' : 'off',
+            folding: false,
+            minimap: { enabled: false },
+            overviewRulerBorder: false,
+            hideUnchangedRegions: { enabled: hasTextChange },
+            scrollbar: {
+              verticalScrollbarSize: 6,
+              horizontalScrollbarSize: 6,
+            },
+            fontSize: 12,
+            lineHeight: 22,
+            padding: { top: 8 },
+            diffCodeLens: false,
+            renderMarginRevertIcon: false,
+          }}
+        />
+      </div>
+
+      {/* 메타데이터 변경 */}
+      {showMeta && metaEntries.length > 0 && (
+        <div className='border-line-primary shrink-0 rounded-md border p-3'>
+          <div className='text-fg-muted mb-2 text-[11px] font-medium'>
+            메타데이터 변경
+          </div>
+          <div className='flex flex-col gap-1.5'>
+            {metaEntries.map((entry) => (
+              <MetaDiffRow key={entry.field_path} entry={entry} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function VersionChip({ label, value }: { label: string; value: string | null }) {
+const META_LABELS: Record<string, string> = {
+  section_id: '섹션',
+  source_document_id: '출처 문서',
+  source_location: '출처 위치',
+  confidence_score: '신뢰도',
+  is_auto_extracted: '추출 방식',
+  order_index: '정렬 순서',
+  metadata: '메타데이터',
+};
+
+function MetaDiffRow({ entry }: { entry: DiffFieldEntry }) {
+  const label = META_LABELS[entry.field_path] ?? entry.field_path;
+  const kindLabel =
+    entry.kind === 'added'
+      ? '추가'
+      : entry.kind === 'removed'
+        ? '삭제'
+        : entry.kind === 'modified'
+          ? '변경'
+          : '';
+  const kindCls =
+    entry.kind === 'added'
+      ? 'text-emerald-600'
+      : entry.kind === 'removed'
+        ? 'text-red-500'
+        : 'text-amber-600';
+
   return (
-    <span className='text-fg-muted inline-flex items-center gap-1 font-mono text-[11px]'>
-      <span className='uppercase opacity-70'>{label}</span>
-      <span className='text-fg-secondary'>{value ? value.slice(0, 8) : '(없음)'}</span>
-    </span>
+    <div className='text-fg-muted flex items-center gap-2 text-[11px]'>
+      <span className='text-fg-secondary font-medium'>{label}</span>
+      <span className={cn('text-[10px] font-medium uppercase', kindCls)}>
+        {kindLabel}
+      </span>
+      {entry.kind === 'modified' && (
+        <span className='flex items-center gap-1'>
+          <span className='text-red-500/80 line-through'>
+            {formatMetaValue(entry.before)}
+          </span>
+          <span className='text-fg-muted'>&rarr;</span>
+          <span className='text-emerald-600'>
+            {formatMetaValue(entry.after)}
+          </span>
+        </span>
+      )}
+      {entry.kind === 'added' && (
+        <span className='text-emerald-600'>{formatMetaValue(entry.after)}</span>
+      )}
+      {entry.kind === 'removed' && (
+        <span className='text-red-500/80 line-through'>
+          {formatMetaValue(entry.before)}
+        </span>
+      )}
+    </div>
   );
 }
 
-function CountChip({
-  tone,
-  count,
-  label,
-}: {
-  tone: 'emerald' | 'red' | 'amber';
-  count: number;
-  label: string;
-}) {
-  const toneCls =
-    tone === 'emerald'
-      ? 'text-emerald-600'
-      : tone === 'red'
-        ? 'text-red-500'
-        : 'text-amber-600';
-  return (
-    <span className={toneCls}>
-      <span className='font-semibold tabular-nums'>{count}</span>
-      <span className='text-fg-muted ml-1'>{label}</span>
-    </span>
-  );
+function formatMetaValue(v: unknown): string {
+  if (v === null || v === undefined) return '(빈 값)';
+  if (typeof v === 'string') return v.length > 0 ? v : '(빈 문자열)';
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }

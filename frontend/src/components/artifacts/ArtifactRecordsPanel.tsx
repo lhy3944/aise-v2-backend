@@ -1,14 +1,14 @@
 'use client';
 
 import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
-import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import { ManualRecordModal } from '@/components/artifacts/ManualRecordModal';
-import { RecordVersionsModal } from '@/components/artifacts/workspace/RecordVersionsModal';
+import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import {
   ArtifactRecordEditor,
   ArtifactRecordEditorActions,
   type ArtifactRecordEditorValues,
 } from '@/components/artifacts/workspace/editor/ArtifactRecordEditor';
+import { RecordVersionsModal } from '@/components/artifacts/workspace/RecordVersionsModal';
 import { WorkspaceStatusBar } from '@/components/artifacts/workspace/WorkspaceStatusBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,20 +35,13 @@ import type {
 } from '@/types/project';
 import {
   Check,
-  CheckCircle2,
   Database,
-  FileText,
   Filter,
-  History,
   MessageSquareText,
-  MinusCircle,
   MoreHorizontal,
   PenLine,
-  Pencil,
   Plus,
-  RotateCcw,
   Sparkles,
-  Trash2,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -57,13 +50,25 @@ interface ArtifactRecordsPanelProps {
   projectId: string;
 }
 
-const STATUS_CONFIG: Record<
+const CHIP_BASE =
+  'inline-flex items-center justify-center rounded border border-line-primary py-1 px-1 text-[11px] font-medium leading-none';
+
+const STATUS_CHIP: Record<
   ArtifactRecordStatus,
-  { icon: typeof CheckCircle2; label: string; color: string }
+  { label: string; className: string }
 > = {
-  draft: { icon: FileText, label: '초안', color: 'text-gray-500' },
-  approved: { icon: CheckCircle2, label: '승인', color: 'text-green-600' },
-  excluded: { icon: MinusCircle, label: '제외', color: 'text-red-500' },
+  draft: {
+    label: '초안',
+    className: 'bg-secondary text-fg-muted',
+  },
+  approved: {
+    label: '승인',
+    className: 'text-green-700 dark:text-green-400',
+  },
+  excluded: {
+    label: '제외',
+    className: 'text-red-700 dark:text-red-400',
+  },
 };
 
 function ConfidenceIndicator({ score }: { score: number | null }) {
@@ -253,9 +258,9 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
   const handleShowVersions = useCallback(
     (record: ArtifactRecord) => {
       overlay.modal({
-        title: `버전 히스토리 — ${record.display_id}`,
-        description: '이 레코드의 모든 머지된 버전과 변경 내역(diff) 입니다.',
-        size: 'lg',
+        title: `버전 히스토리 ${record.display_id}`,
+        description: '이 레코드의 버전과 변경 내역 입니다.',
+        size: '2xl',
         content: (
           <RecordVersionsModal
             projectId={projectId}
@@ -309,7 +314,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
       overlay.modal({
         title: '레코드 편집',
         description:
-          '저장해도 서버에는 아직 반영되지 않습니다 — Unstaged 드래프트로 누적됩니다.',
+          '저장해도 서버에는 아직 반영되지 않습니다 (Unstaged 드래프트로 누적됩니다)',
         size: 'md',
         content: (
           <ArtifactRecordEditor
@@ -653,8 +658,6 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
               </h4>
               <div className='flex flex-col gap-1.5'>
                 {sectionRecords.map((record) => {
-                  const statusCfg = STATUS_CONFIG[record.status];
-                  const StatusIcon = statusCfg.icon;
                   const draft = unstagedArtifacts[record.artifact_id];
                   const draftText =
                     draft && typeof draft.content?.text === 'string'
@@ -671,17 +674,21 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                     >
                       {/* Top row: ID + confidence + status + menu */}
                       <div className='text-fg-muted flex items-center gap-2 text-[11px]'>
-                        <span className='text-fg-secondary font-mono font-medium'>
+                        <span className='text-fg-secondary font-medium'>
                           {record.display_id}
                         </span>
                         {draft && (
-                          <span className='text-accent-primary inline-flex items-center gap-1 font-medium'>
-                            <span className='bg-accent-primary size-1.5 rounded-full' />
+                          <span
+                            className={cn(
+                              CHIP_BASE,
+                              'text-violet-700 dark:text-violet-400',
+                            )}
+                          >
                             unstaged
                           </span>
                         )}
                         {record.is_auto_extracted === false && (
-                          <span className='border-line-primary text-fg-muted inline-flex items-center rounded-sm border px-1 py-px text-[10px]'>
+                          <span className={cn(CHIP_BASE, 'text-fg-muted')}>
                             수동 입력
                           </span>
                         )}
@@ -695,12 +702,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                         )}
                         <span
                           className={cn(
-                            'inline-flex items-center gap-1 [&>svg]:size-3',
-                            statusCfg.color,
+                            CHIP_BASE,
+                            STATUS_CHIP[record.status].className,
                           )}
                         >
-                          <StatusIcon />
-                          {statusCfg.label}
+                          {STATUS_CHIP[record.status].label}
                         </span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -712,14 +718,12 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                               <MoreHorizontal className='size-4' />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align='end' className='w-40'>
+                          <DropdownMenuContent align='end' className='w-44'>
                             <DropdownMenuCheckboxItem
                               checked={false}
                               onCheckedChange={() => handleEdit(record)}
                               onSelect={(e) => e.preventDefault()}
-                              className='gap-2'
                             >
-                              <Pencil className='size-3.5' />
                               편집
                             </DropdownMenuCheckboxItem>
                             {record.current_version_number != null &&
@@ -730,11 +734,11 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                                     handleShowVersions(record)
                                   }
                                   onSelect={(e) => e.preventDefault()}
-                                  className='gap-2'
                                 >
-                                  <History className='size-3.5' />
-                                  버전 히스토리 (v
-                                  {record.current_version_number})
+                                  버전 히스토리
+                                  <span className='border-line-primary text-fg-muted ml-auto rounded-md border px-1.5 py-px text-[10px] font-medium'>
+                                    v{record.current_version_number}
+                                  </span>
                                 </DropdownMenuCheckboxItem>
                               )}
                             <DropdownMenuSeparator />
@@ -745,9 +749,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                                   handleStatusChange(record, 'approved')
                                 }
                                 onSelect={(e) => e.preventDefault()}
-                                className='gap-2'
                               >
-                                <CheckCircle2 className='size-3.5 text-green-600' />
                                 승인
                               </DropdownMenuCheckboxItem>
                             )}
@@ -758,9 +760,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                                   handleStatusChange(record, 'excluded')
                                 }
                                 onSelect={(e) => e.preventDefault()}
-                                className='gap-2'
                               >
-                                <XCircle className='size-3.5 text-amber-600' />
                                 제외
                               </DropdownMenuCheckboxItem>
                             )}
@@ -771,9 +771,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                                   handleStatusChange(record, 'draft')
                                 }
                                 onSelect={(e) => e.preventDefault()}
-                                className='gap-2'
                               >
-                                <RotateCcw className='size-3.5' />
                                 복원
                               </DropdownMenuCheckboxItem>
                             )}
@@ -784,9 +782,8 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                                 handleDelete(record.artifact_id)
                               }
                               onSelect={(e) => e.preventDefault()}
-                              className='gap-2 text-destructive focus:text-destructive'
+                              className='text-destructive focus:text-destructive'
                             >
-                              <Trash2 className='size-3.5' />
                               삭제
                             </DropdownMenuCheckboxItem>
                           </DropdownMenuContent>
@@ -810,7 +807,6 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
                           )}
                         </p>
                       )}
-
                     </div>
                   );
                 })}

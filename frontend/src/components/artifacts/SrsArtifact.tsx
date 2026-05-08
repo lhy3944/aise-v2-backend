@@ -280,7 +280,7 @@ export function SrsArtifact() {
       overlay.modal({
         title: `섹션 편집 — ${section.title}`,
         description:
-          '저장해도 서버에는 아직 반영되지 않습니다 — Unstaged 드래프트로 누적됩니다.',
+          '저장해도 서버에는 아직 반영되지 않습니다 (Unstaged 드래프트로 누적됩니다)',
         size: 'lg',
         content: <SrsSectionEditor section={section} onSubmit={handleSubmit} />,
         footer: (
@@ -363,9 +363,12 @@ export function SrsArtifact() {
               </SelectValue>
             </SelectTrigger>
             {selectedDoc && staleByArtifactId[selectedDoc.artifact_id] && (
-              <span className='bg-stale-warning size-1.5 rounded-full' title='입력 변경으로 갱신 필요' />
+              <span
+                className='bg-stale-warning size-1.5 rounded-full'
+                title='입력 변경으로 갱신 필요'
+              />
             )}
-            <SelectContent position="popper" side="bottom" align="start">
+            <SelectContent position='popper' side='bottom' align='start'>
               {documents.map((doc) => {
                 return (
                   <SelectItem

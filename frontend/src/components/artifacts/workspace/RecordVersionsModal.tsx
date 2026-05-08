@@ -1,7 +1,6 @@
 'use client';
 
-import { ChevronRight, History, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 
 import { DiffViewer } from '@/components/artifacts/workspace/diff/DiffViewer';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -16,14 +15,6 @@ interface RecordVersionsModalProps {
   displayLabel?: string;
 }
 
-/**
- * record(또는 임의 artifact)의 모든 ArtifactVersion 히스토리 + diff 모달 본문.
- * - 좌측: version selector 리스트 (최신 → 과거 순)
- * - 우측: 선택된 version vs 그 이전 version 의 DiffViewer
- *
- * SRS/Design 화면의 selectbox 대신 list 형태 — record 는 카드 단위라 별도 화면이
- * 없어 모달 안에서 selector 가 더 명확하다.
- */
 export function RecordVersionsModal({
   projectId,
   artifactId,
@@ -32,7 +23,9 @@ export function RecordVersionsModal({
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -50,11 +43,11 @@ export function RecordVersionsModal({
         setSelectedVersionId(sorted[0]?.version_id ?? null);
       })
       .catch(() => {
-        if (cancelled) return;
+        if (!cancelled) return;
         setError('버전 히스토리를 불러오지 못했습니다.');
       })
       .finally(() => {
-        if (cancelled) return;
+        if (!cancelled) return;
         setLoading(false);
       });
     return () => {
@@ -67,118 +60,105 @@ export function RecordVersionsModal({
     [versions, selectedVersionId],
   );
 
-  // 선택된 version 의 직전 version (parent) — diff base
   const parent = useMemo(() => {
     if (!selected) return null;
-    if (selected.parent_version_id) {
-      return (
-        versions.find((v) => v.version_id === selected.parent_version_id) ??
-        null
-      );
-    }
-    // parent_version_id 가 없으면 list 에서 직전 version 찾기
+    // 항상 한 단계 이전 버전 — 리스트는 최신→과거 순이므로 idx+1이 바로 직전 버전
     const idx = versions.findIndex((v) => v.version_id === selected.version_id);
     return idx >= 0 && idx + 1 < versions.length ? versions[idx + 1] : null;
   }, [versions, selected]);
 
-  if (loading) {
-    return (
-      <div className='text-fg-muted flex h-32 items-center justify-center text-xs'>
-        <Loader2 className='mr-2 size-4 animate-spin' />
-        버전 히스토리 로드 중...
-      </div>
-    );
-  }
+  const handleVersionSelect = useCallback(
+    (versionId: string) => {
+      if (versionId === selectedVersionId) return;
+      setSelectedVersionId(versionId);
+    },
+    [selectedVersionId],
+  );
+
   if (error) {
-    return <p className='text-destructive text-xs'>{error}</p>;
+    return <p className='text-destructive p-4 text-sm'>{error}</p>;
   }
+
   if (versions.length === 0) {
     return (
-      <div className='flex h-32 flex-col items-center justify-center gap-2 text-center'>
-        <History className='text-fg-muted size-8' />
+      <div className='flex h-64 flex-col items-center justify-center gap-2'>
         <p className='text-fg-secondary text-sm font-medium'>버전 없음</p>
         <p className='text-fg-muted text-xs'>
-          이 산출물은 아직 한 번도 머지되지 않아 버전이 없습니다.
+          이 산출물은 아직 머지된 버전이 없습니다.
         </p>
       </div>
     );
   }
 
   return (
-    <div className='flex max-h-[60vh] min-h-0 gap-3'>
+    <div className='flex h-[540px]'>
       {/* 좌측: version 리스트 */}
-      <div className='border-line-primary flex w-44 shrink-0 flex-col rounded-md border'>
-        <div className='border-line-primary text-fg-muted flex items-center gap-1.5 border-b px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase'>
-          <History className='size-3' />
-          버전 ({versions.length}){displayLabel && ` · ${displayLabel}`}
+      <div className='border-line-primary flex w-48 shrink-0 flex-col border-r'>
+        <div className='border-line-primary text-fg-muted border-b px-3 py-2 text-xs font-medium'>
+          {displayLabel ?? '버전'} · {versions.length}개
         </div>
         <ScrollArea className='min-h-0 flex-1'>
-          <ul>
+          <div className='flex flex-col'>
             {versions.map((v, idx) => {
               const isSelected = v.version_id === selectedVersionId;
               const isLatest = idx === 0;
               return (
-                <li
+                <button
                   key={v.version_id}
+                  type='button'
                   className={cn(
-                    'border-line-primary/60 hover:bg-canvas-primary/40 cursor-pointer border-b px-2.5 py-2 text-xs last:border-b-0',
-                    isSelected && 'bg-canvas-primary/60',
+                    'relative text-left border-b py-2.5 pr-3 pl-4 transition-colors',
+                    'border-line-primary',
+                    isSelected ? 'bg-canvas-secondary' : 'hover:bg-canvas-secondary/30',
                   )}
-                  onClick={() => setSelectedVersionId(v.version_id)}
+                  onClick={() => handleVersionSelect(v.version_id)}
                 >
-                  <div className='flex items-center gap-1.5'>
-                    <span className='text-fg-primary font-mono font-medium'>
+                  {isSelected && (
+                    <span className='absolute inset-y-0 left-0 w-0.5 bg-accent-primary' />
+                  )}
+                  <div className='flex items-center gap-2'>
+                    <span className='text-fg-primary text-xs font-medium'>
                       v{v.version_number}
                     </span>
                     {isLatest && (
-                      <span className='bg-muted text-fg-muted rounded px-1.5 py-0.5 text-[9px]'>
-                        latest
+                      <span className='border-line-primary text-fg-muted rounded border px-1 py-px text-[10px]'>
+                        최신
                       </span>
                     )}
-                    <ChevronRight
-                      className={cn(
-                        'text-fg-muted ml-auto size-3 transition-opacity',
-                        isSelected ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
                   </div>
-                  <div className='text-fg-muted mt-0.5 text-[10px]'>
+                  <div className='text-fg-muted mt-1 text-[11px]'>
                     {new Date(v.committed_at).toLocaleString('ko-KR', {
-                      year: 'numeric',
                       month: '2-digit',
                       day: '2-digit',
                       hour: '2-digit',
                       minute: '2-digit',
                     })}
                   </div>
-                  {v.commit_message && (
-                    <div className='text-fg-secondary mt-0.5 line-clamp-2 text-[11px]'>
-                      {v.commit_message}
-                    </div>
-                  )}
-                </li>
+                </button>
               );
             })}
-          </ul>
+          </div>
         </ScrollArea>
       </div>
 
       {/* 우측: diff */}
-      <div className='border-line-primary min-w-0 flex-1 rounded-md border'>
-        <div className='border-line-primary text-fg-muted border-b px-3 py-1.5 text-[11px] font-semibold'>
-          {selected
-            ? parent
-              ? `v${parent.version_number} → v${selected.version_number} 변경 내역`
-              : `v${selected.version_number} (최초 버전)`
-            : '버전을 선택하세요'}
-        </div>
-        <div className='min-h-0 flex-1 overflow-hidden'>
-          {selected && (
-            <DiffViewer
-              headVersionId={selected.version_id}
-              baseVersionId={parent?.version_id ?? null}
-            />
-          )}
+      <div className='min-w-0 flex-1'>
+        <div className='flex h-full flex-col'>
+          <div className='border-line-primary text-fg-muted border-b px-4 py-2 text-xs font-medium'>
+            {selected
+              ? parent
+                ? `v${parent.version_number} → v${selected.version_number} 변경 내역`
+                : `v${selected.version_number} (최초 버전)`
+              : '버전을 선택하세요'}
+          </div>
+          <div className='min-h-0 flex-1 overflow-y-auto p-4'>
+            {selected && (
+              <DiffViewer
+                headVersionId={selected.version_id}
+                baseVersionId={parent?.version_id ?? null}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -55,12 +55,15 @@ export function SessionItem({
   return (
     <div
       className={cn(
-        'group relative flex w-full min-w-0 items-center rounded-sm pr-2 transition-colors',
+        'group relative flex w-full min-w-0 items-center overflow-hidden pr-2 transition-colors',
         isActive
           ? 'bg-canvas-surface text-fg-primary'
           : 'text-fg-secondary hover:bg-canvas-surface/50',
       )}
     >
+      {isActive && (
+        <div className='absolute left-0 top-0 h-full w-[3px] bg-accent-primary' />
+      )}
       <button
         onClick={onClick}
         className='flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 justify-start'

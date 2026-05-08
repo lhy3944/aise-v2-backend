@@ -129,11 +129,11 @@
 
   /* AISE+ tokens — Airbnb surface ladder */
   --bg-primary: #ffffff;
-  --bg-secondary: #f7f7f7;
-  --bg-surface: #ffffff;
-  --bg-surface-2: #f7f7f7;
-  --bg-surface-3: #f2f2f2;
-  --bg-input: #f7f7f7;
+  --bg-surface: #f7f7f7;
+  --bg-secondary: #f0f0f0;
+  --bg-surface-2: #ebebeb;
+  --bg-surface-3: #e5e5e5;
+  --bg-input: #f0f0f0;
   --bg-toggle: #5e6ad2;
   --border-primary: #dddddd;
   --border-subtle: #ebebeb;
@@ -147,7 +147,7 @@
   --icon-default: #6a6a6a;
   --icon-active: #222222;
   --tab-active-bg: #ffffff;
-  --sidebar-bg: #f7f7f7;
+  --sidebar-bg: #f0f0f0;
   --warning-amber: #b45309;
   --warning-amber-bg: #fffbeb;
 }

@@ -223,7 +223,7 @@ export function TestCaseArtifact() {
       overlay.modal({
         title: `테스트 케이스 편집 — ${artifact.display_id}`,
         description:
-          '저장해도 서버에는 아직 반영되지 않습니다 — Unstaged 드래프트로 누적됩니다.',
+          '저장해도 서버에는 아직 반영되지 않습니다 (Unstaged 드래프트로 누적됩니다)',
         size: 'lg',
         content: <TestCaseEditor initial={initialContent} onSubmit={submit} />,
         footer: <TestCaseEditorActions onCancel={() => overlay.closeModal()} />,

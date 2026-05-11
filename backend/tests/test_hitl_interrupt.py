@@ -110,6 +110,7 @@ def fake_session_factory():
 def _stub_supervisor(monkeypatch):
     """Supervisor LLM 호출을 mock — 우리 _AGENT_NAME 으로 single 라우팅."""
     monkeypatch.setenv("RAG_GATE_ENABLED", "false")
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
     routing_payload = json.dumps(
         {
             "action": "single",

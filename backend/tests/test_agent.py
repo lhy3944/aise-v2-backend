@@ -35,6 +35,8 @@ _ROUTING_JSON = json.dumps(
 
 @pytest.fixture
 def _stub_agent_deps(monkeypatch):
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+
     async def fake_embeddings(texts):
         return [[0.1] * 1536 for _ in texts]
 

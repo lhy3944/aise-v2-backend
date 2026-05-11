@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-RoutingAction = Literal["single", "plan", "clarify"]
+RoutingAction = Literal["single", "plan", "clarify", "general_chat"]
 ExtractMode = Literal["document", "user_text"]
 
 
@@ -34,9 +34,19 @@ class RoutingDecision(BaseModel):
         default=None,
         description="Sequence of agent names. Used when action == 'plan'. (Phase 2)",
     )
+    action_params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Tool-call arguments or structured execution hints for the selected agent.",
+    )
     clarification: str | None = Field(
         default=None,
         description="Question to ask the user. Used when action == 'clarify'. (Phase 3)",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Supervisor confidence in the routing decision.",
     )
     extract_mode: ExtractMode | None = Field(
         default=None,
@@ -77,6 +87,8 @@ class AgentState(TypedDict, total=False):
     #   "max_score": float,
     # }
     rag_cache: dict[str, Any] | None
+    rag_signal: dict[str, Any] | None
+    project_snapshot: dict[str, Any] | None
 
     # final agent output
     final_answer: str | None
@@ -100,6 +112,8 @@ class AgentState(TypedDict, total=False):
 
     # error / control
     error: str | None
+    hitl_response: dict[str, Any] | None
+    hitl_interrupt_id: str | None
 
 
 @dataclass

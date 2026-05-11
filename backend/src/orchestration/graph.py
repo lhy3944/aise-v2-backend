@@ -19,11 +19,10 @@ reads the env once and caches the saver for the process lifetime.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import time
 import uuid
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -31,12 +30,12 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from loguru import logger
 from psycopg_pool import AsyncConnectionPool
-from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.agents import load_builtin_agents
 from src.agents.base import BaseAgent
 from src.agents.registry import get_agent, try_get_agent
+from src.orchestration.context import build_project_context_snapshot
 from src.orchestration.retrieval_gate import evaluate_gate
 from src.orchestration.state import AgentContext, AgentState
 from src.orchestration.supervisor import (
@@ -45,7 +44,6 @@ from src.orchestration.supervisor import (
 )
 from src.schemas.events import (
     ClarifyData,
-    ConfirmActions,
     ConfirmData,
     DecisionData,
     DoneEvent,
@@ -67,209 +65,6 @@ from src.schemas.events import (
     ToolResultEventData,
 )
 from src.services import hitl_state_svc
-
-
-# ---------- Deterministic routing guards ----------
-
-
-_GENERATION_TERMS = (
-    "생성",
-    "만들",
-    "작성",
-    "뽑",
-    "추출",
-    "재생성",
-    "다시 만들",
-    "generate",
-    "create",
-    "make",
-    "write",
-)
-
-# 상태/현황 질의 패턴 — 이 패턴이 매칭되면 project_status로 라우팅해야
-# 하므로, _explicit_artifact_generation_agent에서 제외한다.
-# 유지보수 부담을 최소화하기 위해 핵심 패턴만 유지.
-# 세부 질의 해석은 supervisor LLM이 담당한다.
-_STATUS_QUERY_TERMS = (
-    "어때",
-    "몇 개",
-    "몇개",
-    "상태",
-    "현황",
-    "진행",
-    "알려줘",
-    "보여줘",
-    "확인",
-    "없나",
-    "있나",
-    "없는지",
-    "있는지",
-    "count",
-    "status",
-    "how many",
-    "version",
-    "progress",
-)
-
-_ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "testcase_generator",
-        (
-            "테스트케이스",
-            "테스트 케이스",
-            "testcase",
-            "test case",
-            "tc",
-            "검증 시나리오",
-            "테스트 시나리오",
-        ),
-    ),
-    (
-        "design_generator",
-        (
-            "design",
-            "디자인",
-            "설계",
-            "아키텍처",
-        ),
-    ),
-    (
-        "srs_generator",
-        (
-            "srs",
-            "요구사항 명세서",
-            "소프트웨어 명세서",
-        ),
-    ),
-)
-
-
-def _explicit_artifact_generation_agent(user_input: str) -> str | None:
-    """Return the agent for explicit artifact generation requests.
-
-    RAG can score highly for prompts like "SRS 기반 테스트케이스 만들어줘"
-    because the project documents are semantically relevant. These commands
-    are workflow actions, not knowledge questions, so route them before the
-    retrieval-first gate.
-
-    Status-query exclusion: "SRS 버전 어때?" should NOT route to srs_generator.
-    If the input contains status-query patterns, return None so the supervisor
-    can route to project_status instead.
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return None
-
-    # 상태/현황 질의면 생성 에이전트가 아니라 project_status로 라우팅.
-    if any(term in text for term in _STATUS_QUERY_TERMS):
-        return None
-
-    if not any(term in text for term in _GENERATION_TERMS):
-        return None
-
-    for agent_name, artifact_terms in _ARTIFACT_GENERATION_ROUTES:
-        if any(term in text for term in artifact_terms):
-            return agent_name
-    return None
-
-
-# 산출물 관련 키워드가 포함된 상태 질의를 결정적으로 project_status로
-# 직결하기 위한 매핑. retrieval gate나 supervisor LLM이 "SRS" 키워드를
-# 보고 srs_generator로 잘못 라우팅하는 것을 방지한다.
-_ARTIFACT_STATUS_KEYWORDS: tuple[tuple[str, ...], ...] = (
-    ("srs", "요구사항 명세서"),
-    ("design", "디자인", "설계"),
-    ("테스트케이스", "테스트 케이스", "testcase", "tc"),
-    ("레코드", "record"),
-)
-
-
-def _is_artifact_status_query(user_input: str) -> bool:
-    """Check if the input is a status query about project artifacts.
-
-    Two conditions must BOTH hold:
-    1. Contains an artifact keyword (SRS, 레코드, 테스트케이스, etc.)
-    2. Does NOT contain a generation term (생성, 만들, 작성, etc.)
-       AND (contains a status pattern OR ends with a question mark)
-
-    "SRS 버전 어떻게 돼?" → True  (artifact, no gen term, question)
-    "테스트케이스 없는건가?" → True  (artifact, no gen term, question)
-    "SRS 만들어줘"        → False (artifact but has gen term)
-    "어떻게 돼?"          → False (question but no artifact)
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return False
-
-    has_artifact = any(
-        any(term in text for term in group)
-        for group in _ARTIFACT_STATUS_KEYWORDS
-    )
-    if not has_artifact:
-        return False
-
-    # 생성 의도가 있으면 상태 질의가 아님.
-    if any(term in text for term in _GENERATION_TERMS):
-        return False
-
-    has_status_pattern = any(term in text for term in _STATUS_QUERY_TERMS)
-    is_question = text.endswith("?") or text.endswith("?")
-    return has_status_pattern or is_question
-
-
-# 대화 맥락에서 최근 언급된 산출물 타입을 추출해 짧은 생성 요청에 반영.
-# "테스트케이스 없어?" → "만들어줘" 의 흐름에서 "만들어줘"에
-# 산출물 키워드가 없더라도 테스트케이스 생성으로 자동 라우팅.
-_CONTEXT_ARTIFACT_MAP: dict[str, str] = {
-    "srs": "srs_generator",
-    "요구사항 명세서": "srs_generator",
-    "design": "design_generator",
-    "디자인": "design_generator",
-    "설계": "design_generator",
-    "테스트케이스": "testcase_generator",
-    "테스트 케이스": "testcase_generator",
-    "testcase": "testcase_generator",
-    "tc": "testcase_generator",
-    "레코드": "requirement",
-    "record": "requirement",
-    "요구사항": "requirement",
-}
-
-
-def _resolve_from_context(user_input: str, history: list[dict]) -> str | None:
-    """Resolve a short generation request using conversation context.
-
-    When user_input contains a generation term ("만들어줘", "생성해줘", etc.)
-    but no artifact keyword, scan recent history for the last mentioned
-    artifact type and return the corresponding agent name.
-
-    "만들어줘" after "테스트케이스 없어?" → "testcase_generator"
-    "만들어줘" after "SRS 상태 어때?"  → "srs_generator"
-    "만들어줘" with no prior context    → None (let supervisor decide)
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return None
-
-    # 생성 의도가 있어야 함.
-    if not any(term in text for term in _GENERATION_TERMS):
-        return None
-
-    # 이미 산출물 키워드가 있으면 맥락 해석 불필요.
-    for group in _ARTIFACT_STATUS_KEYWORDS:
-        if any(term in text for term in group):
-            return None
-
-    # 최근 대화에서 산출물 키워드 검색 (최근 6턴, 역순).
-    for turn in reversed(history[-6:] or []):
-        content = str(turn.get("content", "")).strip().lower()
-        if not content:
-            continue
-        for keyword, agent_name in _CONTEXT_ARTIFACT_MAP.items():
-            if keyword in content:
-                return agent_name
-
-    return None
 
 
 # ---------- Node helpers ----------
@@ -388,7 +183,12 @@ def build_graph(
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("knowledge_qa", _make_agent_node("knowledge_qa", session_factory))
     workflow.add_node("project_status", _make_agent_node("project_status", session_factory))
+    workflow.add_node("general_chat", _make_agent_node("general_chat", session_factory))
     workflow.add_node("requirement", _make_agent_node("requirement", session_factory))
+    workflow.add_node("record_manager", _make_agent_node("record_manager", session_factory))
+    workflow.add_node("srs_generator", _make_agent_node("srs_generator", session_factory))
+    workflow.add_node("design_generator", _make_agent_node("design_generator", session_factory))
+    workflow.add_node("testcase_generator", _make_agent_node("testcase_generator", session_factory))
 
     workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
@@ -397,7 +197,12 @@ def build_graph(
         {
             "knowledge_qa": "knowledge_qa",
             "project_status": "project_status",
+            "general_chat": "general_chat",
             "requirement": "requirement",
+            "record_manager": "record_manager",
+            "srs_generator": "srs_generator",
+            "design_generator": "design_generator",
+            "testcase_generator": "testcase_generator",
             # Supervisor may emit `plan`; until increment 2 wires the
             # planner node, we terminate the graph so the fallback
             # clarification path in run_chat still emits a clean stream.
@@ -407,7 +212,12 @@ def build_graph(
     )
     workflow.add_edge("knowledge_qa", END)
     workflow.add_edge("project_status", END)
+    workflow.add_edge("general_chat", END)
     workflow.add_edge("requirement", END)
+    workflow.add_edge("record_manager", END)
+    workflow.add_edge("srs_generator", END)
+    workflow.add_edge("design_generator", END)
+    workflow.add_edge("testcase_generator", END)
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
@@ -432,6 +242,9 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
     approved_count = state.get("records_approved_count")
     if isinstance(approved_count, int):
         payload["records_approved_count"] = approved_count
+    record_mutation = state.get("record_mutation")
+    if isinstance(record_mutation, dict):
+        payload["record_mutation"] = record_mutation
     srs = state.get("srs_generated")
     if isinstance(srs, dict):
         if "section_count" in srs:
@@ -778,89 +591,56 @@ async def run_chat(
         "history": history or [],
     }
 
-    explicit_agent = _explicit_artifact_generation_agent(user_input)
-    if explicit_agent is not None:
-        initial_state["routing"] = {
-            "action": "single",
-            "agent": explicit_agent,
-            "plan": None,
-            "clarification": None,
-            "reasoning": "deterministic artifact generation intent",
-        }
+    project_uuid_for_context: uuid.UUID | None
+    try:
+        project_uuid_for_context = uuid.UUID(str(project_id))
+    except (ValueError, TypeError):
+        project_uuid_for_context = None
 
-    # 0b. 상태 질의 결정적 가드 — "SRS 버전 어떻게 돼?" 같은 질문은
-    # retrieval gate가나 supervisor LLM이 "SRS" 키워드만 보고
-    # srs_generator/knowledge_qa로 잘못 라우팅하는 것을 방지한다.
-    # 산출물 키워드 + 상태 질의 패턴이 모두 있으면 project_status로 직결.
-    if explicit_agent is None and _is_artifact_status_query(user_input):
-        initial_state["routing"] = {
-            "action": "single",
-            "agent": "project_status",
-            "plan": None,
-            "clarification": None,
-            "reasoning": "deterministic artifact status query",
-        }
-
-    # 0c. 대화 맥락 해석 — "만들어줘" 같은 짧은 생성 요청에 직전 대화에서
-    # 언급된 산출물 타입을 자동 보완. "테스트케이스 없어?" → "만들어줘" 의
-    # 흐름에서 testcase_generator로 직결.
-    if (
-        explicit_agent is None
-        and not _is_artifact_status_query(user_input)
-        and "routing" not in initial_state
-    ):
-        context_agent = _resolve_from_context(user_input, history or [])
-        if context_agent is not None:
-            initial_state["routing"] = {
-                "action": "single",
-                "agent": context_agent,
-                "plan": None,
-                "clarification": None,
-                "reasoning": "context-resolved artifact generation intent",
-            }
-
-    # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
-    # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서
-    # 없음·score 미달) supervisor LLM이 판단한다.
-    # 위 결정적 가드(0a/0b/0c)가 이미 routing을 설정한 경우 gate를 건너뛴다.
-    gate_result = None
-    if explicit_agent is None and "routing" not in initial_state and session_factory is not None:
-        try:
-            project_uuid_for_gate = uuid.UUID(str(project_id))
-        except (ValueError, TypeError):
-            project_uuid_for_gate = None
-        if project_uuid_for_gate is not None:
+    if session_factory is not None and project_uuid_for_context is not None:
+        async with session_factory() as db:
             try:
-                async with session_factory() as db:
-                    gate_result = await evaluate_gate(
-                        user_input=user_input,
-                        history=history or [],
-                        project_id=project_uuid_for_gate,
-                        db=db,
-                    )
-            except Exception:  # pragma: no cover — gate 실패는 LLM로 폴백
-                logger.exception("retrieval_gate failed, falling back to supervisor LLM")
-                gate_result = None
-
-    if gate_result is not None:
-        initial_state["routing"] = gate_result.routing
-        initial_state["rag_cache"] = gate_result.rag_cache
-    elif "routing" not in initial_state:
-        # 1b. Supervisor — direct call, no graph invocation needed.
-        # 위 결정적 가드가 이미 routing을 설정했으면 supervisor 생략.
-        try:
-            supervisor_update = await supervisor_node(initial_state)
-        except Exception as e:  # pragma: no cover — defensive
-            logger.exception("supervisor_node failed")
-            yield ErrorEvent(
-                data=ErrorEventData(
-                    message=str(e),
-                    code="SUPERVISOR_FAILURE",
-                    recoverable=False,
+                snapshot = await build_project_context_snapshot(
+                    db,
+                    project_uuid_for_context,
+                    history=history or [],
                 )
+                initial_state["project_snapshot"] = snapshot.model_dump()
+            except Exception:
+                logger.exception("project context snapshot failed; supervisor will continue")
+
+            try:
+                gate_result = await evaluate_gate(
+                    user_input=user_input,
+                    history=history or [],
+                    project_id=project_uuid_for_context,
+                    db=db,
+                )
+            except Exception:
+                logger.exception("retrieval_gate signal failed; supervisor will continue")
+                gate_result = None
+            if gate_result is not None:
+                initial_state["rag_cache"] = gate_result.rag_cache
+                initial_state["rag_signal"] = {
+                    "candidate_agent": gate_result.routing.get("agent"),
+                    "max_score": gate_result.rag_cache.get("max_score"),
+                    "rewritten_query": gate_result.rag_cache.get("rewritten_query"),
+                    "reasoning": gate_result.routing.get("reasoning"),
+                }
+
+    try:
+        supervisor_update = await supervisor_node(initial_state)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.exception("supervisor_node failed")
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=str(e),
+                code="SUPERVISOR_FAILURE",
+                recoverable=False,
             )
-            return
-        initial_state.update(supervisor_update)
+        )
+        return
+    initial_state.update(supervisor_update)
 
     if initial_state.get("error"):
         yield ErrorEvent(
@@ -909,132 +689,6 @@ async def run_chat(
         yield DoneEvent(data=DoneEventData(finish_reason="stop"))
         return
 
-    # 3a. 생성 에이전트에 대한 사전 확인(confirm) interrupt.
-    # 산출물 생성/수정/삭제는 되돌리기 어려운 작업이므로, 사용자에게
-    # 한 번 더 확인한 후 진행한다. 기존 HITL resume 메커니즘을 그대로
-    # 활용한다 — 사용자가 승인하면 resume_chat이 같은 에이전트를 재실행한다.
-    _GENERATION_CONFIRM_AGENTS = frozenset({
-        "srs_generator",
-        "design_generator",
-        "testcase_generator",
-        "requirement",
-    })
-
-    if selected in _GENERATION_CONFIRM_AGENTS:
-        try:
-            project_uuid = uuid.UUID(str(project_id))
-        except (ValueError, TypeError):
-            project_uuid = None
-
-        try:
-            session_uuid = uuid.UUID(str(session_id))
-        except (ValueError, TypeError):
-            session_uuid = None
-
-        interrupt_id = f"confirm_gen_{uuid.uuid4().hex[:12]}"
-
-        _AGENT_LABELS: dict[str, str] = {
-            "srs_generator": "SRS 문서 생성",
-            "design_generator": "Design 문서 생성",
-            "testcase_generator": "테스트케이스 생성",
-            "requirement": "요구사항 레코드 추출",
-        }
-        action_label = _AGENT_LABELS.get(selected, selected)
-
-        # 조사 자동 선택: 받침 있으면 '을', 없으면 '를'
-        def _with_particle(word: str) -> str:
-            if not word:
-                return word
-            last = word[-1]
-            has_final = (ord(last) - 0xAC00) % 28 != 0
-            return f"{word}{'을' if has_final else '를'}"
-
-        # 기존 산출물 개수 조회 — 있으면 "재생성" 안내
-        existing_count = 0
-        _ARTIFACT_TYPE_MAP: dict[str, str] = {
-            "srs_generator": "srs",
-            "design_generator": "design",
-            "testcase_generator": "testcase",
-            "requirement": "record",
-        }
-        artifact_type = _ARTIFACT_TYPE_MAP.get(selected)
-        if session_factory is not None and project_uuid is not None and artifact_type:
-            async with session_factory() as db:
-                from src.models.artifact import Artifact as ArtifactModel
-                count_row = await db.execute(
-                    select(sa_func.count()).where(
-                        ArtifactModel.project_id == project_uuid,
-                        ArtifactModel.artifact_type == artifact_type,
-                        ArtifactModel.lifecycle_status == "active",
-                    )
-                )
-                existing_count = count_row.scalar() or 0
-
-        is_regenerate = existing_count > 0
-        if is_regenerate:
-            title = f"기존 {existing_count}개의 산출물이 있습니다. {_with_particle(action_label)} 다시 진행할까요?"
-            description = (
-                f"승인하면 기존 {existing_count}개가 삭제되고 새로 생성됩니다. "
-                "이 작업은 되돌리기 어렵습니다."
-            )
-            approve_label = "재생성"
-            intro_text = f"이미 {existing_count}개의 결과가 있습니다. 다시 {_with_particle(action_label)} 진행할까요?"
-        else:
-            title = f"{_with_particle(action_label)} 진행할까요?"
-            description = (
-                f"{action_label} 작업을 실행합니다. "
-                "이 작업은 실행 후 되돌리기 어려울 수 있습니다."
-            )
-            approve_label = "실행"
-            intro_text = f"{_with_particle(action_label)} 진행하기 전에 확인이 필요합니다."
-
-        confirm_data = ConfirmData(
-            interrupt_id=interrupt_id,
-            title=title,
-            description=description,
-            severity="danger" if is_regenerate else "warning",
-            context={"artifact_kind": selected, "existing_count": existing_count, "is_regenerate": is_regenerate},
-            actions=ConfirmActions(
-                approve=approve_label,
-                reject="취소",
-            ),
-        )
-
-        # HITL state 저장 — resume 시 같은 에이전트를 실행하도록.
-        # hitl_response.approved=True 면 바로 에이전트 실행으로 진입.
-        await hitl_state_svc.save_persistent(
-            session_factory,
-            hitl_state_svc.HitlState(
-                thread_id=interrupt_id,
-                session_id=str(session_id),
-                project_id=str(project_id),
-                user_input=user_input,
-                selected_agent=selected,
-                interrupt_id=interrupt_id,
-                interrupt_kind="confirm",
-                payload=confirm_data.model_dump(),
-                history=history or [],
-                routing=initial_state.get("routing"),
-                accumulated_state=dict(initial_state),
-            ),
-        )
-
-        # interrupt 전에 짧은 설명 텍스트를 스트리밍 —
-        # Confirm 카드가 자연스럽게 등장하도록 에이전트가 먼저 상황을 설명.
-        # 첫 토큰 전 대기 → 스피너 노출, 토큰 분할 → 타이핑 효과.
-        await asyncio.sleep(0.6)
-        yield TokenEvent(data=TokenEventData(text=intro_text[:8]))
-        yield TokenEvent(data=TokenEventData(text=intro_text[8:]))
-        yield TokenEvent(data=TokenEventData(text="\n\n"))
-        yield InterruptEvent(data=confirm_data)
-        yield DoneEvent(data=DoneEventData(finish_reason="interrupt"))
-        return
-    if not selected:
-        # Unknown/unhandled routing (shouldn't happen with current supervisor
-        # fallbacks, but keep the stream well-formed).
-        yield DoneEvent(data=DoneEventData(finish_reason="stop"))
-        return
-
     agent = try_get_agent(selected)
     if agent is None:
         yield ErrorEvent(
@@ -1076,11 +730,14 @@ async def run_chat(
 
     call_id = f"call_{uuid.uuid4().hex[:12]}"
     if expose:
+        tool_args = {"user_input": user_input}
+        if isinstance(routing.get("action_params"), dict):
+            tool_args.update(routing.get("action_params") or {})
         yield ToolCallEvent(
             data=ToolCallEventData(
                 tool_call_id=call_id,
                 name=selected,
-                arguments={"user_input": user_input},
+                arguments=tool_args,
                 agent=selected,
             )
         )
@@ -1251,6 +908,7 @@ async def resume_chat(
             "design_generator": "Design 문서 생성",
             "testcase_generator": "테스트케이스 생성",
             "requirement": "요구사항 레코드 추출",
+            "record_manager": "레코드 변경",
         }
         action_label = _AGENT_LABELS.get(saved.selected_agent, saved.selected_agent)
         cancel_msg = f"{action_label}이(가) 취소되었습니다."

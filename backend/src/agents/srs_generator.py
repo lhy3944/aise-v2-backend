@@ -23,15 +23,21 @@ Output contract (partial state update):
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import func, select
 
 from src.agents.base import AgentCapability, BaseAgent
 from src.agents.registry import register_agent
 from src.core.exceptions import AppException
+from src.models.artifact import Artifact
+from src.models.requirement import RequirementSection
 from src.orchestration.state import AgentContext, AgentState
+from src.schemas.events import ConfirmActions, ConfirmData, ConfirmImpact
 from src.services import srs_svc
+from src.services.artifact_messages import MISSING_RECORDS_MESSAGE
 
 
 @register_agent
@@ -57,6 +63,7 @@ class SrsGeneratorAgent(BaseAgent):
         },
         tags=["generation", "srs", "artifact"],
         estimated_tokens=12000,
+        requires_hitl=True,
     )
 
     async def run(self, state: AgentState, ctx: AgentContext) -> dict[str, Any]:
@@ -87,6 +94,68 @@ class SrsGeneratorAgent(BaseAgent):
                 "based_on_records_count": len(record_ids),
             },
         }
+
+    async def run_stream(self, state: AgentState, ctx: AgentContext):
+        hitl_response = state.get("hitl_response")
+        if hitl_response is None:
+            record_count = (
+                await ctx.db.execute(
+                    select(func.count(Artifact.id)).where(
+                        Artifact.project_id == ctx.project_id,
+                        Artifact.artifact_type == "record",
+                        Artifact.lifecycle_status == "active",
+                    )
+                )
+            ).scalar() or 0
+            section_count = (
+                await ctx.db.execute(
+                    select(func.count(RequirementSection.id)).where(
+                        RequirementSection.project_id == ctx.project_id,
+                        RequirementSection.is_active == True,  # noqa: E712
+                    )
+                )
+            ).scalar() or 0
+            if section_count < 1:
+                msg = "SRS를 생성하려면 먼저 활성 섹션이 필요합니다."
+                yield {"kind": "token", "text": msg}
+                yield {"kind": "final", "update": {"final_answer": msg}}
+                return
+            if record_count < 1:
+                msg = f"{MISSING_RECORDS_MESSAGE} 먼저 레코드를 추가하거나 문서에서 추출해 주세요."
+                yield {"kind": "token", "text": msg}
+                yield {"kind": "final", "update": {"final_answer": msg}}
+                return
+
+            yield {
+                "kind": "interrupt",
+                "data": ConfirmData(
+                    interrupt_id=f"itp_srs_{uuid.uuid4().hex[:12]}",
+                    title="SRS 문서를 생성할까요?",
+                    description="승인하면 현재 활성 레코드를 기반으로 새 SRS 버전을 생성합니다.",
+                    impact=[
+                        ConfirmImpact(label="기반 레코드", detail=f"{record_count}개"),
+                        ConfirmImpact(label="섹션", detail=f"{section_count}개"),
+                    ],
+                    context={"record_count": int(record_count), "section_count": int(section_count)},
+                    severity="warning",
+                    actions=ConfirmActions(approve="생성", reject="취소"),
+                ),
+            }
+            return
+
+        approved = hitl_response.get("approved") is True or hitl_response.get("action") == "approve"
+        if not approved:
+            msg = "SRS 문서 생성이 취소되었습니다."
+            yield {"kind": "token", "text": msg}
+            yield {"kind": "final", "update": {"final_answer": msg}}
+            return
+
+        result = await self.run(state, ctx)
+        if result.get("error"):
+            yield {"kind": "final", "update": result}
+            return
+        yield {"kind": "token", "text": result.get("final_answer", "")}
+        yield {"kind": "final", "update": result}
 
 
 __all__ = ["SrsGeneratorAgent"]

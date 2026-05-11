@@ -24,6 +24,7 @@ migrate to LiteLLM in a later phase.
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -31,10 +32,29 @@ import litellm
 from litellm.exceptions import BadRequestError as LiteLLMBadRequestError
 from loguru import logger
 from openai import AsyncAzureOpenAI, AsyncOpenAI, BadRequestError
+from pydantic import BaseModel, Field
 
 from src.core.exceptions import AppException
 
 AZURE_API_VERSION = "2025-03-01-preview"
+
+
+class ToolCallInfo(BaseModel):
+    """A normalized LiteLLM/OpenAI tool call."""
+
+    id: str | None = None
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    raw_arguments: str | None = None
+    arguments_error: str | None = None
+
+
+class CompletionResponse(BaseModel):
+    """Text plus structured tool calls from a chat completion."""
+
+    content: str = ""
+    tool_calls: list[ToolCallInfo] = Field(default_factory=list)
+    finish_reason: str | None = None
 
 
 def _get_provider() -> str:
@@ -188,6 +208,49 @@ def _extract_stream_text(chunk: Any) -> str:
     return ""
 
 
+def _get(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _parse_tool_arguments(raw: Any) -> tuple[dict[str, Any], str | None, str | None]:
+    if raw is None or raw == "":
+        return {}, None, None
+    if isinstance(raw, dict):
+        return raw, json.dumps(raw, ensure_ascii=False), None
+    if not isinstance(raw, str):
+        return {}, str(raw), f"tool arguments were not a JSON string/object: {type(raw).__name__}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {}, raw, str(exc)
+    if not isinstance(parsed, dict):
+        return {}, raw, "tool arguments JSON was not an object"
+    return parsed, raw, None
+
+
+def _extract_tool_calls(message: Any) -> list[ToolCallInfo]:
+    raw_calls = _get(message, "tool_calls") or []
+    calls: list[ToolCallInfo] = []
+    for raw_call in raw_calls:
+        fn = _get(raw_call, "function") or {}
+        name = _get(fn, "name")
+        if not isinstance(name, str) or not name:
+            continue
+        args, raw_args, err = _parse_tool_arguments(_get(fn, "arguments"))
+        calls.append(
+            ToolCallInfo(
+                id=_get(raw_call, "id"),
+                name=name,
+                arguments=args,
+                raw_arguments=raw_args,
+                arguments_error=err,
+            )
+        )
+    return calls
+
+
 async def chat_completion(
     messages: list[dict],
     *,
@@ -224,6 +287,63 @@ async def chat_completion(
     content = response.choices[0].message.content or ""
     logger.debug(f"LLM 응답: {len(content)}자")
     return content
+
+
+async def chat_completion_with_tools(
+    messages: list[dict],
+    *,
+    tools: list[dict[str, Any]],
+    tool_choice: str | dict[str, Any] = "auto",
+    model: str | None = None,
+    client_type: str = "srs",
+    temperature: float = 0.0,
+    max_completion_tokens: int = 1024,
+) -> CompletionResponse:
+    """Chat completion via LiteLLM with OpenAI-compatible tool calls."""
+    kwargs = _litellm_kwargs(client_type, model)
+    provider = _get_provider()
+
+    logger.debug(
+        f"LLM tool 호출(LiteLLM): provider={provider}, model={kwargs['model']}, "
+        f"messages={len(messages)}개, tools={len(tools)}개"
+    )
+
+    try:
+        response = await litellm.acompletion(
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            max_completion_tokens=max_completion_tokens,
+            **kwargs,
+        )
+    except (BadRequestError, LiteLLMBadRequestError) as e:
+        if provider == "azure" and _is_azure_content_filter(e):
+            logger.warning("Azure content filter rejected the tool request")
+            raise AppException(
+                status_code=422,
+                detail="콘텐츠 필터에 의해 요청이 차단되었습니다. 입력 내용을 수정 후 다시 시도해주세요.",
+            ) from e
+        raise
+
+    choices = _get(response, "choices") or []
+    if not choices:
+        return CompletionResponse()
+
+    first = choices[0]
+    message = _get(first, "message") or {}
+    content = _get(message, "content") or ""
+    finish_reason = _get(first, "finish_reason")
+    tool_calls = _extract_tool_calls(message)
+    logger.debug(
+        f"LLM tool 응답: content={len(content)}자, tool_calls={len(tool_calls)}, "
+        f"finish_reason={finish_reason!r}"
+    )
+    return CompletionResponse(
+        content=content,
+        tool_calls=tool_calls,
+        finish_reason=finish_reason,
+    )
 
 
 async def chat_completion_stream(

@@ -117,6 +117,19 @@ class RequirementAgent(BaseAgent):
             "응답 시간은 ~~ 이내여야 한다",
         ],
         input_schema={"project_id": "str", "user_input": "str"},
+        tool_parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "extract_mode": {
+                    "type": "string",
+                    "enum": ["document", "user_text"],
+                    "description": "document for uploaded-doc extraction, user_text for a concrete requirement in the chat.",
+                },
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "reasoning": {"type": "string"},
+            },
+        },
         output_schema={
             "final_answer": "str",
             "records_extracted": "list[dict]",

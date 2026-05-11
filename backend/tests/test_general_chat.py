@@ -109,6 +109,8 @@ async def test_supervisor_routes_greeting_to_general_chat(monkeypatch, db):
             )
         return canned  # not used by streaming path, defensive default
 
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
     monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     _install_stream_stub(monkeypatch, answer=canned)

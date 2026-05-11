@@ -14,10 +14,15 @@ from src.agents.base import AgentCapability
 
 
 _PROMPT_PATH = Path(__file__).with_name("supervisor.md")
+_TOOLUSE_PROMPT_PATH = Path(__file__).with_name("supervisor_tooluse.md")
 
 
 def _load_template() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def _load_tooluse_template() -> str:
+    return _TOOLUSE_PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _format_agents(capabilities: Iterable[AgentCapability]) -> str:
@@ -61,4 +66,33 @@ def build_supervisor_prompt(
     )
 
 
-__all__ = ["build_supervisor_prompt"]
+def build_supervisor_tooluse_messages(
+    *,
+    user_input: str,
+    snapshot: str,
+    rag_signal: dict | None = None,
+) -> list[dict]:
+    template = _load_tooluse_template()
+    rag_text = "(none)"
+    if rag_signal:
+        rag_text = "\n".join(f"- {k}: {v}" for k, v in rag_signal.items())
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a routing supervisor. Use tool calls for agent routing. "
+                "If clarification is needed, return content beginning with CLARIFY:."
+            ),
+        },
+        {
+            "role": "user",
+            "content": template.format(
+                snapshot=snapshot,
+                rag_signal=rag_text,
+                user_input=user_input.strip(),
+            ),
+        },
+    ]
+
+
+__all__ = ["build_supervisor_prompt", "build_supervisor_tooluse_messages"]

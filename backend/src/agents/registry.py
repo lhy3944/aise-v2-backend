@@ -43,6 +43,7 @@ _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "src.agents.knowledge_qa",
     "src.agents.project_status",
     "src.agents.requirement",
+    "src.agents.record_manager",
     "src.agents.srs_generator",
     "src.agents.design_generator",
     "src.agents.testcase_generator",
@@ -86,6 +87,10 @@ def list_capabilities() -> list["AgentCapability"]:
     return [agent.capability for agent in _REGISTRY.values()]
 
 
+def list_tool_definitions() -> list[dict]:
+    return [agent.capability.to_tool_definition() for agent in _REGISTRY.values()]
+
+
 def find_by_tag(tag: str) -> list["BaseAgent"]:
     return [agent for agent in _REGISTRY.values() if tag in agent.capability.tags]
 
@@ -119,6 +124,7 @@ __all__ = [
     "get_agent",
     "list_agents",
     "list_capabilities",
+    "list_tool_definitions",
     "load_builtin_agents",
     "register_agent",
     "try_get_agent",

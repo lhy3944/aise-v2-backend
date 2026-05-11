@@ -18,6 +18,8 @@ import pytest
 from src.agents import list_agents, load_builtin_agents
 from src.agents.registry import get_agent
 from src.core.exceptions import AppException
+from src.models.artifact import Artifact
+from src.models.requirement import RequirementSection
 from src.orchestration.state import AgentContext
 from src.schemas.api.srs import SrsDocumentResponse, SrsSectionResponse
 from src.services.artifact_messages import MISSING_RECORDS_MESSAGE
@@ -126,6 +128,8 @@ async def test_graph_routes_supervisor_to_srs_generator(monkeypatch, db):
             )
         return "unused"
 
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
 
@@ -133,6 +137,32 @@ async def test_graph_routes_supervisor_to_srs_generator(monkeypatch, db):
     db.add(project)
     await db.commit()
     await db.refresh(project)
+    section = RequirementSection(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        type="fr",
+        name="Functional Requirements",
+        is_default=True,
+        is_active=True,
+        order_index=0,
+    )
+    db.add(section)
+    db.add(
+        Artifact(
+            project_id=project.id,
+            artifact_type="record",
+            display_id="FR-001",
+            content={
+                "text": "로그인을 지원해야 한다.",
+                "section_id": str(section.id),
+                "metadata": {"status": "approved"},
+                "order_index": 0,
+            },
+            working_status="dirty",
+            lifecycle_status="active",
+        )
+    )
+    await db.commit()
 
     fake = _fake_srs_response(version=1, section_count=3, record_ids_count=5)
     session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
@@ -140,7 +170,7 @@ async def test_graph_routes_supervisor_to_srs_generator(monkeypatch, db):
     with patch(
         "src.services.srs_svc.generate_srs",
         new=AsyncMock(return_value=fake),
-    ):
+    ) as generate_mock:
         graph = build_graph(session_factory)
         events = [
             ev
@@ -153,10 +183,12 @@ async def test_graph_routes_supervisor_to_srs_generator(monkeypatch, db):
             )
         ]
 
-    # Default run_stream fallback: tool_call → token → tool_result → done
+    # Generator confirms before executing; service is called only after resume approval.
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "TokenEvent", "ToolResultEvent", "DoneEvent"]
-    tool_call, token, tool_result, _done = events
+    assert types == ["ToolCallEvent", "InterruptEvent", "DoneEvent"]
+    tool_call, interrupt, done = events
     assert tool_call.data.name == "srs_generator"
-    assert tool_result.data.result == {"section_count": 3, "srs_version": 1}
-    assert "SRS v1" in token.data.text
+    assert interrupt.data.kind == "confirm"
+    assert "SRS" in interrupt.data.title
+    assert done.data.finish_reason == "interrupt"
+    generate_mock.assert_not_awaited()

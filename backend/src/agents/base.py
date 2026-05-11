@@ -65,6 +65,10 @@ class AgentCapability(BaseModel):
     )
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    tool_parameters: dict[str, Any] = Field(
+        default_factory=dict,
+        description="OpenAI-compatible JSON schema for supervisor tool arguments",
+    )
     requires_hitl: bool = False
     estimated_tokens: int = Field(default=2000, description="Rough budget hint for cost prediction")
     tags: list[str] = Field(default_factory=list, description="e.g. ['rag', 'generation']")
@@ -79,6 +83,37 @@ class AgentCapability(BaseModel):
             "shows just the streamed answer without a tool card."
         ),
     )
+
+    def to_tool_definition(self) -> dict[str, Any]:
+        """Return an OpenAI-compatible tool definition for supervisor routing."""
+        parameters = self.tool_parameters or {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "description": "Short summary of what the user wants this agent to do.",
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Confidence that this agent is the right route.",
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": "One short routing rationale.",
+                },
+            },
+        }
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": parameters,
+            },
+        }
 
 
 class BaseAgent(ABC):

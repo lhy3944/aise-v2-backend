@@ -137,6 +137,8 @@ async def test_graph_routes_supervisor_to_requirement_agent(monkeypatch, db):
             )
         return "Unused — agent uses artifact_record_svc directly."
 
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
 

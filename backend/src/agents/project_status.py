@@ -63,6 +63,9 @@ async def _fetch_project_summary(db: AsyncSession, project_id: Any) -> str:
         type_counts[artifact_type]["total"] += cnt
         type_counts[artifact_type]["by_status"][ws] = cnt
 
+    if not type_counts:
+        return "아직 생성된 산출물이 없습니다."
+
     # 2) Record 상태별 분포 (content JSONB의 metadata.status 기반)
     record_status_counts: dict[str, int] = {}
     if "record" in type_counts:

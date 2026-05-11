@@ -18,6 +18,7 @@ import pytest
 from src.agents import list_agents, load_builtin_agents
 from src.agents.registry import get_agent
 from src.core.exceptions import AppException
+from src.models.artifact import Artifact
 from src.orchestration.state import AgentContext
 from src.schemas.api.artifact_testcase import (
     TestCaseArtifactResponse,
@@ -144,6 +145,8 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
             )
         return "unused"
 
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
 
@@ -151,6 +154,17 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
     db.add(project)
     await db.commit()
     await db.refresh(project)
+    db.add(
+        Artifact(
+            project_id=project.id,
+            artifact_type="srs",
+            display_id="SRS-001",
+            content={"sections": [{"title": "FR", "content": "로그인"}]},
+            working_status="dirty",
+            lifecycle_status="active",
+        )
+    )
+    await db.commit()
 
     fake = _fake_response(tc_count=4, srs_version=2)
     session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
@@ -158,7 +172,7 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
     with patch(
         "src.services.testcase_svc.generate_testcases",
         new=AsyncMock(return_value=fake),
-    ):
+    ) as generate_mock:
         graph = build_graph(session_factory)
         events = [
             ev
@@ -172,11 +186,13 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
         ]
 
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "TokenEvent", "ToolResultEvent", "DoneEvent"]
-    tool_call, token, tool_result, _done = events
+    assert types == ["ToolCallEvent", "InterruptEvent", "DoneEvent"]
+    tool_call, interrupt, done = events
     assert tool_call.data.name == "testcase_generator"
-    assert tool_result.data.result == {"testcase_count": 4, "srs_version": 2}
-    assert "4개 생성" in token.data.text
+    assert interrupt.data.kind == "confirm"
+    assert "테스트케이스" in interrupt.data.title
+    assert done.data.finish_reason == "interrupt"
+    generate_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -186,17 +202,25 @@ async def test_run_chat_routes_testcase_generation_before_rag_and_reports_missin
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from src.models.project import Project
-    from src.orchestration import graph as graph_mod
     from src.orchestration.graph import build_graph, run_chat
+    from src.services import llm_svc
 
-    async def fail_gate(**kwargs):  # pragma: no cover - asserted by no raise
-        raise AssertionError("retrieval gate should not handle generation commands")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "true")
 
-    async def fail_supervisor(state):  # pragma: no cover - asserted by no raise
-        raise AssertionError("supervisor should not handle explicit TC generation")
+    async def fake_with_tools(messages, tools, **kwargs):
+        return llm_svc.CompletionResponse(
+            tool_calls=[
+                llm_svc.ToolCallInfo(
+                    id="call_tc",
+                    name="testcase_generator",
+                    arguments={"confidence": 1.0, "reasoning": "explicit TC generation"},
+                )
+            ],
+            finish_reason="tool_calls",
+        )
 
-    monkeypatch.setattr(graph_mod, "evaluate_gate", fail_gate)
-    monkeypatch.setattr(graph_mod, "supervisor_node", fail_supervisor)
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_with_tools)
 
     project = Project(name="tc-missing-srs", description="x")
     db.add(project)
@@ -217,10 +241,9 @@ async def test_run_chat_routes_testcase_generation_before_rag_and_reports_missin
     ]
 
     types = [type(e).__name__ for e in events]
-    assert types == ["ToolCallEvent", "ToolResultEvent", "ErrorEvent"]
-    tool_call, tool_result, error = events
-    assert tool_call.data.name == "testcase_generator"
-    assert tool_result.data.name == "testcase_generator"
-    assert tool_result.data.status == "error"
-    assert tool_result.data.result == {"error": MISSING_SRS_MESSAGE}
-    assert error.data.message == MISSING_SRS_MESSAGE
+    assert types == ["ToolCallEvent", "TokenEvent", "ToolResultEvent", "DoneEvent"]
+    assert events[0].data.name == "testcase_generator"
+    assert MISSING_SRS_MESSAGE in events[1].data.text
+    assert events[2].data.name == "testcase_generator"
+    assert events[2].data.status == "success"
+    assert events[3].data.finish_reason == "stop"

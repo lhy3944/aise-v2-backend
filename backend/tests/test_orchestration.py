@@ -65,6 +65,7 @@ def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
     circuiting to knowledge_qa. Gate-specific tests re-enable the env var.
     """
     monkeypatch.setenv("RAG_GATE_ENABLED", "false")
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
     default_routing = json.dumps(
         {
             "action": "single",
@@ -308,6 +309,55 @@ async def test_supervisor_single_routes_to_agent(monkeypatch, db):
         "ToolResultEvent",
         "DoneEvent",
     ]
+
+
+async def test_supervisor_tool_use_routes_to_record_manager(monkeypatch, db):
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "true")
+
+    async def fake_with_tools(messages, tools, **kwargs):
+        return llm_svc.CompletionResponse(
+            tool_calls=[
+                llm_svc.ToolCallInfo(
+                    id="call_rec",
+                    name="record_manager",
+                    arguments={
+                        "action": "create",
+                        "content": "MFA를 지원해야 한다.",
+                        "confidence": 0.94,
+                        "reasoning": "individual record append",
+                    },
+                )
+            ],
+            finish_reason="tool_calls",
+        )
+
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_with_tools)
+
+    project = Project(name="tool-use-record", description="x")
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
+    events = [
+        ev
+        async for ev in run_chat(
+            graph,
+            project_id=project.id,
+            session_id=uuid.uuid4(),
+            user_input="레코드에 MFA 추가해줘",
+            session_factory=session_factory,
+        )
+    ]
+
+    types = [type(e).__name__ for e in events]
+    assert types == ["ToolCallEvent", "InterruptEvent", "DoneEvent"]
+    assert events[0].data.name == "record_manager"
+    assert events[0].data.arguments["content"] == "MFA를 지원해야 한다."
+    assert events[1].data.kind == "confirm"
+    assert events[-1].data.finish_reason == "interrupt"
 
 
 async def test_supervisor_clarify_emits_question_as_token(monkeypatch, db):

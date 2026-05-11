@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.agents import list_agents, load_builtin_agents
-from src.agents.project_status import ProjectStatusAgent, _fetch_project_summary
+from src.agents.project_status import _fetch_project_summary
 from src.agents.registry import get_agent
 from src.models.artifact import Artifact
 from src.models.project import Project
@@ -66,7 +66,7 @@ async def _seed_project_with_records(db, project_id: uuid.UUID) -> None:
                 "order_index": i,
                 "metadata": {"status": "approved" if i < 2 else "draft"},
             },
-            working_status="clean",
+            working_status="dirty",
             lifecycle_status="active",
         )
         db.add(artifact)
@@ -116,7 +116,7 @@ async def test_run_stream_emits_tokens_and_final(monkeypatch, db):
     await db.flush()
 
     agent = get_agent("project_status")
-    assert isinstance(agent, ProjectStatusAgent)
+    assert agent.capability.name == "project_status"
 
     state = {
         "project_id": str(project.id),
@@ -144,6 +144,9 @@ async def test_run_chat_routes_status_query(monkeypatch, db):
     _install_stream_stub(monkeypatch, answer=canned)
 
     # Also stub supervisor LLM so it routes to project_status.
+    monkeypatch.setenv("SUPERVISOR_TOOL_USE_ENABLED", "false")
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
+
     async def fake_chat_completion(messages, **kwargs):
         return (
             '{"action":"single","agent":"project_status","plan":null,'
@@ -156,7 +159,8 @@ async def test_run_chat_routes_status_query(monkeypatch, db):
     pid = uuid.uuid4()
     await _seed_project_with_records(db, pid)
 
-    graph = build_graph(TestSession)
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    graph = build_graph(session_factory)
     events: list = []
     async for ev in run_chat(
         graph,
@@ -164,7 +168,7 @@ async def test_run_chat_routes_status_query(monkeypatch, db):
         session_id=uuid.uuid4(),
         user_input="레코드 개수가 어떻게 돼?",
         history=[],
-        session_factory=TestSession,
+        session_factory=session_factory,
     ):
         events.append(ev)
 

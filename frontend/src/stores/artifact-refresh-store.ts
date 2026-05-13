@@ -18,7 +18,7 @@ interface ArtifactRefreshState {
 }
 
 export const useArtifactRefreshStore = create<ArtifactRefreshState>()((set) => ({
-  nonce: { record: 0, srs: 0, design: 0, testcase: 0 },
+  nonce: { record: 0, srs: 0, system_model: 0, data_model: 0, design: 0, testcase: 0 },
   bump: (kind) =>
     set((s) => ({ nonce: { ...s.nonce, [kind]: s.nonce[kind] + 1 } })),
   bumpAll: () =>
@@ -26,6 +26,8 @@ export const useArtifactRefreshStore = create<ArtifactRefreshState>()((set) => (
       nonce: {
         record: s.nonce.record + 1,
         srs: s.nonce.srs + 1,
+        system_model: s.nonce.system_model + 1,
+        data_model: s.nonce.data_model + 1,
         design: s.nonce.design + 1,
         testcase: s.nonce.testcase + 1,
       },

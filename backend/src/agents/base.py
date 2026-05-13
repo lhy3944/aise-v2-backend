@@ -79,6 +79,48 @@ class AgentCapability(BaseModel):
             "shows just the streamed answer without a tool card."
         ),
     )
+    tool_parameters: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "JSON Schema 'parameters' object for function-calling tool definition. "
+            "If None, to_tool_definition() builds one from input_schema."
+        ),
+    )
+
+    def to_tool_definition(self) -> dict[str, Any]:
+        """Build an OpenAI function-calling tool definition for this capability."""
+        parameters = self.tool_parameters or self._default_tool_parameters()
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": parameters,
+            },
+        }
+
+    def _default_tool_parameters(self) -> dict[str, Any]:
+        """Auto-generate a basic JSON Schema parameters block from input_schema."""
+        props: dict[str, Any] = {}
+        for key, val in self.input_schema.items():
+            if val in ("str", "string"):
+                props[key] = {"type": "string"}
+            elif val in ("int", "integer"):
+                props[key] = {"type": "integer"}
+            elif val in ("float", "number"):
+                props[key] = {"type": "number"}
+            elif val in ("bool", "boolean"):
+                props[key] = {"type": "boolean"}
+            elif isinstance(val, dict):
+                props[key] = val
+            else:
+                props[key] = {"type": "string"}
+
+        return {
+            "type": "object",
+            "properties": props,
+            "required": [],
+        }
 
 
 class BaseAgent(ABC):

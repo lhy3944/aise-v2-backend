@@ -130,22 +130,24 @@ async def test_graph_routes_supervisor_to_testcase_generator(monkeypatch, db):
     from src.orchestration.graph import build_graph, run_chat
     from src.services import llm_svc, rag_svc
 
-    async def fake_chat_completion(messages, **kwargs):
-        last = messages[-1].get("content", "") if messages else ""
-        if "## Decision policy" in last:
-            return _json.dumps(
-                {
-                    "action": "single",
-                    "agent": "testcase_generator",
-                    "plan": None,
-                    "clarification": None,
-                    "reasoning": "stub",
-                }
-            )
-        return "unused"
+    from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
-    monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        first = messages[0].get("content", "") if messages else ""
+        if "Supervisor Routing Agent" in first:
+            return CompletionResponse(
+                tool_calls=[
+                    ToolCallInfo(
+                        id="stub_tc_tc",
+                        name="testcase_generator",
+                        arguments={},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        return CompletionResponse(content="unused", finish_reason="stop")
+
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
     project = Project(name="tc-e2e", description="x")
     db.add(project)
@@ -189,14 +191,25 @@ async def test_run_chat_routes_testcase_generation_before_rag_and_reports_missin
     from src.orchestration import graph as graph_mod
     from src.orchestration.graph import build_graph, run_chat
 
-    async def fail_gate(**kwargs):  # pragma: no cover - asserted by no raise
-        raise AssertionError("retrieval gate should not handle generation commands")
+    from src.services import llm_svc as llm_svc_mod
+    from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
-    async def fail_supervisor(state):  # pragma: no cover - asserted by no raise
-        raise AssertionError("supervisor should not handle explicit TC generation")
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        first = messages[0].get("content", "") if messages else ""
+        if "Supervisor Routing Agent" in first:
+            return CompletionResponse(
+                tool_calls=[
+                    ToolCallInfo(
+                        id="stub_tc_tc2",
+                        name="testcase_generator",
+                        arguments={},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        return CompletionResponse(content="unused", finish_reason="stop")
 
-    monkeypatch.setattr(graph_mod, "evaluate_gate", fail_gate)
-    monkeypatch.setattr(graph_mod, "supervisor_node", fail_supervisor)
+    monkeypatch.setattr(llm_svc_mod, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
     project = Project(name="tc-missing-srs", description="x")
     db.add(project)

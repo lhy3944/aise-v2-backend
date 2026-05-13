@@ -68,7 +68,7 @@ export function GlossaryAddForm({ onAdd }: GlossaryAddFormProps) {
         />
       </div>
       <Button size='sm' type='submit' disabled={!term.trim() || !definition.trim()}>
-        <Plus className='size-3.5' />
+        <Plus className='size-4' />
         추가
       </Button>
     </form>

@@ -69,209 +69,6 @@ from src.schemas.events import (
 from src.services import hitl_state_svc
 
 
-# ---------- Deterministic routing guards ----------
-
-
-_GENERATION_TERMS = (
-    "생성",
-    "만들",
-    "작성",
-    "뽑",
-    "추출",
-    "재생성",
-    "다시 만들",
-    "generate",
-    "create",
-    "make",
-    "write",
-)
-
-# 상태/현황 질의 패턴 — 이 패턴이 매칭되면 project_status로 라우팅해야
-# 하므로, _explicit_artifact_generation_agent에서 제외한다.
-# 유지보수 부담을 최소화하기 위해 핵심 패턴만 유지.
-# 세부 질의 해석은 supervisor LLM이 담당한다.
-_STATUS_QUERY_TERMS = (
-    "어때",
-    "몇 개",
-    "몇개",
-    "상태",
-    "현황",
-    "진행",
-    "알려줘",
-    "보여줘",
-    "확인",
-    "없나",
-    "있나",
-    "없는지",
-    "있는지",
-    "count",
-    "status",
-    "how many",
-    "version",
-    "progress",
-)
-
-_ARTIFACT_GENERATION_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "testcase_generator",
-        (
-            "테스트케이스",
-            "테스트 케이스",
-            "testcase",
-            "test case",
-            "tc",
-            "검증 시나리오",
-            "테스트 시나리오",
-        ),
-    ),
-    (
-        "design_generator",
-        (
-            "design",
-            "디자인",
-            "설계",
-            "아키텍처",
-        ),
-    ),
-    (
-        "srs_generator",
-        (
-            "srs",
-            "요구사항 명세서",
-            "소프트웨어 명세서",
-        ),
-    ),
-)
-
-
-def _explicit_artifact_generation_agent(user_input: str) -> str | None:
-    """Return the agent for explicit artifact generation requests.
-
-    RAG can score highly for prompts like "SRS 기반 테스트케이스 만들어줘"
-    because the project documents are semantically relevant. These commands
-    are workflow actions, not knowledge questions, so route them before the
-    retrieval-first gate.
-
-    Status-query exclusion: "SRS 버전 어때?" should NOT route to srs_generator.
-    If the input contains status-query patterns, return None so the supervisor
-    can route to project_status instead.
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return None
-
-    # 상태/현황 질의면 생성 에이전트가 아니라 project_status로 라우팅.
-    if any(term in text for term in _STATUS_QUERY_TERMS):
-        return None
-
-    if not any(term in text for term in _GENERATION_TERMS):
-        return None
-
-    for agent_name, artifact_terms in _ARTIFACT_GENERATION_ROUTES:
-        if any(term in text for term in artifact_terms):
-            return agent_name
-    return None
-
-
-# 산출물 관련 키워드가 포함된 상태 질의를 결정적으로 project_status로
-# 직결하기 위한 매핑. retrieval gate나 supervisor LLM이 "SRS" 키워드를
-# 보고 srs_generator로 잘못 라우팅하는 것을 방지한다.
-_ARTIFACT_STATUS_KEYWORDS: tuple[tuple[str, ...], ...] = (
-    ("srs", "요구사항 명세서"),
-    ("design", "디자인", "설계"),
-    ("테스트케이스", "테스트 케이스", "testcase", "tc"),
-    ("레코드", "record"),
-)
-
-
-def _is_artifact_status_query(user_input: str) -> bool:
-    """Check if the input is a status query about project artifacts.
-
-    Two conditions must BOTH hold:
-    1. Contains an artifact keyword (SRS, 레코드, 테스트케이스, etc.)
-    2. Does NOT contain a generation term (생성, 만들, 작성, etc.)
-       AND (contains a status pattern OR ends with a question mark)
-
-    "SRS 버전 어떻게 돼?" → True  (artifact, no gen term, question)
-    "테스트케이스 없는건가?" → True  (artifact, no gen term, question)
-    "SRS 만들어줘"        → False (artifact but has gen term)
-    "어떻게 돼?"          → False (question but no artifact)
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return False
-
-    has_artifact = any(
-        any(term in text for term in group)
-        for group in _ARTIFACT_STATUS_KEYWORDS
-    )
-    if not has_artifact:
-        return False
-
-    # 생성 의도가 있으면 상태 질의가 아님.
-    if any(term in text for term in _GENERATION_TERMS):
-        return False
-
-    has_status_pattern = any(term in text for term in _STATUS_QUERY_TERMS)
-    is_question = text.endswith("?") or text.endswith("?")
-    return has_status_pattern or is_question
-
-
-# 대화 맥락에서 최근 언급된 산출물 타입을 추출해 짧은 생성 요청에 반영.
-# "테스트케이스 없어?" → "만들어줘" 의 흐름에서 "만들어줘"에
-# 산출물 키워드가 없더라도 테스트케이스 생성으로 자동 라우팅.
-_CONTEXT_ARTIFACT_MAP: dict[str, str] = {
-    "srs": "srs_generator",
-    "요구사항 명세서": "srs_generator",
-    "design": "design_generator",
-    "디자인": "design_generator",
-    "설계": "design_generator",
-    "테스트케이스": "testcase_generator",
-    "테스트 케이스": "testcase_generator",
-    "testcase": "testcase_generator",
-    "tc": "testcase_generator",
-    "레코드": "requirement",
-    "record": "requirement",
-    "요구사항": "requirement",
-}
-
-
-def _resolve_from_context(user_input: str, history: list[dict]) -> str | None:
-    """Resolve a short generation request using conversation context.
-
-    When user_input contains a generation term ("만들어줘", "생성해줘", etc.)
-    but no artifact keyword, scan recent history for the last mentioned
-    artifact type and return the corresponding agent name.
-
-    "만들어줘" after "테스트케이스 없어?" → "testcase_generator"
-    "만들어줘" after "SRS 상태 어때?"  → "srs_generator"
-    "만들어줘" with no prior context    → None (let supervisor decide)
-    """
-    text = (user_input or "").strip().lower()
-    if not text:
-        return None
-
-    # 생성 의도가 있어야 함.
-    if not any(term in text for term in _GENERATION_TERMS):
-        return None
-
-    # 이미 산출물 키워드가 있으면 맥락 해석 불필요.
-    for group in _ARTIFACT_STATUS_KEYWORDS:
-        if any(term in text for term in group):
-            return None
-
-    # 최근 대화에서 산출물 키워드 검색 (최근 6턴, 역순).
-    for turn in reversed(history[-6:] or []):
-        content = str(turn.get("content", "")).strip().lower()
-        if not content:
-            continue
-        for keyword, agent_name in _CONTEXT_ARTIFACT_MAP.items():
-            if keyword in content:
-                return agent_name
-
-    return None
-
-
 # ---------- Node helpers ----------
 
 
@@ -389,6 +186,7 @@ def build_graph(
     workflow.add_node("knowledge_qa", _make_agent_node("knowledge_qa", session_factory))
     workflow.add_node("project_status", _make_agent_node("project_status", session_factory))
     workflow.add_node("requirement", _make_agent_node("requirement", session_factory))
+    workflow.add_node("record_manager", _make_agent_node("record_manager", session_factory))
 
     workflow.add_edge(START, "supervisor")
     workflow.add_conditional_edges(
@@ -398,6 +196,7 @@ def build_graph(
             "knowledge_qa": "knowledge_qa",
             "project_status": "project_status",
             "requirement": "requirement",
+            "record_manager": "record_manager",
             # Supervisor may emit `plan`; until increment 2 wires the
             # planner node, we terminate the graph so the fallback
             # clarification path in run_chat still emits a clean stream.
@@ -408,6 +207,7 @@ def build_graph(
     workflow.add_edge("knowledge_qa", END)
     workflow.add_edge("project_status", END)
     workflow.add_edge("requirement", END)
+    workflow.add_edge("record_manager", END)
 
     return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
@@ -446,6 +246,18 @@ def _result_payload(state: dict[str, Any]) -> dict[str, Any]:
             payload["design_version"] = design["version"]
         if "based_on_srs_version" in design:
             payload["srs_version"] = design["based_on_srs_version"]
+    sm = state.get("system_model_generated")
+    if isinstance(sm, dict):
+        if "section_count" in sm:
+            payload["system_model_section_count"] = sm["section_count"]
+        if "version" in sm:
+            payload["system_model_version"] = sm["version"]
+    dm = state.get("data_model_generated")
+    if isinstance(dm, dict):
+        if "section_count" in dm:
+            payload["data_model_section_count"] = dm["section_count"]
+        if "version" in dm:
+            payload["data_model_version"] = dm["version"]
     tcs = state.get("testcases_generated")
     if isinstance(tcs, dict):
         if "testcase_count" in tcs:
@@ -778,89 +590,67 @@ async def run_chat(
         "history": history or [],
     }
 
-    explicit_agent = _explicit_artifact_generation_agent(user_input)
-    if explicit_agent is not None:
-        initial_state["routing"] = {
-            "action": "single",
-            "agent": explicit_agent,
-            "plan": None,
-            "clarification": None,
-            "reasoning": "deterministic artifact generation intent",
-        }
-
-    # 0b. 상태 질의 결정적 가드 — "SRS 버전 어떻게 돼?" 같은 질문은
-    # retrieval gate가나 supervisor LLM이 "SRS" 키워드만 보고
-    # srs_generator/knowledge_qa로 잘못 라우팅하는 것을 방지한다.
-    # 산출물 키워드 + 상태 질의 패턴이 모두 있으면 project_status로 직결.
-    if explicit_agent is None and _is_artifact_status_query(user_input):
-        initial_state["routing"] = {
-            "action": "single",
-            "agent": "project_status",
-            "plan": None,
-            "clarification": None,
-            "reasoning": "deterministic artifact status query",
-        }
-
-    # 0c. 대화 맥락 해석 — "만들어줘" 같은 짧은 생성 요청에 직전 대화에서
-    # 언급된 산출물 타입을 자동 보완. "테스트케이스 없어?" → "만들어줘" 의
-    # 흐름에서 testcase_generator로 직결.
-    if (
-        explicit_agent is None
-        and not _is_artifact_status_query(user_input)
-        and "routing" not in initial_state
-    ):
-        context_agent = _resolve_from_context(user_input, history or [])
-        if context_agent is not None:
-            initial_state["routing"] = {
-                "action": "single",
-                "agent": context_agent,
-                "plan": None,
-                "clarification": None,
-                "reasoning": "context-resolved artifact generation intent",
-            }
-
-    # 1a. Retrieval-first gate — 결정적 게이트. 통과 시 supervisor LLM을
-    # 건너뛰고 knowledge_qa로 직결한다. 통과하지 못하면(가벼운 질의·문서
-    # 없음·score 미달) supervisor LLM이 판단한다.
-    # 위 결정적 가드(0a/0b/0c)가 이미 routing을 설정한 경우 gate를 건너뛴다.
+    # 1. Retrieval gate — RAG score/rag_cache만 후보 신호로 수집.
+    # 라우팅 결정권은 Supervisor에게 있다.
     gate_result = None
-    if explicit_agent is None and "routing" not in initial_state and session_factory is not None:
-        try:
-            project_uuid_for_gate = uuid.UUID(str(project_id))
-        except (ValueError, TypeError):
-            project_uuid_for_gate = None
-        if project_uuid_for_gate is not None:
-            try:
-                async with session_factory() as db:
-                    gate_result = await evaluate_gate(
-                        user_input=user_input,
-                        history=history or [],
-                        project_id=project_uuid_for_gate,
-                        db=db,
-                    )
-            except Exception:  # pragma: no cover — gate 실패는 LLM로 폴백
-                logger.exception("retrieval_gate failed, falling back to supervisor LLM")
-                gate_result = None
+    try:
+        project_uuid_for_gate = uuid.UUID(str(project_id))
+    except (ValueError, TypeError):
+        project_uuid_for_gate = None
 
-    if gate_result is not None:
-        initial_state["routing"] = gate_result.routing
-        initial_state["rag_cache"] = gate_result.rag_cache
-    elif "routing" not in initial_state:
-        # 1b. Supervisor — direct call, no graph invocation needed.
-        # 위 결정적 가드가 이미 routing을 설정했으면 supervisor 생략.
+    if session_factory is not None and project_uuid_for_gate is not None:
         try:
-            supervisor_update = await supervisor_node(initial_state)
-        except Exception as e:  # pragma: no cover — defensive
-            logger.exception("supervisor_node failed")
-            yield ErrorEvent(
-                data=ErrorEventData(
-                    message=str(e),
-                    code="SUPERVISOR_FAILURE",
-                    recoverable=False,
+            async with session_factory() as db:
+                gate_result = await evaluate_gate(
+                    user_input=user_input,
+                    history=history or [],
+                    project_id=project_uuid_for_gate,
+                    db=db,
                 )
+        except Exception:  # pragma: no cover — gate 실패는 LLM로 폴백
+            logger.exception("retrieval_gate failed, falling back to supervisor LLM")
+            gate_result = None
+
+    # rag_cache는 knowledge_qa가 재사용하므로 state에 저장.
+    # routing은 무시 — Supervisor가 최종 결정.
+    if gate_result is not None:
+        initial_state["rag_cache"] = gate_result.rag_cache
+
+    # 2. ProjectContextSnapshot 구성 (Supervisor 입력용)
+    if session_factory is not None and project_uuid_for_gate is not None:
+        from src.orchestration.context import build_project_context
+
+        rag_signal: dict[str, Any] | None = None
+        if gate_result is not None and gate_result.rag_cache:
+            rag_signal = {
+                "max_score": gate_result.rag_cache.get("max_score"),
+                "rewritten_query": gate_result.rag_cache.get("rewritten_query"),
+            }
+        try:
+            async with session_factory() as db:
+                snapshot = await build_project_context(
+                    db, project_uuid_for_gate, rag_signal=rag_signal,
+                )
+                initial_state["project_context"] = snapshot
+                if rag_signal:
+                    initial_state["rag_signal"] = rag_signal
+        except Exception:  # pragma: no cover — snapshot 실패는 치명적 아님
+            logger.exception("build_project_context failed, proceeding without snapshot")
+
+    # 3. Supervisor — tool-calling or JSON-based routing.
+    try:
+        supervisor_update = await supervisor_node(initial_state)
+    except Exception as e:  # pragma: no cover — defensive
+        logger.exception("supervisor_node failed")
+        yield ErrorEvent(
+            data=ErrorEventData(
+                message=str(e),
+                code="SUPERVISOR_FAILURE",
+                recoverable=False,
             )
-            return
-        initial_state.update(supervisor_update)
+        )
+        return
+    initial_state.update(supervisor_update)
 
     if initial_state.get("error"):
         yield ErrorEvent(
@@ -915,6 +705,8 @@ async def run_chat(
     # 활용한다 — 사용자가 승인하면 resume_chat이 같은 에이전트를 재실행한다.
     _GENERATION_CONFIRM_AGENTS = frozenset({
         "srs_generator",
+        "system_model_generator",
+        "data_model_generator",
         "design_generator",
         "testcase_generator",
         "requirement",
@@ -935,6 +727,8 @@ async def run_chat(
 
         _AGENT_LABELS: dict[str, str] = {
             "srs_generator": "SRS 문서 생성",
+            "system_model_generator": "시스템 모델 생성",
+            "data_model_generator": "데이터 모델 생성",
             "design_generator": "Design 문서 생성",
             "testcase_generator": "테스트케이스 생성",
             "requirement": "요구사항 레코드 추출",
@@ -949,10 +743,13 @@ async def run_chat(
             has_final = (ord(last) - 0xAC00) % 28 != 0
             return f"{word}{'을' if has_final else '를'}"
 
-        # 기존 산출물 개수 조회 — 있으면 "재생성" 안내
+        # 기존 산출물 조회 — 있으면 "재생성" 안내
         existing_count = 0
+        latest_version: int | None = None
         _ARTIFACT_TYPE_MAP: dict[str, str] = {
             "srs_generator": "srs",
+            "system_model_generator": "system_model",
+            "data_model_generator": "data_model",
             "design_generator": "design",
             "testcase_generator": "testcase",
             "requirement": "record",
@@ -961,6 +758,7 @@ async def run_chat(
         if session_factory is not None and project_uuid is not None and artifact_type:
             async with session_factory() as db:
                 from src.models.artifact import Artifact as ArtifactModel
+                from src.models.artifact import ArtifactVersion
                 count_row = await db.execute(
                     select(sa_func.count()).where(
                         ArtifactModel.project_id == project_uuid,
@@ -970,15 +768,30 @@ async def run_chat(
                 )
                 existing_count = count_row.scalar() or 0
 
+                # 최신 버전 번호 조회
+                if existing_count > 0:
+                    from sqlalchemy import func as sa_func_mod
+                    max_vn_row = await db.execute(
+                        select(sa_func_mod.max(ArtifactVersion.version_number))
+                        .join(ArtifactModel, ArtifactModel.id == ArtifactVersion.artifact_id)
+                        .where(
+                            ArtifactModel.project_id == project_uuid,
+                            ArtifactModel.artifact_type == artifact_type,
+                            ArtifactModel.lifecycle_status == "active",
+                        )
+                    )
+                    latest_version = max_vn_row.scalar()
+
         is_regenerate = existing_count > 0
         if is_regenerate:
-            title = f"기존 {existing_count}개의 산출물이 있습니다. {_with_particle(action_label)} 다시 진행할까요?"
+            version_info = f"최신 v{latest_version}" if latest_version else f"{existing_count}개"
+            next_version = f"v{(latest_version or 0) + 1}"
+            title = f"현재 {version_info}까지 생성됨. {next_version}으로 {_with_particle(action_label)} 진행할까요?"
             description = (
-                f"승인하면 기존 {existing_count}개가 삭제되고 새로 생성됩니다. "
-                "이 작업은 되돌리기 어렵습니다."
+                f"승인하면 {next_version}이 추가됩니다. 기존 버전은 유지됩니다."
             )
-            approve_label = "재생성"
-            intro_text = f"이미 {existing_count}개의 결과가 있습니다. 다시 {_with_particle(action_label)} 진행할까요?"
+            approve_label = f"{next_version} 생성"
+            intro_text = f"현재 {version_info}의 결과가 있습니다. {next_version}으로 {_with_particle(action_label)} 진행할까요?"
         else:
             title = f"{_with_particle(action_label)} 진행할까요?"
             description = (
@@ -992,7 +805,7 @@ async def run_chat(
             interrupt_id=interrupt_id,
             title=title,
             description=description,
-            severity="danger" if is_regenerate else "warning",
+            severity="info" if is_regenerate else "warning",
             context={"artifact_kind": selected, "existing_count": existing_count, "is_regenerate": is_regenerate},
             actions=ConfirmActions(
                 approve=approve_label,
@@ -1248,6 +1061,8 @@ async def resume_chat(
     if saved.interrupt_kind == "confirm" and not is_approved:
         _AGENT_LABELS: dict[str, str] = {
             "srs_generator": "SRS 문서 생성",
+            "system_model_generator": "시스템 모델 생성",
+            "data_model_generator": "데이터 모델 생성",
             "design_generator": "Design 문서 생성",
             "testcase_generator": "테스트케이스 생성",
             "requirement": "요구사항 레코드 추출",
@@ -1271,37 +1086,11 @@ async def resume_chat(
         response=response,
     )
 
-    # 재생성 승인 시: 기존 산출물 삭제 후 에이전트 실행.
-    # payload의 is_regenerate/context에서 기존 산출물 타입을 확인한다.
+    # 재생성 승인 시: 기존 산출물은 유지, 에이전트가 새 버전을 append.
+    # (기존 삭제 로직 제거 — generate_srs/generate_design/regenerate_testcase
+    # 가 기존 artifact 에 새 ArtifactVersion 을 추가하는 방식으로 동작)
     payload = saved.payload or {}
-    context = payload.get("context") or {}
-    if context.get("is_regenerate") and session_factory is not None:
-        _ARTIFACT_TYPE_MAP: dict[str, str] = {
-            "srs_generator": "srs",
-            "design_generator": "design",
-            "testcase_generator": "testcase",
-            "requirement": "record",
-        }
-        artifact_type = _ARTIFACT_TYPE_MAP.get(saved.selected_agent)
-        if artifact_type:
-            async with session_factory() as db:
-                from src.models.artifact import Artifact as ArtifactModel
-                result = await db.execute(
-                    select(ArtifactModel).where(
-                        ArtifactModel.project_id == project_uuid,
-                        ArtifactModel.artifact_type == artifact_type,
-                        ArtifactModel.lifecycle_status == "active",
-                    )
-                )
-                old_artifacts = result.scalars().all()
-                for a in old_artifacts:
-                    a.lifecycle_status = "deleted"
-                await db.commit()
-                if old_artifacts:
-                    logger.info(
-                        f"regenerate: deleted {len(old_artifacts)} existing "
-                        f"{artifact_type} artifacts for project {project_uuid}"
-                    )
+    _context = payload.get("context") or {}
 
     started = time.perf_counter()
     expose = getattr(agent.capability, "expose_as_tool", True)

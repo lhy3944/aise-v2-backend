@@ -38,6 +38,7 @@ from src.schemas.api.design import (
 )
 from src.services.artifact_messages import MISSING_SRS_MESSAGE
 from src.services.llm_svc import chat_completion
+from src.schemas.api.design import DesignPipelineResponse
 
 
 def _content_hash(payload: dict[str, Any]) -> str:
@@ -87,15 +88,27 @@ def _to_response(
 async def _get_design_artifact(
     db: AsyncSession, project_id: uuid.UUID
 ) -> Artifact | None:
-    return (
+    """프로젝트의 Design Artifact (1개) 조회. deleted 상태면 재활성화."""
+    from datetime import datetime, timezone
+
+    # active 우선, 없으면 deleted 상태도 조회
+    artifact = (
         await db.execute(
             select(Artifact).where(
                 Artifact.project_id == project_id,
                 Artifact.artifact_type == "design",
-                Artifact.lifecycle_status == "active",
+                Artifact.lifecycle_status.in_(("active", "deleted")),
+            ).order_by(
+                Artifact.lifecycle_status.asc(),  # active < deleted alphabetically
             )
         )
     ).scalar_one_or_none()
+
+    if artifact is not None and artifact.lifecycle_status != "active":
+        artifact.lifecycle_status = "active"
+        artifact.updated_at = datetime.now(timezone.utc)
+
+    return artifact
 
 
 async def _get_srs_clean_version(
@@ -312,3 +325,43 @@ async def get_design(
     ):
         raise AppException(404, "Design 문서를 찾을 수 없습니다.")
     return _to_response(artifact, version)
+
+
+async def generate_design_pipeline(
+    db: AsyncSession, project_id: uuid.UUID
+) -> DesignPipelineResponse:
+    """순차 파이프라인: System Model → Data Model → SDD 통합 생성."""
+    from src.services import system_model_svc, data_model_svc
+
+    errors: list[str] = []
+    sm_resp = None
+    dm_resp = None
+    d_resp = None
+
+    # Step 1: System Model
+    try:
+        sm_resp = await system_model_svc.generate_system_model(db, project_id)
+    except Exception as e:
+        logger.error(f"Pipeline Step 1 (System Model) 실패: {e}")
+        errors.append(f"System Model: {str(e)[:200]}")
+
+    # Step 2: Data Model (System Model 결과가 DB에 반영되어 프롬프트에 포함됨)
+    try:
+        dm_resp = await data_model_svc.generate_data_model(db, project_id)
+    except Exception as e:
+        logger.error(f"Pipeline Step 2 (Data Model) 실패: {e}")
+        errors.append(f"Data Model: {str(e)[:200]}")
+
+    # Step 3: SDD (System Model + Data Model 결과가 DB에 반영되어 프롬프트에 포함됨)
+    try:
+        d_resp = await generate_design(db, project_id)
+    except Exception as e:
+        logger.error(f"Pipeline Step 3 (SDD) 실패: {e}")
+        errors.append(f"SDD: {str(e)[:200]}")
+
+    return DesignPipelineResponse(
+        system_model=sm_resp,
+        data_model=dm_resp,
+        design=d_resp,
+        errors=errors,
+    )

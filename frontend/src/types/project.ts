@@ -342,6 +342,65 @@ export interface DesignListResponse {
   documents: DesignDocument[];
 }
 
+// --- System Model (artifact_type='system_model' 의 도메인 뷰) ---
+export interface SystemModelSection {
+  section_id: string | null;
+  title: string;
+  content: string;
+  order_index: number;
+}
+
+export interface SystemModelDocument {
+  system_model_id: string;
+  artifact_id: string;
+  project_id: string;
+  version: number;
+  status: string;
+  error_message: string | null;
+  sections: SystemModelSection[];
+  based_on_srs: { version_id?: string; version_number?: number } | null;
+  source_artifact_versions: SourceArtifactVersions | null;
+  created_at: string;
+}
+
+export interface SystemModelListResponse {
+  documents: SystemModelDocument[];
+}
+
+// --- Data Model (artifact_type='data_model' 의 도메인 뷰) ---
+export interface DataModelSection {
+  section_id: string | null;
+  title: string;
+  content: string;
+  order_index: number;
+}
+
+export interface DataModelDocument {
+  data_model_id: string;
+  artifact_id: string;
+  project_id: string;
+  version: number;
+  status: string;
+  error_message: string | null;
+  sections: DataModelSection[];
+  based_on_srs: { version_id?: string; version_number?: number } | null;
+  based_on_system_model: { version_id?: string; version_number?: number } | null;
+  source_artifact_versions: SourceArtifactVersions | null;
+  created_at: string;
+}
+
+export interface DataModelListResponse {
+  documents: DataModelDocument[];
+}
+
+// --- Design Pipeline ---
+export interface DesignPipelineResponse {
+  system_model: SystemModelDocument | null;
+  data_model: DataModelDocument | null;
+  design: DesignDocument | null;
+  errors: string[];
+}
+
 // --- ArtifactRecord (artifact_type='record' 의 도메인 뷰) ---
 
 export type ArtifactRecordStatus = 'draft' | 'approved' | 'excluded';
@@ -401,7 +460,7 @@ export interface ArtifactRecordExtractResponse {
 // --- Artifact Governance (Git-like: Unstaged/Staged/PR/Merge) ---
 export type JsonObject = { [key: string]: unknown };
 
-export type ArtifactKind = 'record' | 'srs' | 'design' | 'testcase';
+export type ArtifactKind = 'record' | 'srs' | 'system_model' | 'data_model' | 'design' | 'testcase';
 export type WorkingStatus = 'clean' | 'dirty' | 'staged';
 export type LifecycleStatus = 'active' | 'archived' | 'deleted';
 export type PullRequestStatus =
@@ -504,6 +563,8 @@ export interface ImpactApplyResponse {
 export interface SourceArtifactVersions {
   record?: SourceArtifactVersionRef[];
   srs?: SourceArtifactVersionRef[];
+  system_model?: SourceArtifactVersionRef[];
+  data_model?: SourceArtifactVersionRef[];
   design?: SourceArtifactVersionRef[];
   testcase?: SourceArtifactVersionRef[];
 }

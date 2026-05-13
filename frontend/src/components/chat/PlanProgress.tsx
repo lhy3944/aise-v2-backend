@@ -65,7 +65,7 @@ export function PlanProgress({ plan, currentStep }: PlanProgressProps) {
             >
               <Icon
                 className={cn(
-                  'size-3.5 shrink-0',
+                  'size-4 shrink-0',
                   cfg.tone,
                   step.status === 'running' && 'animate-spin',
                 )}

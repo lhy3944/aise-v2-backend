@@ -53,12 +53,16 @@ export function summarizeLineage(
   const kindOrder: Array<keyof SourceArtifactVersions> = [
     'record',
     'srs',
+    'system_model',
+    'data_model',
     'design',
     'testcase',
   ];
   const kindPrefix: Record<keyof SourceArtifactVersions, string> = {
     record: 'REC',
     srs: 'SRS',
+    system_model: 'SM',
+    data_model: 'DM',
     design: 'DSG',
     testcase: 'TC',
   };

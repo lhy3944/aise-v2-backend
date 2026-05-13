@@ -30,6 +30,7 @@ from src.schemas.events import (
     ToolResultEvent,
 )
 from src.services import embedding_svc, llm_svc
+from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
 
 @pytest.fixture(autouse=True)
@@ -94,23 +95,17 @@ async def test_supervisor_routes_greeting_to_general_chat(monkeypatch, db):
     async def fake_embeddings(texts):
         return [[0.1] * 1536 for _ in texts]
 
-    async def fake_chat_completion(messages, **kwargs):
-        # Supervisor routing prompt: return a JSON pointing at general_chat.
-        last = messages[-1].get("content", "") if messages else ""
-        if "## Decision policy" in last and "## Available agents" in last:
-            return json.dumps(
-                {
-                    "action": "single",
-                    "agent": "general_chat",
-                    "plan": None,
-                    "clarification": None,
-                    "reasoning": "greeting",
-                }
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        first = messages[0].get("content", "") if messages else ""
+        if "Supervisor Routing Agent" in first:
+            return CompletionResponse(
+                content=canned,
+                finish_reason="stop",
             )
-        return canned  # not used by streaming path, defensive default
+        return CompletionResponse(content=canned, finish_reason="stop")
 
     monkeypatch.setattr(embedding_svc, "get_embeddings", fake_embeddings)
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
     _install_stream_stub(monkeypatch, answer=canned)
 
     project = Project(name="gc-e2e", description="x")

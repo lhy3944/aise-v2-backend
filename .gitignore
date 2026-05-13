@@ -50,6 +50,7 @@ yarn-error.log*
 # === Temporary workspace ===
 _workspace/
 .codex
+.claude
 
 # === Agent Skills (external install) ===
 .agents/

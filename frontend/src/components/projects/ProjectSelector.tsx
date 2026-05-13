@@ -152,7 +152,7 @@ export function ProjectSelector({ collapsed = false }: ProjectSelectorProps) {
             >
               {currentProject?.name ?? "프로젝트 선택"}
             </span>
-            <ChevronsUpDown className="text-fg-muted size-3.5 shrink-0" />
+            <ChevronsUpDown className="text-fg-muted size-4 shrink-0" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

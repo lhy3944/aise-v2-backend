@@ -389,7 +389,7 @@ const MessageItem = memo(
                     }
                     responded={message.hitlResponded}
                     approved={message.hitlApproved}
-                    artifactPending={!!(message.hitlResponded && message.hitlApproved && isSessionStreaming)}
+                    artifactPending={!!(message.hitlResponded && message.hitlApproved && isSessionStreaming && !message.hitlArtifactDone)}
                   />
                 </div>
               )}

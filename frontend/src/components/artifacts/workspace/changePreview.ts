@@ -41,6 +41,20 @@ export function previewContent(
       return asString(content.title);
     }
 
+    case 'system_model':
+    case 'data_model': {
+      const sections = content.sections;
+      if (Array.isArray(sections) && sections.length > 0) {
+        const titles = sections
+          .map((s) => (s && typeof s === 'object' ? asString((s as JsonObject).title) : ''))
+          .filter(Boolean);
+        if (titles.length > 0) {
+          return titles.slice(0, 3).join(' · ') + (titles.length > 3 ? ' …' : '');
+        }
+      }
+      return asString(content.title);
+    }
+
     case 'testcase':
       return asString(content.title) || asString(content.scenario);
   }

@@ -4,6 +4,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from src.schemas.api.system_model import SystemModelDocumentResponse
+from src.schemas.api.data_model import DataModelDocumentResponse
+
 
 class DesignSectionResponse(BaseModel):
     section_id: str | None = None
@@ -28,3 +31,11 @@ class DesignDocumentResponse(BaseModel):
 
 class DesignListResponse(BaseModel):
     documents: list[DesignDocumentResponse]
+
+
+class DesignPipelineResponse(BaseModel):
+    """순차 파이프라인: System Model → Data Model → SDD 통합 생성 결과."""
+    system_model: SystemModelDocumentResponse | None = None
+    data_model: DataModelDocumentResponse | None = None
+    design: DesignDocumentResponse | None = None
+    errors: list[str] = Field(default_factory=list)

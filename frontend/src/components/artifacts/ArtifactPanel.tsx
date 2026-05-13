@@ -11,18 +11,17 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useImpact } from '@/hooks/useImpact';
 import { useOverlay } from '@/hooks/useOverlay';
-import type { ArtifactType } from '@/stores/artifact-store';
 import { useArtifactActionStore } from '@/stores/artifact-action-store';
+import type { ArtifactType } from '@/stores/artifact-store';
 import { useArtifactStore } from '@/stores/artifact-store';
 import { useProjectStore } from '@/stores/project-store';
 import type { ArtifactKind } from '@/types/agent-events';
 import {
-  AlertTriangle,
   Database,
   FileText,
   FlaskConical,
+  InspectionPanel,
   Layers,
-  RefreshCw,
 } from 'lucide-react';
 
 const ARTIFACT_TABS: Array<{
@@ -44,6 +43,8 @@ const ARTIFACT_TABS: Array<{
 
 const STALE_TAB_MAP: Record<string, ArtifactType[]> = {
   srs: ['srs'],
+  system_model: ['design'],
+  data_model: ['design'],
   design: ['design'],
   testcase: ['testcase'],
   record: ['records'],
@@ -86,7 +87,9 @@ export function ArtifactPanel() {
       <div className='flex h-full items-center justify-center p-6'>
         <div className='text-center'>
           <Layers className='text-fg-muted mx-auto mb-3 size-10' />
-          <p className='text-fg-secondary text-sm font-medium'>프로젝트를 선택해주세요</p>
+          <p className='text-fg-secondary text-sm font-medium'>
+            프로젝트를 선택해주세요
+          </p>
           <p className='text-fg-muted mt-1 text-xs'>
             왼쪽 사이드바에서 프로젝트를 선택하면 산출물을 확인할 수 있습니다.
           </p>
@@ -110,7 +113,12 @@ export function ArtifactPanel() {
               className='border-line-subtle w-max min-w-full'
             >
               {ARTIFACT_TABS.map((tab) => {
-                const isGenerating = tab.kind ? generating[tab.kind] : false;
+                const isGenerating =
+                  tab.kind === 'design'
+                    ? generating.design || generating.system_model || generating.data_model
+                    : tab.kind
+                      ? generating[tab.kind]
+                      : false;
                 const tabStale = staleList.filter((s) =>
                   (STALE_TAB_MAP[s.artifact_type] ?? []).includes(tab.value),
                 );
@@ -121,16 +129,13 @@ export function ArtifactPanel() {
                     className='data-[state=active]:text-accent-primary after:bg-accent-primary gap-1.5 px-3 text-xs whitespace-nowrap'
                   >
                     {isGenerating ? (
-                      <Spinner
-                        size='size-3.5'
-                        className='text-accent-primary'
-                      />
+                      <Spinner size='size-4' className='text-accent-primary' />
                     ) : (
-                      <tab.icon className='size-3.5' />
+                      <tab.icon className='size-4' />
                     )}
                     {tab.label}
                     {tabStale.length > 0 && (
-                      <span className='bg-stale-warning size-1.5 rounded-full' />
+                      <span className='bg-amber-500 size-2 rounded-full' />
                     )}
                   </TabsTrigger>
                 );
@@ -145,19 +150,18 @@ export function ArtifactPanel() {
 
       {/* Stale Banner — 활성 탭에 stale이 있으면 탭바 아래에 배너 표시 */}
       {activeTabStale.length > 0 && (
-        <div className='border-b border-stale-warning/30 bg-stale-warning-bg flex shrink-0 items-center gap-2 px-4 py-1.5'>
-          <AlertTriangle className='text-stale-warning size-3.5 shrink-0' />
-          <span className='text-stale-warning text-xs font-medium'>
-            {activeTabStale.length}개 산출물이 변경된 입력을 참조 중
+        <div className='border-line-primary bg-amber-500 flex shrink-0 items-center gap-2 border-b px-4 py-1.5 mx-0.5'>
+          <span className='text-white text-xs'>
+            {activeTabStale.length}개 산출물이 변경점 영향 분석이 필요합니다.
           </span>
           <Button
             variant='ghost'
             size='sm'
-            className='text-stale-warning hover:bg-stale-warning/10 ml-auto h-6 gap-1 px-2 text-xs font-medium'
+            className='text-white hover:bg-amber-600 hover:text-white ml-auto h-6 gap-1 px-2 text-xs'
             onClick={openImpactModal}
           >
-            <RefreshCw className='size-3' />
-            재생성
+            <InspectionPanel className='size-4' />
+            분석
           </Button>
         </div>
       )}

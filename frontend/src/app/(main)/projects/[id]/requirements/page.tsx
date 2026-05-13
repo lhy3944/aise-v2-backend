@@ -312,14 +312,14 @@ export default function RequirementsPage({ params }: Props) {
               disabled={review.isReviewing}
             >
               {review.isReviewing ? (
-                <Spinner size='size-3.5' />
+                <Spinner size='size-4' />
               ) : (
-                <ClipboardCheck className='size-3.5' />
+                <ClipboardCheck className='size-4' />
               )}
               {review.isReviewing ? '리뷰 중...' : '리뷰'}
             </Button>
             <Button size='sm' onClick={handleSave} disabled={saving}>
-              <Save className='size-3.5' />
+              <Save className='size-4' />
               {saving ? '저장 중...' : '저장'}
             </Button>
           </div>

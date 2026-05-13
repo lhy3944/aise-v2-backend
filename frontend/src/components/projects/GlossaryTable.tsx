@@ -252,7 +252,7 @@ export function GlossaryTable({
           {/* Search + Count */}
           <div className='flex items-center gap-3'>
             <div className='relative max-w-60'>
-              <Search className='text-fg-muted absolute top-1/2 left-3 size-3.5 -translate-y-1/2' />
+              <Search className='text-fg-muted absolute top-1/2 left-3 size-4 -translate-y-1/2' />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -271,7 +271,7 @@ export function GlossaryTable({
                 className='text-destructive hover:bg-destructive hover:text-destructive-foreground h-8 text-xs'
                 onClick={handleBulkDelete}
               >
-                <Trash2 className='size-3.5' />
+                <Trash2 className='size-4' />
                 {selectedIds.size}건 삭제
               </Button>
             )}
@@ -284,7 +284,7 @@ export function GlossaryTable({
                 setEditingId(null);
               }}
             >
-              <Plus className='size-3.5' />
+              <Plus className='size-4' />
               추가
             </Button>
             {onGenerate && (
@@ -295,7 +295,7 @@ export function GlossaryTable({
                 onClick={onGenerate}
                 disabled={generating}
               >
-                {generating ? <Spinner className='size-3.5' /> : <Sparkles className='size-3.5' />}
+                {generating ? <Spinner className='size-4' /> : <Sparkles className='size-4' />}
                 {generating ? '생성 중...' : 'AI 생성'}
               </Button>
             )}

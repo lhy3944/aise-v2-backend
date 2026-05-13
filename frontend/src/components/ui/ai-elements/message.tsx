@@ -71,9 +71,9 @@ export function MessageAvatar({ from, className }: MessageAvatarProps) {
       )}
     >
       {from === 'user' ? (
-        <User className='size-3.5' />
+        <User className='size-4' />
       ) : (
-        <Bot className='size-3.5' />
+        <Bot className='size-4' />
       )}
     </div>
   );
@@ -271,9 +271,9 @@ export function MessageActions({ content, className }: MessageActionsProps) {
         aria-label='복사'
       >
         {copied ? (
-          <Check className='size-3.5' />
+          <Check className='size-4' />
         ) : (
-          <Copy className='size-3.5' />
+          <Copy className='size-4' />
         )}
       </button>
     </div>

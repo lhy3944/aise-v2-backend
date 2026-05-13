@@ -28,7 +28,7 @@ export function LineageRecordsModal({
   return (
     <div className='flex h-full min-h-0 flex-col gap-3'>
       <div className='text-fg-muted flex items-center gap-1.5 text-xs'>
-        <Database className='size-3.5' />
+        <Database className='size-4' />
         <span>총 {records.length}개</span>
         {contextLabel && (
           <>

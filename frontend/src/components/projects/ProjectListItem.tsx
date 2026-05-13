@@ -69,11 +69,11 @@ export function ProjectListItem({ project, onDelete }: ProjectListItemProps) {
 
       <div className='text-fg-muted hidden shrink-0 items-center gap-4 text-xs lg:flex'>
         <span className='flex items-center gap-1'>
-          <Clock className='size-3.5' />
+          <Clock className='size-4' />
           {formatRelativeTime(project.updated_at)}
         </span>
         <span className='flex items-center gap-1'>
-          <Users className='size-3.5' />
+          <Users className='size-4' />
           {project.member_count}
         </span>
       </div>

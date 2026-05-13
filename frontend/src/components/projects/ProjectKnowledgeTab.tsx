@@ -554,7 +554,7 @@ export function ProjectKnowledgeTab({ projectId }: ProjectKnowledgeTabProps) {
                             className='text-fg-muted hover:text-fg-primary size-8'
                             onClick={(e) => handleReprocess(e, doc)}
                           >
-                            <RefreshCw className='size-3.5' />
+                            <RefreshCw className='size-4' />
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>재시도</TooltipContent>
@@ -568,7 +568,7 @@ export function ProjectKnowledgeTab({ projectId }: ProjectKnowledgeTabProps) {
                           className='text-fg-muted hover:text-destructive size-8'
                           onClick={(e) => handleDelete(e, doc)}
                         >
-                          <Trash2 className='size-3.5' />
+                          <Trash2 className='size-4' />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>삭제</TooltipContent>

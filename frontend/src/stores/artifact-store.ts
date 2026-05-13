@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type ArtifactType = 'records' | 'srs' | 'design' | 'testcase';
+export type DesignSubTab = 'system_model' | 'data_model' | 'design';
 
 export interface ArtifactVersion {
   version_id: string;
@@ -25,6 +26,8 @@ export interface ArtifactPendingFocus {
 interface ArtifactState {
   activeTab: ArtifactType;
   setActiveTab: (tab: ArtifactType) => void;
+  designSubTab: DesignSubTab;
+  setDesignSubTab: (subTab: DesignSubTab) => void;
   pendingFocus: ArtifactPendingFocus | null;
   setPendingFocus: (focus: ArtifactPendingFocus | null) => void;
 }
@@ -34,12 +37,14 @@ export const useArtifactStore = create<ArtifactState>()(
     (set) => ({
       activeTab: 'records',
       setActiveTab: (tab) => set({ activeTab: tab }),
+      designSubTab: 'system_model',
+      setDesignSubTab: (subTab) => set({ designSubTab: subTab }),
       pendingFocus: null,
       setPendingFocus: (focus) => set({ pendingFocus: focus }),
     }),
     {
       name: 'aise-artifact',
-      partialize: (s) => ({ activeTab: s.activeTab }),
+      partialize: (s) => ({ activeTab: s.activeTab, designSubTab: s.designSubTab }),
     },
   ),
 );

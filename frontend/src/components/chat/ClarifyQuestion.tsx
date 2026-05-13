@@ -102,7 +102,7 @@ export function ClarifyQuestion({ data, onAnswer }: ClarifyQuestionProps) {
           }
           className='gap-1.5'
         >
-          <Forward className='size-3.5' />
+          <Forward className='size-4' />
           답변하기
         </Button>
       </div>

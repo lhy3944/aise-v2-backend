@@ -46,7 +46,7 @@ export function ArtifactEmptyGuide({
                 className='border-line-subtle bg-canvas-surface/60 flex items-start gap-3 rounded-lg border px-3 py-2.5'
               >
                 <span className='border-line-primary bg-canvas-primary mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border'>
-                  <GuideIcon className='text-fg-secondary size-3.5' />
+                  <GuideIcon className='text-fg-secondary size-4' />
                 </span>
                 <span className='min-w-0'>
                   <span className='text-fg-primary block text-xs font-medium'>

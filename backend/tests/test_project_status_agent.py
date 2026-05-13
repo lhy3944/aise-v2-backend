@@ -144,14 +144,24 @@ async def test_run_chat_routes_status_query(monkeypatch, db):
     _install_stream_stub(monkeypatch, answer=canned)
 
     # Also stub supervisor LLM so it routes to project_status.
-    async def fake_chat_completion(messages, **kwargs):
-        return (
-            '{"action":"single","agent":"project_status","plan":null,'
-            '"clarification":null,"extract_mode":null,'
-            '"reasoning":"user asks about record count"}'
-        )
+    from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        first = messages[0].get("content", "") if messages else ""
+        if "Supervisor Routing Agent" in first:
+            return CompletionResponse(
+                tool_calls=[
+                    ToolCallInfo(
+                        id="stub_tc_ps",
+                        name="project_status",
+                        arguments={},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        return CompletionResponse(content="unused", finish_reason="stop")
+
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
     pid = uuid.uuid4()
     await _seed_project_with_records(db, pid)

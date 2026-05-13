@@ -11,6 +11,7 @@ import pytest
 from src.agents import list_agents, load_builtin_agents
 from src.schemas.api.design import DesignDocumentResponse, DesignSectionResponse
 from src.schemas.api.srs import SrsDocumentResponse, SrsSectionResponse
+from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
 
 @pytest.fixture(autouse=True)
@@ -72,21 +73,31 @@ def _fake_design_response(
     )
 
 
-async def _run_generation_command(monkeypatch, db, *, user_input: str):
+async def _run_generation_command(monkeypatch, db, *, user_input: str, agent_name: str):
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from src.models.project import Project
     from src.orchestration import graph as graph_mod
     from src.orchestration.graph import build_graph, run_chat
+    from src.services import llm_svc
 
-    async def fail_gate(**kwargs):  # pragma: no cover - asserted by no raise
-        raise AssertionError("retrieval gate should not handle generation commands")
+    # Disable retrieval gate
+    monkeypatch.setenv("RAG_GATE_ENABLED", "false")
 
-    async def fail_supervisor(state):  # pragma: no cover - asserted by no raise
-        raise AssertionError("supervisor should not handle explicit generation")
+    # Stub chat_completion_with_tools to route to the target agent
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        return CompletionResponse(
+            tool_calls=[
+                ToolCallInfo(
+                    id="stub_tc_gen",
+                    name=agent_name,
+                    arguments={},
+                )
+            ],
+            finish_reason="tool_calls",
+        )
 
-    monkeypatch.setattr(graph_mod, "evaluate_gate", fail_gate)
-    monkeypatch.setattr(graph_mod, "supervisor_node", fail_supervisor)
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
     project = Project(name="artifact-routing", description="x")
     db.add(project)
@@ -117,6 +128,7 @@ async def test_run_chat_routes_srs_generation_before_rag(monkeypatch, db):
             monkeypatch,
             db,
             user_input="SRS 문서 만들어줘",
+            agent_name="srs_generator",
         )
 
     types = [type(e).__name__ for e in events]
@@ -137,6 +149,7 @@ async def test_run_chat_routes_design_generation_before_rag(monkeypatch, db):
             monkeypatch,
             db,
             user_input="설계 문서 만들어줘",
+            agent_name="design_generator",
         )
 
     types = [type(e).__name__ for e in events]

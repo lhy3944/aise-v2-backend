@@ -64,7 +64,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
           aria-label='닫기'
           className='text-fg-muted hover:text-fg-primary -mt-1 -mr-1 shrink-0 rounded-md p-1 transition-colors'
         >
-          <X className='size-3.5' />
+          <X className='size-4' />
         </button>
       </div>
     </div>

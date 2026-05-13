@@ -109,16 +109,25 @@ def _to_response(
 async def _get_srs_artifact(
     db: AsyncSession, project_id: uuid.UUID
 ) -> Artifact | None:
-    """프로젝트의 SRS Artifact (1개) 조회. 없으면 None."""
-    return (
+    """프로젝트의 SRS Artifact (1개) 조회. deleted 상태면 재활성화."""
+    # active 우선, 없으면 deleted 상태도 조회
+    artifact = (
         await db.execute(
             select(Artifact).where(
                 Artifact.project_id == project_id,
                 Artifact.artifact_type == "srs",
-                Artifact.lifecycle_status == "active",
+                Artifact.lifecycle_status.in_(("active", "deleted")),
+            ).order_by(
+                Artifact.lifecycle_status.asc(),  # active < deleted alphabetically
             )
         )
     ).scalar_one_or_none()
+
+    if artifact is not None and artifact.lifecycle_status != "active":
+        artifact.lifecycle_status = "active"
+        artifact.updated_at = datetime.now(timezone.utc)
+
+    return artifact
 
 
 async def _next_version_number(db: AsyncSession, artifact_id: uuid.UUID) -> int:

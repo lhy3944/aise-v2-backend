@@ -75,7 +75,7 @@ export function SourceReference({ sources, usedRefs }: SourceReferenceProps) {
                 isActive && 'border-accent-primary text-fg-primary',
               )}
             >
-              <FileText className='size-3.5 shrink-0' />
+              <FileText className='size-4 shrink-0' />
               <span className='min-w-0 flex-1 truncate text-left'>
                 {g.documentName}
               </span>

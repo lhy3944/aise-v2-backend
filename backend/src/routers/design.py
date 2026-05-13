@@ -13,6 +13,7 @@ from src.core.database import get_db
 from src.schemas.api.design import (
     DesignDocumentResponse,
     DesignListResponse,
+    DesignPipelineResponse,
 )
 from src.services import design_svc
 
@@ -59,3 +60,12 @@ async def regenerate_design(
 ):
     """Design 재생성 (새 ArtifactVersion 추가). design_id 는 base 로만 사용."""
     return await design_svc.generate_design(db, project_id)
+
+
+@router.post("/pipeline", response_model=DesignPipelineResponse, status_code=201)
+async def generate_design_pipeline(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """순차 파이프라인: System Model → Data Model → SDD 통합 생성."""
+    return await design_svc.generate_design_pipeline(db, project_id)

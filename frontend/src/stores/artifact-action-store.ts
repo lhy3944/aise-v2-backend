@@ -15,7 +15,7 @@ interface ArtifactActionState {
 }
 
 export const useArtifactActionStore = create<ArtifactActionState>()((set) => ({
-  generating: { record: false, srs: false, design: false, testcase: false },
+  generating: { record: false, srs: false, system_model: false, data_model: false, design: false, testcase: false },
   setGenerating: (kind, value) =>
     set((s) => ({ generating: { ...s.generating, [kind]: value } })),
 }));

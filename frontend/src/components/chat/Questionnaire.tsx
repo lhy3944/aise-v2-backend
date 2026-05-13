@@ -304,7 +304,7 @@ export function Questionnaire({ questions, onSubmit }: QuestionnaireProps) {
           disabled={!allAnswered}
           className='gap-1.5'
         >
-          <Forward className='size-3.5' />
+          <Forward className='size-4' />
           답변하기
         </Button>
       </div>

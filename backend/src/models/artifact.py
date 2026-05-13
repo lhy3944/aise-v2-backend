@@ -31,7 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 
 
-ARTIFACT_TYPES = ("record", "srs", "design", "testcase")
+ARTIFACT_TYPES = ("record", "srs", "system_model", "data_model", "design", "testcase")
 WORKING_STATUSES = ("clean", "dirty", "staged")
 LIFECYCLE_STATUSES = ("active", "archived", "deleted")
 PR_STATUSES = ("open", "approved", "rejected", "merged", "superseded")
@@ -58,7 +58,7 @@ class Artifact(Base):
             name="uq_artifacts_project_type_display",
         ),
         CheckConstraint(
-            "artifact_type IN ('record','srs','design','testcase')",
+            "artifact_type IN ('record','srs','system_model','data_model','design','testcase')",
             name="ck_artifacts_type",
         ),
         CheckConstraint(

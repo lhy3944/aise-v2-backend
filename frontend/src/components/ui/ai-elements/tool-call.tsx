@@ -83,7 +83,7 @@ export function ToolCall({
         onClick={() => setOpen(!open)}
         className='hover:bg-canvas-surface/50 flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors'
       >
-        <Wrench className='text-fg-muted size-3.5 shrink-0' />
+        <Wrench className='text-fg-muted size-4 shrink-0' />
         <span className='text-fg-primary min-w-0 flex-1 truncate text-xs font-medium'>{name}</span>
         {displayMs !== null && displayMs >= 0 && (
           <span className='text-fg-muted shrink-0 text-[10px] tabular-nums'>
@@ -96,7 +96,7 @@ export function ToolCall({
         </Badge>
         <ChevronDown
           className={cn(
-            'text-fg-muted size-3.5 shrink-0 transition-transform',
+            'text-fg-muted size-4 shrink-0 transition-transform',
             open && 'rotate-180',
           )}
         />

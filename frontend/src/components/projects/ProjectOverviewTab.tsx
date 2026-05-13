@@ -286,7 +286,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
                         <div className='flex flex-col gap-1.5 text-xs'>
                           <div className='flex items-center justify-between'>
                             <span className='text-fg-muted flex items-center gap-1'>
-                              <FolderOpen className='size-3.5' />
+                              <FolderOpen className='size-4' />
                               지식 문서
                             </span>
                             <span
@@ -299,7 +299,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
                           </div>
                           <div className='flex items-center justify-between'>
                             <span className='text-fg-muted flex items-center gap-1'>
-                              <BookOpen className='size-3.5' />
+                              <BookOpen className='size-4' />
                               용어
                             </span>
                             <span
@@ -312,7 +312,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
                           </div>
                           <div className='flex items-center justify-between'>
                             <span className='text-fg-muted flex items-center gap-1'>
-                              <LayoutList className='size-3.5' />
+                              <LayoutList className='size-4' />
                               섹션
                             </span>
                             <span
@@ -338,7 +338,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
                       onClick={handleDeleteProject}
                       className='text-fg-muted hover:text-destructive size-8'
                     >
-                      <Trash2 className='size-3.5' />
+                      <Trash2 className='size-4' />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>삭제</TooltipContent>
@@ -351,7 +351,7 @@ export function ProjectOverviewTab({ projectId }: ProjectOverviewTabProps) {
                       onClick={() => setEditing(true)}
                       className='text-fg-muted hover:text-fg-primary size-8'
                     >
-                      <Pencil className='size-3.5' />
+                      <Pencil className='size-4' />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>편집</TooltipContent>

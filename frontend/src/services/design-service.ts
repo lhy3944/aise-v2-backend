@@ -1,5 +1,9 @@
 import { api } from '@/lib/api';
-import type { DesignDocument, DesignListResponse } from '@/types/project';
+import type {
+  DesignDocument,
+  DesignListResponse,
+  DesignPipelineResponse,
+} from '@/types/project';
 
 function base(projectId: string) {
   return `/api/v1/projects/${projectId}/design`;
@@ -21,4 +25,7 @@ export const designService = {
 
   regenerate: (projectId: string, designId: string) =>
     api.post<DesignDocument>(`${base(projectId)}/${designId}/regenerate`),
+
+  pipeline: (projectId: string) =>
+    api.post<DesignPipelineResponse>(`${base(projectId)}/pipeline`),
 };

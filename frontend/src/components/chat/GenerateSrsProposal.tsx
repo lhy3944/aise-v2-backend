@@ -64,7 +64,7 @@ export function GenerateSrsProposal({ data, onConfirm }: GenerateSrsProposalProp
       ) : (
         <div className='flex gap-2'>
           <Button size='sm' onClick={handleConfirm} className='gap-1.5'>
-            <Play className='size-3.5' />
+            <Play className='size-4' />
             SRS 생성 시작
           </Button>
         </div>

@@ -21,10 +21,10 @@ class DesignGeneratorAgent(BaseAgent):
     capability = AgentCapability(
         name="design_generator",
         description=(
-            "프로젝트의 완료된 SRS 문서를 기반으로 설계(Design) 산출물을 "
-            "생성한다. 사용자가 '설계 생성', '설계 문서 만들어줘', "
-            "'아키텍처/디자인 뽑아줘' 등 **명시적으로** 설계 산출물을 요청할 "
-            "때만 선택한다. SRS 가 선행되어야 한다."
+            "프로젝트의 완료된 SRS 문서와 시스템 모델, 데이터 모델을 기반으로 "
+            "SDD(IEEE 1016) 산출물을 생성한다. 사용자가 '설계 생성', "
+            "'SDD 생성', '설계 문서 만들어줘' 등 **명시적으로** SDD 산출물을 "
+            "요청할 때만 선택한다. SRS 가 선행되어야 한다."
         ),
         triggers=[
             "설계 생성해줘",

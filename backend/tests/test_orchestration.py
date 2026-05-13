@@ -28,6 +28,7 @@ from src.schemas.events import (
     ToolResultEvent,
 )
 from src.services import embedding_svc, llm_svc, rag_svc
+from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
 
 @pytest.fixture(autouse=True)
@@ -39,9 +40,15 @@ def _ensure_builtin_agents():
 
 
 def _is_supervisor_prompt(messages: list[dict]) -> bool:
-    """Detect the Supervisor's routing call by looking at the user prompt."""
-    last = messages[-1].get("content", "") if messages else ""
-    return "## Decision policy" in last and "## Available agents" in last
+    """Detect the Supervisor's routing call by looking at the system prompt."""
+    first = messages[0].get("content", "") if messages else ""
+    return "Supervisor Routing Agent" in first
+
+
+def _is_supervisor_tooluse_prompt(messages: list[dict]) -> bool:
+    """Detect the Supervisor's tool-use routing call (system prompt marker)."""
+    first = messages[0].get("content", "") if messages else ""
+    return "Supervisor Routing Agent" in first
 
 
 _STUB_RAG_ANSWER = "Stubbed answer based on retrieved chunks."
@@ -50,14 +57,14 @@ _STUB_RAG_ANSWER = "Stubbed answer based on retrieved chunks."
 def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
     """Install fakes for both non-streaming and streaming LLM calls.
 
-    - `chat_completion` handles the Supervisor routing prompt (single call)
-      and the non-streaming `rag_svc.chat()` HTTP path (if a test hits it).
-    - `chat_completion_stream` is what `KnowledgeQAAgent.run_stream` uses;
-      we chunk the canned answer into two deltas so tests see ≥2
-      `TokenEvent`s and exercise real streaming ordering.
+    Supports both legacy JSON-based supervisor routing (chat_completion)
+    and the new tool-use routing (chat_completion_with_tools).
 
-    Supervisor and rag_svc/knowledge_qa all import `llm_svc` as a module,
-    so a single `setattr` on the module covers all call sites.
+    For tool-use: if supervisor_response is valid JSON with an `action`,
+    the stub converts it into a CompletionResponse with the appropriate
+    tool_call. If the JSON action is "clarify", returns a text response.
+
+    For legacy JSON path: returns the raw JSON string from chat_completion.
 
     Also disables the retrieval-first gate so tests that exercise
     supervisor routing semantics (clarify / plan / invalid JSON / unknown
@@ -76,10 +83,60 @@ def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
     )
     routing_payload = supervisor_response if supervisor_response is not None else default_routing
 
+    def _parse_routing_json(payload_str: str) -> dict[str, Any] | None:
+        try:
+            return json.loads(payload_str)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
     async def fake_chat_completion(messages, **kwargs):
         if _is_supervisor_prompt(messages):
             return routing_payload
         return _STUB_RAG_ANSWER
+
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        """Stub for tool-use supervisor routing."""
+        if _is_supervisor_tooluse_prompt(messages):
+            parsed = _parse_routing_json(routing_payload)
+            if parsed is not None:
+                action = parsed.get("action")
+                if action == "single":
+                    agent = parsed.get("agent", "knowledge_qa")
+                    return CompletionResponse(
+                        tool_calls=[
+                            ToolCallInfo(
+                                id="stub_tc_1",
+                                name=agent,
+                                arguments={"action_params": parsed},
+                            )
+                        ],
+                        finish_reason="tool_calls",
+                    )
+                elif action == "plan":
+                    plan = parsed.get("plan", [])
+                    return CompletionResponse(
+                        tool_calls=[
+                            ToolCallInfo(
+                                id="stub_tc_plan",
+                                name="execute_plan",
+                                arguments={"plan": plan},
+                            )
+                        ],
+                        finish_reason="tool_calls",
+                    )
+                elif action == "clarify":
+                    return CompletionResponse(
+                        content=parsed.get("clarification", "질문을 다시 해주세요."),
+                        finish_reason="stop",
+                    )
+            # Unparseable or invalid → text response that triggers clarify fallback.
+            # _text_response_to_decision routes question-like text to clarify.
+            return CompletionResponse(
+                content="요청을 이해하지 못했습니다. 다시 한 번 말씀해주세요?",
+                finish_reason="stop",
+            )
+        # Non-supervisor call → text response
+        return CompletionResponse(content=_STUB_RAG_ANSWER, finish_reason="stop")
 
     async def fake_chat_completion_stream(messages, **kwargs):
         # Split into two deltas so tests can observe streaming.
@@ -90,6 +147,7 @@ def _stub_llm(monkeypatch, *, supervisor_response: str | None = None):
     monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
     monkeypatch.setattr(llm_svc, "chat_completion_stream", fake_chat_completion_stream)
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
 
 @pytest.fixture

@@ -137,7 +137,7 @@ export function StagedChangesTray({
                   className='h-7 text-[11px]'
                   onClick={onCreatePR}
                 >
-                  <GitPullRequest className='size-3.5' />
+                  <GitPullRequest className='size-4' />
                   PR 생성
                 </Button>
               ) : null
@@ -216,7 +216,7 @@ export function StagedChangesTray({
                       onClick={() => onShowDiff(pr)}
                       title='변경 내용 보기'
                     >
-                      <FileDiff className='size-3.5' />
+                      <FileDiff className='size-4' />
                       변경
                     </Button>
                     <Button
@@ -225,7 +225,7 @@ export function StagedChangesTray({
                       className='h-7 gap-1 px-2 text-[11px] text-green-600'
                       onClick={() => onApprovePR(pr.pr_id)}
                     >
-                      <Check className='size-3.5' />
+                      <Check className='size-4' />
                       승인
                     </Button>
                     <Button
@@ -234,7 +234,7 @@ export function StagedChangesTray({
                       className='h-7 gap-1 px-2 text-[11px] text-red-500'
                       onClick={() => onRejectPR(pr.pr_id)}
                     >
-                      <X className='size-3.5' />
+                      <X className='size-4' />
                       거절
                     </Button>
                     <Button
@@ -242,7 +242,7 @@ export function StagedChangesTray({
                       className='ml-auto h-7 gap-1 px-2 text-[11px]'
                       onClick={() => onMergePR(pr.pr_id)}
                     >
-                      <GitMerge className='size-3.5' />
+                      <GitMerge className='size-4' />
                       Merge
                     </Button>
                   </div>
@@ -276,7 +276,7 @@ function Section({
   return (
     <section className='flex flex-col gap-1.5'>
       <div className='flex items-center gap-1.5'>
-        <Icon className='text-fg-muted size-3.5' />
+        <Icon className='text-fg-muted size-4' />
         <span className='text-fg-secondary text-[11px] font-semibold tracking-wider uppercase'>
           {title}
         </span>
@@ -358,7 +358,7 @@ function IconButton({
           : 'hover:bg-canvas-primary hover:text-fg-primary',
       )}
     >
-      <Icon className='size-3.5' />
+      <Icon className='size-4' />
     </button>
   );
 }

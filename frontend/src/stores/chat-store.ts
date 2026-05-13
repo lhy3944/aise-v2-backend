@@ -40,6 +40,8 @@ export interface ChatMessage {
   hitlResponded?: boolean;
   /** HITL 카드 승인 여부 (true=승인, false=거부) */
   hitlApproved?: boolean | null;
+  /** HITL 승인 후 산출물 생성 완료 여부 — 스트리밍 종료 시 true */
+  hitlArtifactDone?: boolean;
   createdAt: string;
 }
 
@@ -160,6 +162,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       if (last?.role === 'assistant' && last.status === 'streaming') {
         nextMessages = [...current];
         nextMessages[nextMessages.length - 1] = { ...last, status };
+      }
+      // HITL 승인 후 스트리밍 완료 → 해당 카드에 artifactDone 표시
+      // 이후 동일 세션에서 새 스트리밍이 시작되어도 이전 카드 스피너가 재활성화되지 않음
+      const hasPendingHITL = nextMessages.some(
+        (m) => m.hitlResponded && m.hitlApproved && !m.hitlArtifactDone,
+      );
+      if (hasPendingHITL) {
+        nextMessages = nextMessages.map((m) =>
+          m.hitlResponded && m.hitlApproved && !m.hitlArtifactDone
+            ? { ...m, hitlArtifactDone: true }
+            : m,
+        );
       }
       const next = new Set(s.streamingSessionIds);
       next.delete(sessionId);

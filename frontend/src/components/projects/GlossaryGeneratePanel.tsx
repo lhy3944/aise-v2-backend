@@ -81,7 +81,7 @@ export function GlossaryGenerateActions({
         취소
       </Button>
       <Button onClick={onApply} disabled={selectedCount === 0 || isLoading}>
-        {isLoading ? <Spinner className='size-3.5' /> : <Plus className='size-3.5' />}
+        {isLoading ? <Spinner className='size-4' /> : <Plus className='size-4' />}
         {isLoading ? '추가 중...' : `선택 항목 추가 (${selectedCount})`}
       </Button>
     </div>

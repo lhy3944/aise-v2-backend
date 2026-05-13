@@ -119,7 +119,7 @@ export function ProjectDeleteConfirmModal({
         )}
         {!preview && !previewError && (
           <div className='text-fg-muted flex items-center gap-2 px-3 py-3 text-xs'>
-            <Loader2 className='size-3.5 animate-spin' />
+            <Loader2 className='size-4 animate-spin' />
             영향도 분석 중...
           </div>
         )}
@@ -192,7 +192,7 @@ export function ProjectDeleteConfirmModal({
           disabled={!nameMatches || submitting}
           className='gap-1.5'
         >
-          {submitting && <Loader2 className='size-3.5 animate-spin' />}
+          {submitting && <Loader2 className='size-4 animate-spin' />}
           휴지통으로 이동
         </Button>
       </div>

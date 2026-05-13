@@ -118,7 +118,7 @@ export interface SourcesEvent {
 
 // ---------- Phase 2 events (Artifact Governance) ----------
 
-export type ArtifactKind = 'record' | 'srs' | 'design' | 'testcase';
+export type ArtifactKind = 'record' | 'srs' | 'system_model' | 'data_model' | 'design' | 'testcase';
 export type PRStatus =
   | 'open'
   | 'approved'

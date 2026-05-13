@@ -1,6 +1,6 @@
 'use client';
 
-import { Database, FileText, FlaskConical, Layers } from 'lucide-react';
+import { Boxes, Database, FileText, FlaskConical, Layers } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type {
@@ -31,11 +31,13 @@ const KIND_META: Record<
 > = {
   record: { icon: Database, label: 'Records', prefix: 'REC' },
   srs: { icon: FileText, label: 'SRS', prefix: 'SRS' },
+  system_model: { icon: Boxes, label: 'SM', prefix: 'SM' },
+  data_model: { icon: Database, label: 'DM', prefix: 'DM' },
   design: { icon: Layers, label: 'Design', prefix: 'DSG' },
   testcase: { icon: FlaskConical, label: 'TC', prefix: 'TC' },
 };
 
-const KIND_ORDER: ArtifactKind[] = ['record', 'srs', 'design', 'testcase'];
+const KIND_ORDER: ArtifactKind[] = ['record', 'srs', 'system_model', 'data_model', 'design', 'testcase'];
 
 export function LineageBadges({
   lineage,

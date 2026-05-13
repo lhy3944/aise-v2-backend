@@ -23,8 +23,10 @@ migrate to LiteLLM in a later phase.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 from typing import Any
 
 import litellm
@@ -224,6 +226,94 @@ async def chat_completion(
     content = response.choices[0].message.content or ""
     logger.debug(f"LLM 응답: {len(content)}자")
     return content
+
+
+# ---------- Tool-calling completion ----------
+
+
+@dataclass
+class ToolCallInfo:
+    """One tool call from an LLM response."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class CompletionResponse:
+    """Structured response from chat_completion_with_tools."""
+
+    content: str | None = None
+    tool_calls: list[ToolCallInfo] = field(default_factory=list)
+    finish_reason: str = ""
+
+
+async def chat_completion_with_tools(
+    messages: list[dict],
+    *,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
+    model: str | None = None,
+    client_type: str = "srs",
+    temperature: float = 0.3,
+    max_completion_tokens: int = 4096,
+) -> CompletionResponse:
+    """Chat completion with tool/function-calling support via LiteLLM."""
+    kwargs = _litellm_kwargs(client_type, model)
+    provider = _get_provider()
+
+    call_kwargs: dict[str, Any] = {
+        "messages": messages,
+        "temperature": temperature,
+        "max_completion_tokens": max_completion_tokens,
+        **kwargs,
+    }
+    if tools:
+        call_kwargs["tools"] = tools
+    if tool_choice is not None:
+        call_kwargs["tool_choice"] = tool_choice
+
+    logger.debug(
+        f"LLM 호출(tool-use): provider={provider}, model={kwargs['model']}, "
+        f"messages={len(messages)}개, tools={len(tools) if tools else 0}"
+    )
+
+    try:
+        response = await litellm.acompletion(**call_kwargs)
+    except (BadRequestError, LiteLLMBadRequestError) as e:
+        if provider == "azure" and _is_azure_content_filter(e):
+            raise AppException(
+                status_code=422,
+                detail="콘텐츠 필터에 의해 요청이 차단되었습니다. 입력 내용을 수정 후 다시 시도해주세요.",
+            ) from e
+        raise
+
+    choice = response.choices[0]
+    content = choice.message.content
+    tool_calls_raw = getattr(choice.message, "tool_calls", None) or []
+
+    parsed_calls: list[ToolCallInfo] = []
+    for tc in tool_calls_raw:
+        fn = getattr(tc, "function", None)
+        if fn is None:
+            continue
+        args: dict[str, Any] = {}
+        raw_args = getattr(fn, "arguments", None)
+        if raw_args:
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError:
+                args = {}
+        parsed_calls.append(
+            ToolCallInfo(id=getattr(tc, "id", ""), name=fn.name, arguments=args)
+        )
+
+    return CompletionResponse(
+        content=content,
+        tool_calls=parsed_calls,
+        finish_reason=choice.finish_reason or "",
+    )
 
 
 async def chat_completion_stream(

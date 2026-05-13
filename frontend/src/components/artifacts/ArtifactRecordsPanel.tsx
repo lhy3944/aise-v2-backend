@@ -471,7 +471,7 @@ export function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
               className='h-8 gap-1.5 px-3 text-xs'
               onClick={() => setManualOpen(true)}
             >
-              <Plus className='size-3.5' />
+              <Plus className='size-4' />
               직접 추가
             </Button>
           }

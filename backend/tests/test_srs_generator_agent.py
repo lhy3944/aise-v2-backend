@@ -112,22 +112,24 @@ async def test_graph_routes_supervisor_to_srs_generator(monkeypatch, db):
     from src.orchestration.graph import build_graph, run_chat
     from src.services import llm_svc, rag_svc
 
-    async def fake_chat_completion(messages, **kwargs):
-        last = messages[-1].get("content", "") if messages else ""
-        if "## Decision policy" in last:
-            return _json.dumps(
-                {
-                    "action": "single",
-                    "agent": "srs_generator",
-                    "plan": None,
-                    "clarification": None,
-                    "reasoning": "stub",
-                }
-            )
-        return "unused"
+    from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
-    monkeypatch.setattr(rag_svc, "chat_completion", fake_chat_completion)
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        first = messages[0].get("content", "") if messages else ""
+        if "Supervisor Routing Agent" in first:
+            return CompletionResponse(
+                tool_calls=[
+                    ToolCallInfo(
+                        id="stub_tc_srs",
+                        name="srs_generator",
+                        arguments={},
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        return CompletionResponse(content="unused", finish_reason="stop")
+
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
     project = Project(name="srs-e2e", description="x")
     db.add(project)

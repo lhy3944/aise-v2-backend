@@ -262,7 +262,7 @@ function SortableSectionRow({ section, onToggle, onEdit, onDelete }: SortableSec
               onClick={() => onEdit(section)}
               aria-label='편집'
             >
-              <Pencil className='size-3.5' />
+              <Pencil className='size-4' />
             </Button>
             <Button
               variant='ghost'
@@ -271,7 +271,7 @@ function SortableSectionRow({ section, onToggle, onEdit, onDelete }: SortableSec
               onClick={() => onDelete(section)}
               aria-label='삭제'
             >
-              <Trash2 className='size-3.5' />
+              <Trash2 className='size-4' />
             </Button>
           </>
         ) : (
@@ -515,7 +515,7 @@ export function ProjectSectionsTab({ projectId }: ProjectSectionsTabProps) {
         <div className='flex items-center justify-between'>
           <h3 className='text-fg-primary text-sm font-semibold'>섹션 {sections.length}개</h3>
           <Button variant='outline' size='sm' onClick={handleAddClick} className='gap-1'>
-            <Plus className='size-3.5' />
+            <Plus className='size-4' />
             섹션 추가
           </Button>
         </div>

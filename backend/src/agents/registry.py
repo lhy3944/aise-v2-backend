@@ -43,7 +43,10 @@ _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "src.agents.knowledge_qa",
     "src.agents.project_status",
     "src.agents.requirement",
+    "src.agents.record_manager",
     "src.agents.srs_generator",
+    "src.agents.system_model_generator",
+    "src.agents.data_model_generator",
     "src.agents.design_generator",
     "src.agents.testcase_generator",
     "src.agents.critic",
@@ -90,6 +93,34 @@ def find_by_tag(tag: str) -> list["BaseAgent"]:
     return [agent for agent in _REGISTRY.values() if tag in agent.capability.tags]
 
 
+PLAN_TOOL_DEFINITION: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "execute_plan",
+        "description": (
+            "Execute multiple agents in sequence. Use when a single agent "
+            "cannot cover the full request and a sequential workflow is needed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Ordered list of agent names to execute sequentially.",
+                },
+            },
+            "required": ["plan"],
+        },
+    },
+}
+
+
+def list_tool_definitions() -> list[dict[str, Any]]:
+    """Build tool definitions for all registered agents (for supervisor LLM)."""
+    return [agent.capability.to_tool_definition() for agent in _REGISTRY.values()]
+
+
 def clear_registry() -> None:
     """Test-only helper. Do not call from production code."""
     _REGISTRY.clear()
@@ -114,11 +145,13 @@ def load_builtin_agents(*, force_reload: bool = False) -> None:
 
 
 __all__ = [
+    "PLAN_TOOL_DEFINITION",
     "clear_registry",
     "find_by_tag",
     "get_agent",
     "list_agents",
     "list_capabilities",
+    "list_tool_definitions",
     "load_builtin_agents",
     "register_agent",
     "try_get_agent",

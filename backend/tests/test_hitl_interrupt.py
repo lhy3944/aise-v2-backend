@@ -35,6 +35,7 @@ from src.schemas.events import (
     ToolResultEvent,
 )
 from src.services import hitl_state_svc, llm_svc
+from src.services.llm_svc import CompletionResponse, ToolCallInfo
 
 
 _AGENT_NAME = "hitl_test_agent"
@@ -110,20 +111,20 @@ def fake_session_factory():
 def _stub_supervisor(monkeypatch):
     """Supervisor LLM 호출을 mock — 우리 _AGENT_NAME 으로 single 라우팅."""
     monkeypatch.setenv("RAG_GATE_ENABLED", "false")
-    routing_payload = json.dumps(
-        {
-            "action": "single",
-            "agent": _AGENT_NAME,
-            "plan": None,
-            "clarification": None,
-            "reasoning": "stub",
-        }
-    )
 
-    async def fake_chat_completion(messages, **kwargs):
-        return routing_payload
+    async def fake_chat_completion_with_tools(messages, *, tools=None, tool_choice=None, **kwargs):
+        return CompletionResponse(
+            tool_calls=[
+                ToolCallInfo(
+                    id="stub_tc_hitl",
+                    name=_AGENT_NAME,
+                    arguments={},
+                )
+            ],
+            finish_reason="tool_calls",
+        )
 
-    monkeypatch.setattr(llm_svc, "chat_completion", fake_chat_completion)
+    monkeypatch.setattr(llm_svc, "chat_completion_with_tools", fake_chat_completion_with_tools)
 
 
 @pytest.mark.asyncio

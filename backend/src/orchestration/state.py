@@ -47,6 +47,17 @@ class RoutingDecision(BaseModel):
             "다른 에이전트 라우팅 시에는 None."
         ),
     )
+    action_params: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Supervisor tool_call에서 추출한 파라미터. "
+            "record_manager 등에서 CRUD 종류/대상 식별에 사용."
+        ),
+    )
+    confidence: float | None = Field(
+        default=None,
+        description="Supervisor의 라우팅 확신도 (0.0~1.0). 낮으면 clarify 고려.",
+    )
     reasoning: str = Field(default="", description="Why this decision was made (debug/audit only)")
 
 
@@ -86,6 +97,10 @@ class AgentState(TypedDict, total=False):
     # SrsGeneratorAgent output: {srs_id, version, section_count,
     # based_on_records_count}
     srs_generated: dict[str, Any] | None
+    # SystemModelGeneratorAgent output
+    system_model_generated: dict[str, Any] | None
+    # DataModelGeneratorAgent output
+    data_model_generated: dict[str, Any] | None
     # TestCaseGeneratorAgent output: {based_on_srs_id, srs_version,
     # testcase_count, skipped_section_count}
     testcases_generated: dict[str, Any] | None

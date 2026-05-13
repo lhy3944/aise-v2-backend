@@ -341,7 +341,7 @@ export function RequirementTable({
         {editingId !== req.requirement_id && (
           <div className='flex justify-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100'>
             <Button size='icon-xs' variant='ghost' onClick={() => startEdit(req)} title='수정'>
-              <Pencil className='size-3.5' />
+              <Pencil className='size-4' />
             </Button>
             <Button
               size='icon-xs'
@@ -350,7 +350,7 @@ export function RequirementTable({
               title='삭제'
               className='text-destructive hover:text-destructive'
             >
-              <Trash2 className='size-3.5' />
+              <Trash2 className='size-4' />
             </Button>
           </div>
         )}
@@ -373,7 +373,7 @@ export function RequirementTable({
       <div className='mb-2 flex items-center justify-between'>
         <div className='flex items-center gap-2'>
           <Button size='xs' variant='outline' onClick={startAddSection}>
-            <FolderPlus className='size-3.5' />
+            <FolderPlus className='size-4' />
             섹션 추가
           </Button>
           {hasSections && (
@@ -479,10 +479,10 @@ export function RequirementTable({
                       variant='ghost'
                       onClick={() => saveSectionEdit(section.section_id)}
                     >
-                      <Check className='size-3.5' />
+                      <Check className='size-4' />
                     </Button>
                     <Button size='icon-xs' variant='ghost' onClick={cancelSectionEdit}>
-                      <X className='size-3.5' />
+                      <X className='size-4' />
                     </Button>
                   </div>
                 ) : (

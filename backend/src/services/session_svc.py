@@ -164,6 +164,8 @@ async def mark_hitl_responded(
         hitl["responded"] = True
         hitl["approved"] = approved
     msg.tool_data = td
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(msg, "tool_data")
 
 
 async def get_history(db: AsyncSession, session_id: uuid.UUID, limit: int = 50) -> list[dict]:

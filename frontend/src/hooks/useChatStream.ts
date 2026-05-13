@@ -8,9 +8,10 @@ import {
 import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
+import { useArtifactActionStore } from '@/stores/artifact-action-store';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
-import { useArtifactStore } from '@/stores/artifact-store';
+import { useArtifactStore, type ArtifactType } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useHitlStore } from '@/stores/hitl-store';
@@ -271,6 +272,8 @@ export function useChatStream(sessionId?: string) {
             hitlData: hitlDataField,
             hitlResponded,
             hitlApproved,
+            // 서버에서 로드된 과거 HITL은 이미 완료된 것이므로 스피너 비활성화
+            hitlArtifactDone: hitlResponded ? true : undefined,
             createdAt: m.created_at,
           };
         });
@@ -429,6 +432,9 @@ export function useChatStream(sessionId?: string) {
     [],
   );
 
+  // 에이전트 대화 중 산출물 생성 스피너
+  const setGenerating = useArtifactActionStore((s) => s.setGenerating);
+
   // Records 갱신 트리거
   const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
 
@@ -565,7 +571,7 @@ export function useChatStream(sessionId?: string) {
     ) => {
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
-      // 레코드 CUD 도구 결과 → Records 탭 갱신
+      // 레코드 CUD 도구 결과 → Records 탭 + 영향도 갱신
       if (
         [
           'create_record',
@@ -575,6 +581,7 @@ export function useChatStream(sessionId?: string) {
         ].includes(name)
       ) {
         bumpRefresh();
+        useArtifactRefreshStore.getState().bump('record');
       }
       if (
         name === 'requirement' &&
@@ -585,16 +592,25 @@ export function useChatStream(sessionId?: string) {
         bumpRefresh();
       }
 
-      // 생성 에이전트 완료 → 해당 artifact 탭 즉시 갱신
+      // 생성 에이전트 완료 → 해당 artifact 탭 즉시 갱신 + 스피너 종료
       const agentToKind: Record<string, ArtifactKind> = {
         requirement: 'record',
+        record_manager: 'record',
         srs_generator: 'srs',
         design_generator: 'design',
         testcase_generator: 'testcase',
       };
       const kind = agentToKind[name];
-      if (kind && status !== 'error') {
-        useArtifactRefreshStore.getState().bump(kind);
+      if (kind) {
+        useArtifactActionStore.getState().setGenerating(kind, false);
+        if (status !== 'error') {
+          useArtifactRefreshStore.getState().bump(kind);
+        }
+      }
+
+      // record_manager 완료 → ArtifactRecordsPanel 갱신
+      if (name === 'record_manager' && status !== 'error') {
+        bumpRefresh();
       }
 
       // SSE `tool_result.status`를 우선. legacy agent_svc 결과 모양
@@ -640,6 +656,28 @@ export function useChatStream(sessionId?: string) {
             ...msg,
             toolCalls: [...(msg.toolCalls ?? []), tc],
           }));
+
+          // 생성 에이전트 시작 → 탭 스피너 + 해당 탭으로 전환
+          const genKind: Record<string, ArtifactKind> = {
+            srs_generator: 'srs',
+            design_generator: 'design',
+            system_model_generator: 'system_model',
+            data_model_generator: 'data_model',
+            testcase_generator: 'testcase',
+          };
+          const kind = genKind[toolCall.name];
+          if (kind) {
+            useArtifactActionStore.getState().setGenerating(kind, true);
+            const tabMap: Record<string, string> = {
+              record: 'records',
+              system_model: 'design',
+              data_model: 'design',
+            };
+            useArtifactStore.getState().setActiveTab(
+              (tabMap[kind] ?? kind) as ArtifactType,
+            );
+          }
+
           executeToolCall(sid, toolCall.name);
         },
         onToolResult: (toolResult) => {
@@ -703,16 +741,35 @@ export function useChatStream(sessionId?: string) {
       // 인라인 카드에서 응답한 경우: interrupt_id로 특정 메시지를 찾아 완료 상태로 업데이트
       const isApproved = response.action === 'approve';
       const updateByInterruptId = useChatStore.getState().updateMessageByInterruptId;
-      updateByInterruptId(sid, threadId, (msg) => ({
-        ...msg,
-        hitlResponded: true,
-        hitlApproved: isApproved,
-      }));
+      let hitlKind: ArtifactKind | null = null;
+      updateByInterruptId(sid, threadId, (msg) => {
+        // HITL 카드의 context.artifact_kind 에서 에이전트 이름 추출
+        const ctx = (msg.hitlData as Record<string, unknown> | null)?.context as Record<string, unknown> | undefined;
+        const agentName = (ctx?.artifact_kind as string) ?? '';
+        const kindMap: Record<string, ArtifactKind> = {
+          srs_generator: 'srs',
+          design_generator: 'design',
+          testcase_generator: 'testcase',
+          requirement: 'record',
+        };
+        hitlKind = kindMap[agentName] ?? null;
+        return {
+          ...msg,
+          hitlResponded: true,
+          hitlApproved: isApproved,
+        };
+      });
 
-      // 거부 시에는 resume 스트림 없이 종료
-      if (!isApproved) return;
+      // 승인 시: resume 응답은 tool_call 없이 tool_result 만 오므로
+      // 프론트엔드에서 직접 스피너를 켜야 함
+      if (isApproved && hitlKind) {
+        useArtifactActionStore.getState().setGenerating(hitlKind, true);
+        useArtifactStore.getState().setActiveTab(hitlKind === 'record' ? 'records' : hitlKind);
+      }
 
-      // 승인 시: resume 응답은 새 assistant 메시지 turn 으로 표시
+      // resume 응답은 새 assistant 메시지 turn 으로 표시
+      // 거부 시에도 백엔드에 전달하여 HITL 상태를 DB에서 정리해야
+      // 페이지 새로고침 후에도 카드가 재등장하지 않음
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'assistant',

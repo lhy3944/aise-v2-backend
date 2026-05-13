@@ -38,7 +38,7 @@ export function RequirementInput({ onAdd }: RequirementInputProps) {
       />
       <div className='flex items-center justify-end'>
         <Button size='sm' onClick={handleAdd} disabled={!text.trim()}>
-          <Plus className='size-3.5' />
+          <Plus className='size-4' />
           추가
         </Button>
       </div>

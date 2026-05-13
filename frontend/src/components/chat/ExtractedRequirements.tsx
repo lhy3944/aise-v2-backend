@@ -42,7 +42,7 @@ export function ExtractedRequirements({ requirements, onAccept }: ExtractedRequi
     return (
       <div className='bg-canvas-surface border-line-primary rounded-xl border p-4'>
         <div className='text-fg-muted flex items-center gap-1.5 text-xs'>
-          <Check className='size-3.5' />
+          <Check className='size-4' />
           {selected.size}개 요구사항 반영 완료
         </div>
       </div>
@@ -98,7 +98,7 @@ export function ExtractedRequirements({ requirements, onAccept }: ExtractedRequi
 
       <div className='flex justify-end'>
         <Button size='sm' onClick={handleAccept} disabled={selected.size === 0} className='gap-1.5'>
-          <Check className='size-3.5' />
+          <Check className='size-4' />
           선택 항목 반영 ({selected.size}개)
         </Button>
       </div>

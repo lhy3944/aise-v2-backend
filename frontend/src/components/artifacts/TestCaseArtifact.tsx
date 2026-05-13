@@ -17,7 +17,6 @@ import {
   TestCaseEditorActions,
   type TestCaseEditorPayload,
 } from '@/components/artifacts/workspace/editor/TestCaseEditor';
-import { lineageInline } from '@/components/artifacts/workspace/lineagePreview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -105,7 +104,6 @@ export function TestCaseArtifact() {
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
   const setPendingFocus = useArtifactStore((s) => s.setPendingFocus);
 
-  // Phase F: stale 판정 — TC 의 source 인 SRS 가 갱신되면 stale.
   const { staleByArtifactId } = useImpact(projectId);
 
   const unstagedArtifacts = useStagingStore(
@@ -256,7 +254,7 @@ export function TestCaseArtifact() {
             className='h-8 gap-1.5 px-3 text-xs'
             onClick={handlePrepareTestcasePrompt}
           >
-            <MessageSquare className='size-3.5' />
+            <MessageSquare className='size-4' />
             Testcase 생성
           </Button>
         }
@@ -290,7 +288,7 @@ export function TestCaseArtifact() {
                   setActiveTab('srs');
                 }}
               >
-                <Link2 className='size-3.5' />
+                <Link2 className='size-4' />
                 출처 보기
               </Button>
             );
@@ -377,9 +375,14 @@ export function TestCaseArtifact() {
                 className='group border-line-primary hover:border-fg-muted/50 hover:bg-canvas-primary/30 space-y-2 rounded-lg border px-3.5 py-3 transition-colors'
               >
                 <header className='flex items-center gap-2 text-[11px]'>
-                  <span className='text-fg-secondary font-mono font-medium'>
+                  <span className='text-fg-secondary font-medium'>
                     {tc.display_id}
                   </span>
+                  {tc.current_version_number != null && (
+                    <span className='text-fg-muted'>
+                      v{tc.current_version_number}
+                    </span>
+                  )}
                   {(unstagedDraft || stagedDraft) && (
                     <span
                       className={cn(
@@ -412,7 +415,6 @@ export function TestCaseArtifact() {
                         onSelect={(e) => e.preventDefault()}
                         className='gap-2'
                       >
-                        <Pencil className='size-3.5' />
                         편집
                       </DropdownMenuCheckboxItem>
                       {unstagedDraft && (
@@ -424,7 +426,7 @@ export function TestCaseArtifact() {
                           onSelect={(e) => e.preventDefault()}
                           className='gap-2 text-destructive focus:text-destructive'
                         >
-                          <Trash2 className='size-3.5' />
+                          <Trash2 className='size-4' />
                           드래프트 폐기
                         </DropdownMenuCheckboxItem>
                       )}
@@ -468,14 +470,22 @@ export function TestCaseArtifact() {
                 )}
 
                 {(() => {
-                  const inline = lineageInline(
-                    tc.current_source_artifact_versions,
-                  );
-                  if (!inline) return null;
+                  const srsRef = tc.current_source_artifact_versions?.srs?.[0];
+                  const isStale = !!staleByArtifactId[tc.artifact_id];
+                  if (!srsRef && !isStale) return null;
                   return (
-                    <span className='bg-muted text-fg-muted inline-block rounded px-2 py-0.5 text-[10px] font-medium whitespace-nowrap'>
-                      {inline}
-                    </span>
+                    <div className='flex items-center gap-2 text-[10px]'>
+                      {srsRef?.version_number != null && (
+                        <span className='text-fg-muted'>
+                          SRS v{srsRef.version_number} 기반
+                        </span>
+                      )}
+                      {isStale && (
+                        <span className='inline-flex items-center gap-1 rounded border bg-amber-500/5 px-1.5 py-0.5 font-medium text-amber-600 dark:text-amber-400'>
+                          갱신 필요
+                        </span>
+                      )}
+                    </div>
                   );
                 })()}
               </article>

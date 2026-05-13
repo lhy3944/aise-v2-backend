@@ -27,7 +27,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { useImpact } from '@/hooks/useImpact';
 import { useOverlay } from '@/hooks/useOverlay';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -134,9 +133,6 @@ export function SrsArtifact() {
   // PR 머지/거절/생성 시 list 갱신 트리거
   const refreshNonce = useArtifactRefreshStore((s) => s.nonce.srs);
 
-  // Phase F: stale 판정 — record/SRS/Design/TC 어느 쪽이 머지되어도 자동 재조회
-  const { staleByArtifactId } = useImpact(projectId);
-
   // SRS Artifact 단위 unstaged/staged 드래프트 — content 는 sections 전체 snapshot
   const unstagedArtifacts = useStagingStore(
     (s) =>
@@ -191,6 +187,8 @@ export function SrsArtifact() {
         const sorted = [...res.documents].sort((a, b) => b.version - a.version);
         setDocuments(sorted);
         setSelectedSrsId((prev) => {
+          // 새 버전이 추가된 경우 최신 버전으로 전환
+          if (sorted.length > 0 && sorted[0].srs_id !== prev) return sorted[0].srs_id;
           if (prev && sorted.some((d) => d.srs_id === prev)) return prev;
           return sorted[0]?.srs_id ?? null;
         });
@@ -227,6 +225,7 @@ export function SrsArtifact() {
     try {
       const doc = await srsService.generate(projectId);
       await fetchList(doc.srs_id);
+      useArtifactRefreshStore.getState().bump('srs');
     } catch (err) {
       if (err instanceof ApiError) setErrorMessage(err.message);
     } finally {
@@ -317,9 +316,9 @@ export function SrsArtifact() {
             className='h-8 gap-1.5 px-3 text-xs'
           >
             {generating ? (
-              <Spinner size='size-3.5' />
+              <Spinner size='size-4' />
             ) : (
-              <Sparkles className='size-3.5' />
+              <Sparkles className='size-4' />
             )}
             SRS 생성
           </Button>
@@ -362,12 +361,6 @@ export function SrsArtifact() {
                 )}
               </SelectValue>
             </SelectTrigger>
-            {selectedDoc && staleByArtifactId[selectedDoc.artifact_id] && (
-              <span
-                className='bg-stale-warning size-1.5 rounded-full'
-                title='입력 변경으로 갱신 필요'
-              />
-            )}
             <SelectContent position='popper' side='bottom' align='start'>
               {documents.map((doc) => {
                 return (
@@ -400,7 +393,7 @@ export function SrsArtifact() {
                 className='h-7 gap-1.5 text-xs'
                 onClick={() => setActiveTab('records')}
               >
-                <Link2 className='size-3.5' />
+                <Link2 className='size-4' />
                 출처 보기
               </Button>
             )}
@@ -411,7 +404,7 @@ export function SrsArtifact() {
             disabled={!selectedDoc}
             onClick={handleDownloadMarkdown}
           >
-            <Download className='size-3.5' />
+            <Download className='size-4' />
             다운로드
           </Button>
           <Button
@@ -422,9 +415,9 @@ export function SrsArtifact() {
             disabled={generating}
           >
             {generating ? (
-              <Spinner size='size-3.5' />
+              <Spinner size='size-4' />
             ) : (
-              <RefreshCw className='size-3.5' />
+              <RefreshCw className='size-4' />
             )}
             재생성
           </Button>

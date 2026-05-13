@@ -57,8 +57,8 @@ export const SessionItem = memo(function SessionItem({
       className={cn(
         'group relative flex w-full min-w-0 items-center overflow-hidden pr-2 transition-colors',
         isActive
-          ? 'bg-canvas-surface text-fg-primary'
-          : 'text-fg-secondary hover:bg-canvas-surface/50',
+          ? 'bg-canvas-surface-2 text-fg-primary'
+          : 'text-fg-secondary hover:bg-canvas-surface-2',
       )}
     >
       {isActive && (

@@ -135,7 +135,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab }: SettingsDialo
                   className={cn(
                     'h-9 justify-start gap-2.5 px-3 text-sm font-normal',
                     activeId === id
-                      ? 'bg-canvas-surface text-fg-primary'
+                      ? 'bg-canvas-surface-2 text-fg-primary'
                       : 'text-fg-secondary hover:text-fg-primary',
                   )}
                 >

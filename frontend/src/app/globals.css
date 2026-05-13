@@ -43,7 +43,7 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
 
-  /* AISE+ design tokens — Linear/Airbnb dual-theme */
+  /* AISE+ design tokens — Notion-inspired warm-tint dual-theme */
   --color-canvas-primary: var(--bg-primary);
   --color-canvas-secondary: var(--bg-secondary);
   --color-canvas-surface: var(--bg-surface);
@@ -100,104 +100,106 @@
   }
 }
 
-/* Light theme (Airbnb-inspired) */
+/* Light theme (cool-tint, clean tech surface hierarchy) */
 :root {
   --radius: 0.5rem;
 
   /* shadcn */
   --background: #ffffff;
-  --foreground: #222222;
+  --foreground: #171717;
   --card: #ffffff;
-  --card-foreground: #222222;
+  --card-foreground: #171717;
   --popover: #ffffff;
-  --popover-foreground: #222222;
-  --primary: #5e6ad2;
-  --primary-hover: #828fff;
+  --popover-foreground: #171717;
+  --primary: #000000;
+  --primary-hover: #1a1a1a;
   --primary-foreground: #ffffff;
-  --secondary: #f7f7f7;
-  --secondary-foreground: #222222;
-  --muted: #f7f7f7;
-  --muted-foreground: #6a6a6a;
-  --accent: #f7f7f7;
-  --accent-foreground: #222222;
-  --destructive: #d7443b;
-  --warning: #e89224;
-  --success: #27a644;
-  --border: #dddddd;
-  --input: #c1c1c1;
-  --ring: #5e6ad2;
+  --secondary: #f5f5f7;
+  --secondary-foreground: #171717;
+  --muted: #f5f5f7;
+  --muted-foreground: #60646c;
+  --accent: #e8e9ed;
+  --accent-foreground: #171717;
+  --destructive: #e03131;
+  --warning: #dd5b00;
+  --success: #1aae39;
+  --border: #e0e1e5;
+  --input: #bfc1c7;
+  --ring: #000000;
 
-  /* AISE+ tokens — Airbnb surface ladder */
+  /* AISE+ tokens — cool-tint surface ladder
+     primary: 캔버스 (본문) → secondary: 헤더/사이드바/패널 → surface: 카드
+     → surface-2: 입력/호버 → surface-3: 강조/비활성 */
   --bg-primary: #ffffff;
-  --bg-surface: #f7f7f7;
-  --bg-secondary: #f0f0f0;
-  --bg-surface-2: #ebebeb;
-  --bg-surface-3: #e5e5e5;
-  --bg-input: #f0f0f0;
-  --bg-toggle: #5e6ad2;
-  --border-primary: #dddddd;
-  --border-subtle: #ebebeb;
-  --border-strong: #c1c1c1;
-  --text-primary: #222222;
-  --text-secondary: #3f3f3f;
-  --text-muted: #6a6a6a;
-  --text-tertiary: #929292;
-  --accent-primary: #5e6ad2;
-  --accent-hover: #828fff;
-  --icon-default: #6a6a6a;
-  --icon-active: #222222;
+  --bg-secondary: #f5f5f7;
+  --bg-surface: #f5f5f7;
+  --bg-surface-2: #e8e9ed;
+  --bg-surface-3: #dcdee2;
+  --bg-input: #f0f0f3;
+  --bg-toggle: #000000;
+  --border-primary: #d4d5d9;
+  --border-subtle: #e0e1e5;
+  --border-strong: #b0b2b8;
+  --text-primary: #171717;
+  --text-secondary: #4a4c52;
+  --text-muted: #60646c;
+  --text-tertiary: #999aa0;
+  --accent-primary: #000000;
+  --accent-hover: #1a1a1a;
+  --icon-default: #60646c;
+  --icon-active: #171717;
   --tab-active-bg: #ffffff;
-  --sidebar-bg: #f0f0f0;
-  --warning-amber: #b45309;
-  --warning-amber-bg: #fffbeb;
+  --sidebar-bg: #f5f5f7;
+  --warning-amber: #dd5b00;
+  --warning-amber-bg: #fff4e6;
 }
 
-/* Dark theme (Linear-inspired) */
+/* Dark theme (neutral dark, clear surface hierarchy) */
 .dark {
-  --background: #101010;
-  --foreground: #f7f8f8;
-  --card: #0f1011;
-  --card-foreground: #f7f8f8;
-  --popover: #0f1011;
-  --popover-foreground: #f7f8f8;
-  --primary: #5e6ad2;
-  --primary-foreground: #ffffff;
-  --secondary: #141516;
-  --secondary-foreground: #f7f8f8;
-  --muted: #18191a;
-  --muted-foreground: #8a8f98;
-  --accent: #141516;
-  --accent-foreground: #f7f8f8;
-  --destructive: #e5484d;
-  --warning: #e1a54c;
-  --success: #27a644;
-  --border: #23252a;
-  --input: #34343a;
-  --ring: #5e6ad2;
+  --background: #0a0a0a;
+  --foreground: #ffffffde;
+  --card: #141414;
+  --card-foreground: #ffffffde;
+  --popover: #141414;
+  --popover-foreground: #ffffffde;
+  --primary: #ffffff;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1e1e1e;
+  --secondary-foreground: #ffffffde;
+  --muted: #1e1e1e;
+  --muted-foreground: #8e8e8e;
+  --accent: #2e2e2e;
+  --accent-foreground: #ffffffde;
+  --destructive: #e03131;
+  --warning: #dd5b00;
+  --success: #1aae39;
+  --border: #2a2a2a;
+  --input: #3a3a3a;
+  --ring: #ffffff;
 
-  /* AISE+ tokens — Linear surface ladder */
-  --bg-primary: #101010;
-  --bg-secondary: #0f1011;
-  --bg-surface: #0f1011;
-  --bg-surface-2: #141516;
-  --bg-surface-3: #18191a;
-  --bg-input: #141516;
-  --bg-toggle: #5e6ad2;
-  --border-primary: #23252a;
-  --border-subtle: #191a1b;
-  --border-strong: #34343a;
-  --text-primary: #f7f8f8;
-  --text-secondary: #d0d6e0;
-  --text-muted: #8a8f98;
-  --text-tertiary: #62666d;
-  --accent-primary: #5e6ad2;
-  --accent-hover: #828fff;
-  --icon-default: #8a8f98;
-  --icon-active: #f7f8f8;
-  --tab-active-bg: #0f1011;
-  --sidebar-bg: #0a0a0b;
-  --warning-amber: #e1a54c;
-  --warning-amber-bg: #1a1508;
+  /* AISE+ tokens — neutral dark surface ladder */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-surface: #141414;
+  --bg-surface-2: #242424;
+  --bg-surface-3: #2e2e2e;
+  --bg-input: #1e1e1e;
+  --bg-toggle: #ffffff;
+  --border-primary: #353535;
+  --border-subtle: #2a2a2a;
+  --border-strong: #4a4a4a;
+  --text-primary: #ffffffde;
+  --text-secondary: #ffffff9e;
+  --text-muted: #8e8e8e;
+  --text-tertiary: #8e8e8e70;
+  --accent-primary: #ffffff;
+  --accent-hover: #ffffffcc;
+  --icon-default: #8e8e8e;
+  --icon-active: #ffffffde;
+  --tab-active-bg: #141414;
+  --sidebar-bg: #141414;
+  --warning-amber: #dd5b00;
+  --warning-amber-bg: #1a1208;
 }
 
 /* Custom scrollbar — native scrollbar hidden, custom thumb on hover */
@@ -224,7 +226,7 @@
   body {
     @apply bg-canvas-primary text-fg-primary;
     font-family:
-      var(--font-pretendard), var(--font-inter), ui-sans-serif, system-ui,
+      var(--font-inter), var(--font-pretendard), ui-sans-serif, system-ui,
       sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

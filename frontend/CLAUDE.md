@@ -113,20 +113,20 @@ import { cn } from '@/lib/utils';
 
 ### 디자인 토큰 (CSS 변수 → Tailwind 유틸리티)
 
-shadcn 기본 컬러가 아닌 **AISE+ 전용 토큰**을 우선 사용:
+shadcn 기본 컬러가 아닌 **AISE+ 전용 토큰**을 우선 사용 (neutral-tint, black/white accent):
 
-| Tailwind 유틸리티     | 의미            |
-| --------------------- | --------------- |
-| `bg-canvas-primary`   | 메인 배경       |
-| `bg-canvas-secondary` | 서브 배경       |
-| `bg-canvas-surface`   | 카드/표면       |
-| `text-fg-primary`     | 기본 텍스트     |
-| `text-fg-secondary`   | 보조 텍스트     |
-| `text-fg-muted`       | 비활성 텍스트   |
-| `text-accent-primary` | 강조색 (violet) |
-| `border-line-primary` | 기본 보더       |
-| `text-icon-default`   | 아이콘 기본색   |
-| `text-icon-active`    | 아이콘 활성색   |
+| Tailwind 유틸리티     | 의미            | 원색                     |
+| --------------------- | --------------- | ------------------------ |
+| `bg-canvas-primary`   | 메인 배경       | #ffffff (white)          |
+| `bg-canvas-secondary` | 헤더/사이드바   | #f5f5f5 (light gray)     |
+| `bg-canvas-surface`   | 카드/패널       | #efefef (mid gray)       |
+| `text-fg-primary`     | 기본 텍스트     | #1a1a1a (near black)     |
+| `text-fg-secondary`   | 보조 텍스트     | #4a4a4a (dark gray)      |
+| `text-fg-muted`       | 비활성 텍스트   | #6b6b6b (mid gray)       |
+| `text-accent-primary` | 강조색 (black)  | #000000 (black)          |
+| `border-line-primary` | 기본 보더       | #e0e0e0 (light border)   |
+| `text-icon-default`   | 아이콘 기본색   | #6b6b6b (mid gray)       |
+| `text-icon-active`    | 아이콘 활성색   | #1a1a1a (near black)     |
 
 ### 조건부 스타일
 

@@ -25,7 +25,7 @@ export function ProfileDropdown({ onSettingsOpen, onProfileOpen }: ProfileDropdo
       <DropdownMenuTrigger asChild>
         <button>
           <Avatar className='h-8 w-8'>
-            <AvatarFallback className='bg-canvas-surface text-fg-primary text-sm font-medium'>
+            <AvatarFallback className='bg-canvas-surface-2 text-fg-primary text-sm font-medium'>
               A
             </AvatarFallback>
           </Avatar>
@@ -34,7 +34,7 @@ export function ProfileDropdown({ onSettingsOpen, onProfileOpen }: ProfileDropdo
       <DropdownMenuContent className='w-[280px]' align='end' sideOffset={8}>
         <DropdownMenuLabel className='flex items-center gap-3 p-3'>
           <Avatar className='h-10 w-10'>
-            <AvatarFallback className='bg-canvas-surface text-fg-primary font-medium'>
+            <AvatarFallback className='bg-canvas-surface-2 text-fg-primary font-medium'>
               A
             </AvatarFallback>
           </Avatar>

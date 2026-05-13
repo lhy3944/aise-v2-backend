@@ -14,6 +14,55 @@ export function extractPlantUmlBlocks(content: string): string[] {
   return blocks;
 }
 
+/** 라이트 테마용 PlantUML skinparam 지시어. 패널 배경(#f5f5f7)에 어우러는 톤. */
+const LIGHT_SKIN_PARAMS = `
+skinparam backgroundColor #F5F5F7
+skinparam shadowing false
+skinparam defaultFontColor #171717
+skinparam defaultFontSize 14
+skinparam ArrowColor #60646C
+skinparam RectangleBorderColor #BFC1C7
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam RectangleFontColor #171717
+skinparam ClassBorderColor #BFC1C7
+skinparam ClassBackgroundColor #FFFFFF
+skinparam ClassFontColor #171717
+skinparam EntityBorderColor #BFC1C7
+skinparam EntityBackgroundColor #FFFFFF
+skinparam EntityFontColor #171717
+skinparam UseCaseBorderColor #BFC1C7
+skinparam UseCaseBackgroundColor #FFFFFF
+skinparam UseCaseFontColor #171717
+skinparam ActorBorderColor #60646C
+skinparam ActorFontColor #171717
+skinparam ActorStyle awesome
+skinparam NoteBorderColor #BFC1C7
+skinparam NoteFontColor #4A4C52
+skinparam NoteBackgroundColor #F0F0F3
+skinparam PackageBorderColor #BFC1C7
+skinparam PackageBackgroundColor #E8E9ED
+skinparam PackageFontColor #171717
+skinparam ComponentBorderColor #BFC1C7
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam ComponentFontColor #171717
+skinparam InterfaceBorderColor #BFC1C7
+skinparam SequenceMessageColor #171717
+skinparam SequenceLifeLineBorderColor #BFC1C7
+skinparam SequenceParticipantBorderColor #BFC1C7
+skinparam SequenceParticipantBackgroundColor #FFFFFF
+skinparam SequenceParticipantFontColor #171717
+skinparam PartitionBorderColor #BFC1C7
+skinparam PartitionBackgroundColor #F0F0F3
+skinparam PartitionFontColor #171717
+skinparam ActivityBorderColor #BFC1C7
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityFontColor #171717
+skinparam ActivityDiamondBorderColor #BFC1C7
+skinparam ActivityDiamondBackgroundColor #F0F0F3
+skinparam ActivityDiamondFontColor #171717
+skinparam ConditionStyle diamond
+`;
+
 /** 다크 테마용 PlantUML skinparam 지시어. */
 const DARK_SKIN_PARAMS = `
 skinparam backgroundColor transparent
@@ -70,14 +119,19 @@ function injectDarkTheme(code: string): string {
   return code.replace(/@startuml/i, (match) => `${match}\n${DARK_SKIN_PARAMS}`);
 }
 
+/** 라이트 테마 코드에 skinparam 주입. */
+function injectLightTheme(code: string): string {
+  return code.replace(/@startuml/i, (match) => `${match}\n${LIGHT_SKIN_PARAMS}`);
+}
+
 /** PlantUML 텍스트를 deflate + Base64 인코딩하여 이미지 URL 생성.
- *  @param dark 다크 테마 여부 (true 시 배경 투명 + 라이트 컬러 skinparam 주입)
+ *  @param dark 다크 테마 여부 (true 시 다크 스킨, false 시 라이트 스킨 주입)
  */
 export async function plantumlImageUrl(
   plantumlCode: string,
   { dark = false }: { dark?: boolean } = {},
 ): Promise<string> {
-  const code = dark ? injectDarkTheme(plantumlCode) : plantumlCode;
+  const code = dark ? injectDarkTheme(plantumlCode) : injectLightTheme(plantumlCode);
   try {
     const { encode } = await import('plantuml-encoder');
     const encoded = encode(code);

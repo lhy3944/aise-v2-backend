@@ -55,7 +55,7 @@ export function LeftSidebar() {
             }}
             className='h-full shrink-0 overflow-hidden'
           >
-            <div className='flex h-full w-[220px] flex-col gap-2 py-1.5 pl-3'>
+            <div className='bg-sidebar-bg flex h-full w-[220px] flex-col gap-2 py-1.5 pl-3'>
               <div className='flex items-center justify-between'>
                 <Button
                   onClick={handleNewChat}
@@ -122,7 +122,7 @@ export function LeftSidebar() {
             }}
             className='h-full shrink-0 overflow-hidden'
           >
-            <div className='flex h-full w-[60px] flex-col items-center justify-between border-r py-4'>
+            <div className='bg-sidebar-bg flex h-full w-[60px] flex-col items-center justify-between border-r py-4'>
               <div className='flex flex-col items-center gap-2'>
                 <Button
                   onClick={toggleLeftSidebar}

@@ -168,18 +168,19 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
       ) : (
         <ScrollArea viewportRef={viewportRef} className='min-h-0 flex-1'>
           {sessions.map((session) => (
-            <SessionItem
-              key={session.id}
-              session={session}
-              isActive={session.id === activeSessionId}
-              onClick={() => {
-                openHitlForSession(session.id);
-                router.push(`/agent/${session.id}`);
-                onSessionSelect?.();
-              }}
-              onDelete={() => handleDelete(session.id)}
-              onRename={(title) => handleRename(session.id, title)}
-            />
+            <div key={session.id} className='mb-px'>
+              <SessionItem
+                session={session}
+                isActive={session.id === activeSessionId}
+                onClick={() => {
+                  openHitlForSession(session.id);
+                  router.push(`/agent/${session.id}`);
+                  onSessionSelect?.();
+                }}
+                onDelete={() => handleDelete(session.id)}
+                onRename={(title) => handleRename(session.id, title)}
+              />
+            </div>
           ))}
 
           {nextCursor && !isFetchingMore && (

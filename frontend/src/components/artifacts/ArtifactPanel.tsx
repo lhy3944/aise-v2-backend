@@ -105,17 +105,19 @@ export function ArtifactPanel() {
       className='flex h-full flex-col'
     >
       {/* Tab Bar */}
-      <div className='relative min-w-0 px-2 pt-2'>
-        <ScrollArea className='w-full px-2'>
+      <div className='relative min-w-0 pt-2'>
+        <ScrollArea className='w-full'>
           <div className='pb-2.5'>
             <TabsList
               variant='line'
-              className='border-line-subtle w-max min-w-full'
+              className='border-line-subtle w-max min-w-full border-b'
             >
               {ARTIFACT_TABS.map((tab) => {
                 const isGenerating =
                   tab.kind === 'design'
-                    ? generating.design || generating.system_model || generating.data_model
+                    ? generating.design ||
+                      generating.system_model ||
+                      generating.data_model
                     : tab.kind
                       ? generating[tab.kind]
                       : false;
@@ -144,8 +146,8 @@ export function ArtifactPanel() {
           </div>
           <ScrollBar orientation='horizontal' className='h-0.5' />
         </ScrollArea>
-        <div className='from-canvas-primary pointer-events-none absolute inset-y-0 left-0 w-4 bg-linear-to-r to-transparent' />
-        <div className='from-canvas-primary pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l to-transparent' />
+        <div className='from-canvas-surface pointer-events-none absolute inset-y-0 left-0 w-4 bg-linear-to-r to-transparent hidden lg:hidden max-lg:block' />
+        <div className='from-canvas-surface pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l to-transparent hidden lg:hidden max-lg:block' />
       </div>
 
       {/* Stale Banner — 활성 탭에 stale이 있으면 탭바 아래에 배너 표시 */}

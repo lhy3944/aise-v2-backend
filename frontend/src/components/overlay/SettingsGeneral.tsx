@@ -122,7 +122,7 @@ export function SettingsGeneral() {
                 'flex flex-col items-center gap-2',
                 theme === value
                   ? 'ring-accent-primary border-accent-primary bg-canvas-surface ring-1'
-                  : 'hover:bg-canvas-surface/50',
+                  : 'hover:bg-canvas-surface-2',
               )}
             >
               {value === 'system' ? (

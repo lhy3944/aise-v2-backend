@@ -29,7 +29,7 @@ export function ReadinessMiniView() {
 
   return (
     <div
-      className="border-line-primary hover:bg-canvas-surface/50 flex cursor-pointer items-center justify-between rounded-md border px-2.5 py-2.5 transition-colors"
+      className="border-line-primary hover:bg-canvas-surface-2 flex cursor-pointer items-center justify-between rounded-md border px-2.5 py-2.5 transition-colors"
       onClick={() => router.push(`/projects/${currentProject.project_id}`)}
     >
       {ITEMS.map(({ key, icon: Icon }) => {

@@ -9,7 +9,7 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import {
@@ -83,7 +83,7 @@ const EMPTY_TESTCASE_GUIDES = [
   },
 ];
 
-export function TestCaseArtifact() {
+export const TestCaseArtifact = memo(function TestCaseArtifact() {
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.project_id;
 
@@ -500,4 +500,4 @@ export function TestCaseArtifact() {
       </ScrollArea>
     </div>
   );
-}
+});

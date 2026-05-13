@@ -8,6 +8,7 @@ import {
 import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
+import { formatToolInterrupt, formatToolResult, mapBackendMessages } from '@/lib/chat-message-formatter';
 import { useArtifactActionStore } from '@/stores/artifact-action-store';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
@@ -15,103 +16,14 @@ import { useArtifactStore, type ArtifactType } from '@/stores/artifact-store';
 import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useHitlStore } from '@/stores/hitl-store';
-import type { ArtifactKind, HitlData, SourceRef } from '@/types/agent-events';
+import type { ArtifactKind, HitlData } from '@/types/agent-events';
 import { LayoutMode, usePanelStore } from '@/stores/panel-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTokenDrain } from '@/hooks/useTokenDrain';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
-
-/** 백엔드 도구 결과를 사용자 친화적 문자열로 포맷 */
-function formatToolResult(
-  name: string,
-  result: Record<string, unknown>,
-): string {
-  switch (name) {
-    case 'create_record':
-      return `${result.display_id} 생성 완료`;
-    case 'update_record':
-      return `${result.display_id} 수정 완료`;
-    case 'delete_record':
-      return `${result.display_id} 삭제 완료`;
-    case 'update_record_status':
-      return `${result.display_id}: ${result.old_status} → ${result.new_status}`;
-    case 'search_records':
-      return `${result.count}개 레코드 검색됨`;
-    case 'generate_srs':
-      return typeof result.version === 'number'
-        ? `SRS v${result.version} 생성 완료`
-        : 'SRS 생성 완료';
-    case 'knowledge_qa': {
-      // sources_count는 검색된 top-k 청크 개수 — "문서"라고 표기하면 오해를 준다
-      // (같은 문서의 여러 청크가 여러 번 카운트되므로). 청크 개수로 표기.
-      const count = result.sources_count;
-      return typeof count === 'number' ? `청크 ${count}개 참조` : '완료';
-    }
-    case 'requirement': {
-      const approved = result.records_approved_count;
-      if (typeof approved === 'number') {
-        return `승인 ${approved}건`;
-      }
-      const count = result.records_count;
-      return typeof count === 'number' ? `후보 ${count}건 추출` : '완료';
-    }
-    case 'srs_generator': {
-      const v = result.srs_version;
-      const sections = result.section_count;
-      if (typeof v === 'number' && typeof sections === 'number') {
-        return `SRS v${v} · ${sections}개 섹션`;
-      }
-      return typeof v === 'number' ? `SRS v${v} 생성` : 'SRS 생성 완료';
-    }
-    case 'design_generator': {
-      const v = result.design_version;
-      const sections = result.section_count;
-      const srsVersion = result.srs_version;
-      if (
-        typeof v === 'number' &&
-        typeof sections === 'number' &&
-        typeof srsVersion === 'number'
-      ) {
-        return `Design v${v} · ${sections}개 섹션 · SRS v${srsVersion}`;
-      }
-      if (typeof v === 'number' && typeof sections === 'number') {
-        return `Design v${v} · ${sections}개 섹션`;
-      }
-      return typeof v === 'number' ? `Design v${v} 생성` : 'Design 생성 완료';
-    }
-    case 'testcase_generator': {
-      const count = result.testcase_count;
-      const v = result.srs_version;
-      if (typeof count === 'number' && typeof v === 'number') {
-        return `TC ${count}건 · SRS v${v}`;
-      }
-      return typeof count === 'number' ? `TC ${count}건 생성` : 'TC 생성 완료';
-    }
-    case 'critic': {
-      const passed = result.critic_passed;
-      const checked = result.checked_citations;
-      if (typeof checked === 'number') {
-        const status = passed === false ? '실패' : '통과';
-        return `검증 ${status} · 인용 ${checked}건`;
-      }
-      return passed === false ? '검증 실패' : '검증 통과';
-    }
-    default:
-      return '완료';
-  }
-}
-
-function formatToolInterrupt(name: string, data: HitlData): string {
-  if (name === 'requirement' && data.kind === 'confirm') {
-    const records = data.context?.records_extracted;
-    if (Array.isArray(records)) {
-      return `후보 ${records.length}건 승인 대기`;
-    }
-  }
-  return '사용자 확인 대기';
-}
 
 /**
  * 채팅 메시지 전송, 스트리밍, tool call 실행, 세션 로드를 관리
@@ -128,7 +40,6 @@ export function useChatStream(sessionId?: string) {
 
   const setInputValue = useChatStore((s) => s.setInputValue);
   const addMessage = useChatStore((s) => s.addMessage);
-  const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
   const setMessages = useChatStore((s) => s.setMessages);
   const setSessionStreaming = useChatStore((s) => s.setSessionStreaming);
   const finishStreaming = useChatStore((s) => s.finishStreaming);
@@ -143,14 +54,7 @@ export function useChatStream(sessionId?: string) {
   );
 
   const abortControllersRef = useRef<Map<string, () => void>>(new Map());
-  const tokenBufferRef = useRef<Map<string, string>>(new Map());
-  const tokenDrainTimerRef = useRef<Map<string, number>>(new Map());
-  const scheduleTokenDrainRef = useRef<
-    (sid: string, immediate?: boolean) => void
-  >(() => {});
-  const pendingFinishStatusRef = useRef<Map<string, 'done' | 'error'>>(
-    new Map(),
-  );
+
   const pendingHitl = useHitlStore((s) => {
     const active = s.activeThreadId
       ? s.pendingByThreadId[s.activeThreadId]
@@ -158,14 +62,22 @@ export function useChatStream(sessionId?: string) {
     return active?.sessionId === activeSessionId ? active : null;
   });
   const upsertHitl = useHitlStore((s) => s.upsert);
-
   const removeHitl = useHitlStore((s) => s.remove);
+
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(
     () =>
       !!activeSessionId &&
       !useChatStore.getState().sessionMessages[activeSessionId],
   );
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+
+  // Token drain subsystem
+  const {
+    clearBufferedTokens,
+    flushBufferedTokens,
+    enqueueToken,
+    requestFinishAfterDrain,
+  } = useTokenDrain({ isMobile });
 
   // sessionId 변경 시 로딩 상태 동기화
   useEffect(() => {
@@ -210,79 +122,11 @@ export function useChatStream(sessionId?: string) {
       .get(activeSessionId)
       .then((detail) => {
         if (cancelled) return;
-        const msgs: ChatMessage[] = detail.messages.map((m) => {
-          // backend가 tool_data에 { sources } 등 다양한 보조 데이터를 넣는다.
-          // 인용 복원을 위해 sources는 message.sources로 끌어올리고, 그 외
-          // 페이로드가 있을 때만 toolData(requirements 스키마)로 래핑한다.
-          const td = m.tool_data;
-          const sourcesField =
-            td && 'sources' in td
-              ? (td.sources as SourceRef[] | null | undefined)
-              : undefined;
-          const hitlDataField =
-            td && 'hitl_data' in td && td.hitl_data != null
-              ? (td.hitl_data as HitlData)
-              : undefined;
-          const tdEntries = td
-            ? Object.entries(td).filter(([k]) => k !== 'sources' && k !== 'hitl_data')
-            : [];
-          const tdRest = Object.fromEntries(tdEntries);
-          const hasOtherToolData = tdEntries.length > 0;
-
-          // HITL responded/approved: 백엔드 hitl_data에 포함된 플래그.
-          // null/undefined → 아직 응답하지 않음 → hitlResponded=false (카드 표시)
-          const hitlMeta = hitlDataField
-            ? (hitlDataField as unknown as Record<string, unknown>)
-            : null;
-          const hitlResponded =
-            hitlMeta != null
-              ? hitlMeta.responded === true
-              : undefined;
-          const hitlApproved =
-            hitlMeta != null
-              ? (hitlMeta.approved as boolean | null)
-              : undefined;
-
-          return {
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            toolCalls: m.tool_calls?.map((tc) => {
-              const state: 'completed' | 'error' =
-                tc.status === 'error' ? 'error' : 'completed';
-              const resultText =
-                tc.result && typeof tc.result === 'object'
-                  ? formatToolResult(
-                      tc.name,
-                      tc.result as Record<string, unknown>,
-                    )
-                  : undefined;
-              return {
-                name: tc.name,
-                arguments: tc.arguments,
-                state,
-                result: state === 'completed' ? resultText : undefined,
-                durationMs: tc.duration_ms,
-              };
-            }),
-            toolData: hasOtherToolData
-              ? { type: 'requirements' as const, data: tdRest }
-              : undefined,
-            sources: sourcesField ?? undefined,
-            hitlData: hitlDataField,
-            hitlResponded,
-            hitlApproved,
-            // 서버에서 로드된 과거 HITL은 이미 완료된 것이므로 스피너 비활성화
-            hitlArtifactDone: hitlResponded ? true : undefined,
-            createdAt: m.created_at,
-          };
-        });
+        const msgs = mapBackendMessages(detail.messages);
         setMessages(activeSessionId, msgs);
         setIsLoadingMessages(false);
       })
       .catch((err) => {
-        // 에러를 조용히 삼키면 empty screen으로 빠지는 현상의 원인 파악이
-        // 어렵다. 진단을 위해 콘솔에 남기고 loading 플래그만 해제한다.
         console.error(
           `[useChatStream] session load failed (sessionId=${activeSessionId})`,
           err,
@@ -432,105 +276,8 @@ export function useChatStream(sessionId?: string) {
     [],
   );
 
-  // 에이전트 대화 중 산출물 생성 스피너
-  const setGenerating = useArtifactActionStore((s) => s.setGenerating);
-
   // Records 갱신 트리거
   const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
-
-  const clearBufferedTokens = useCallback((sid: string) => {
-    tokenBufferRef.current.delete(sid);
-    pendingFinishStatusRef.current.delete(sid);
-    const timerId = tokenDrainTimerRef.current.get(sid);
-    if (timerId !== undefined) {
-      clearTimeout(timerId);
-      tokenDrainTimerRef.current.delete(sid);
-    }
-  }, []);
-
-  const scheduleTokenDrain = useCallback(
-    (sid: string, immediate = false) => {
-      if (tokenDrainTimerRef.current.has(sid)) return;
-
-      const delay = immediate ? 0 : isMobile ? 18 : 10;
-      const timerId = window.setTimeout(() => {
-        tokenDrainTimerRef.current.delete(sid);
-
-        const buffered = tokenBufferRef.current.get(sid) ?? '';
-        if (!buffered) {
-          const pendingStatus = pendingFinishStatusRef.current.get(sid);
-          if (pendingStatus) {
-            pendingFinishStatusRef.current.delete(sid);
-            finishStreaming(sid, pendingStatus);
-          }
-          return;
-        }
-
-        const chunkSize = isMobile ? 28 : 120;
-        const nextChunk = buffered.slice(0, chunkSize);
-        const rest = buffered.slice(chunkSize);
-
-        appendToLastAssistant(sid, nextChunk);
-
-        if (rest) tokenBufferRef.current.set(sid, rest);
-        else tokenBufferRef.current.delete(sid);
-
-        if (
-          tokenBufferRef.current.has(sid) ||
-          pendingFinishStatusRef.current.has(sid)
-        ) {
-          scheduleTokenDrainRef.current(sid);
-        }
-      }, delay);
-
-      tokenDrainTimerRef.current.set(sid, timerId);
-    },
-    [appendToLastAssistant, finishStreaming, isMobile],
-  );
-
-  useEffect(() => {
-    scheduleTokenDrainRef.current = scheduleTokenDrain;
-  }, [scheduleTokenDrain]);
-
-  const flushBufferedTokens = useCallback(
-    (sid: string) => {
-      const timerId = tokenDrainTimerRef.current.get(sid);
-      if (timerId !== undefined) {
-        clearTimeout(timerId);
-        tokenDrainTimerRef.current.delete(sid);
-      }
-
-      const buffered = tokenBufferRef.current.get(sid);
-      if (buffered) {
-        appendToLastAssistant(sid, buffered);
-      }
-      tokenBufferRef.current.delete(sid);
-
-      const pendingStatus = pendingFinishStatusRef.current.get(sid);
-      if (pendingStatus) {
-        pendingFinishStatusRef.current.delete(sid);
-        finishStreaming(sid, pendingStatus);
-      }
-    },
-    [appendToLastAssistant, finishStreaming],
-  );
-
-  const enqueueToken = useCallback(
-    (sid: string, token: string) => {
-      const prev = tokenBufferRef.current.get(sid) ?? '';
-      tokenBufferRef.current.set(sid, prev + token);
-      scheduleTokenDrain(sid, true);
-    },
-    [scheduleTokenDrain],
-  );
-
-  const requestFinishAfterDrain = useCallback(
-    (sid: string, status: 'done' | 'error') => {
-      pendingFinishStatusRef.current.set(sid, status);
-      scheduleTokenDrain(sid);
-    },
-    [scheduleTokenDrain],
-  );
 
   // Tool call 실행 디스패처
   const executeToolCall = useCallback(
@@ -560,7 +307,7 @@ export function useChatStream(sessionId?: string) {
     ],
   );
 
-  // 백엔드 도구 실행 결과 처리 (레코드 CUD + agent 호출)
+  // 백엔드 도구 실행 결과 처리
   const handleToolResult = useCallback(
     (
       sid: string,
@@ -571,7 +318,6 @@ export function useChatStream(sessionId?: string) {
     ) => {
       const updateLast = useChatStore.getState().updateLastAssistantMessage;
 
-      // 레코드 CUD 도구 결과 → Records 탭 + 영향도 갱신
       if (
         [
           'create_record',
@@ -592,7 +338,6 @@ export function useChatStream(sessionId?: string) {
         bumpRefresh();
       }
 
-      // 생성 에이전트 완료 → 해당 artifact 탭 즉시 갱신 + 스피너 종료
       const agentToKind: Record<string, ArtifactKind> = {
         requirement: 'record',
         record_manager: 'record',
@@ -608,13 +353,10 @@ export function useChatStream(sessionId?: string) {
         }
       }
 
-      // record_manager 완료 → ArtifactRecordsPanel 갱신
       if (name === 'record_manager' && status !== 'error') {
         bumpRefresh();
       }
 
-      // SSE `tool_result.status`를 우선. legacy agent_svc 결과 모양
-      // (`result.success: false`)은 backward-compat를 위해 OR 결합.
       const isError = status === 'error' || result.success === false;
       const newState: 'completed' | 'error' = isError ? 'error' : 'completed';
       updateLast(sid, (msg) => ({
@@ -637,8 +379,7 @@ export function useChatStream(sessionId?: string) {
     [bumpRefresh, setActiveTab],
   );
 
-  // sendMessage / resumeFromInterrupt 가 공유하는 SSE 콜백 빌더.
-  // sid 별 클로저 스냅샷이 필요해 함수로 둔다.
+  // sendMessage / resumeFromInterrupt 가 공유하는 SSE 콜백 빌더
   const buildStreamCallbacks = useCallback(
     (sid: string): StreamCallbacks => {
       const updateLastAssistant =
@@ -657,7 +398,6 @@ export function useChatStream(sessionId?: string) {
             toolCalls: [...(msg.toolCalls ?? []), tc],
           }));
 
-          // 생성 에이전트 시작 → 탭 스피너 + 해당 탭으로 전환
           const genKind: Record<string, ArtifactKind> = {
             srs_generator: 'srs',
             design_generator: 'design',
@@ -738,12 +478,10 @@ export function useChatStream(sessionId?: string) {
 
       removeHitl(threadId);
 
-      // 인라인 카드에서 응답한 경우: interrupt_id로 특정 메시지를 찾아 완료 상태로 업데이트
       const isApproved = response.action === 'approve';
       const updateByInterruptId = useChatStore.getState().updateMessageByInterruptId;
       let hitlKind: ArtifactKind | null = null;
       updateByInterruptId(sid, threadId, (msg) => {
-        // HITL 카드의 context.artifact_kind 에서 에이전트 이름 추출
         const ctx = (msg.hitlData as Record<string, unknown> | null)?.context as Record<string, unknown> | undefined;
         const agentName = (ctx?.artifact_kind as string) ?? '';
         const kindMap: Record<string, ArtifactKind> = {
@@ -760,16 +498,11 @@ export function useChatStream(sessionId?: string) {
         };
       });
 
-      // 승인 시: resume 응답은 tool_call 없이 tool_result 만 오므로
-      // 프론트엔드에서 직접 스피너를 켜야 함
       if (isApproved && hitlKind) {
         useArtifactActionStore.getState().setGenerating(hitlKind, true);
         useArtifactStore.getState().setActiveTab(hitlKind === 'record' ? 'records' : hitlKind);
       }
 
-      // resume 응답은 새 assistant 메시지 turn 으로 표시
-      // 거부 시에도 백엔드에 전달하여 HITL 상태를 DB에서 정리해야
-      // 페이지 새로고침 후에도 카드가 재등장하지 않음
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'assistant',
@@ -803,7 +536,6 @@ export function useChatStream(sessionId?: string) {
 
       let targetSessionId = activeSessionId;
 
-      // 세션이 없으면 서버에서 생성 → URL 변경
       if (!targetSessionId) {
         setIsCreatingSession(true);
         try {
@@ -822,7 +554,6 @@ export function useChatStream(sessionId?: string) {
         }
       }
 
-      // UI에 user 메시지 즉시 추가
       const userMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'user',
@@ -832,7 +563,6 @@ export function useChatStream(sessionId?: string) {
       addMessage(targetSessionId, userMsg);
       setInputValue('');
 
-      // 빈 assistant 메시지 추가 (스트리밍용)
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
@@ -877,8 +607,6 @@ export function useChatStream(sessionId?: string) {
   useEffect(() => {
     const controllers = abortControllersRef.current;
     return () => {
-      // `/agent` -> `/agent/[sessionId]` route handoff 중에는
-      // 기존 스트림을 유지해야 하므로 실제 route param 기준으로만 정리한다.
       if (sessionId) {
         flushBufferedTokens(sessionId);
         controllers.get(sessionId)?.();

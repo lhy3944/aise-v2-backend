@@ -39,3 +39,4 @@ class SessionDetailResponse(SessionResponse):
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
+    next_cursor: str | None = None

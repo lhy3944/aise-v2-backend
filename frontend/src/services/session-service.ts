@@ -35,7 +35,10 @@ export interface SessionDetailResponse extends SessionResponse {
 
 export interface SessionListResponse {
   sessions: SessionResponse[];
+  next_cursor: string | null;
 }
+
+export const SESSION_PAGE_SIZE = 30;
 
 export const sessionService = {
   create: (projectId: string, title?: string) =>
@@ -44,8 +47,11 @@ export const sessionService = {
       title,
     }),
 
-  list: (projectId: string) =>
-    api.get<SessionListResponse>(`/api/v1/sessions?project_id=${projectId}`),
+  list: (projectId: string, cursor?: string) => {
+    const params = new URLSearchParams({ project_id: projectId, limit: String(SESSION_PAGE_SIZE) });
+    if (cursor) params.set('cursor', cursor);
+    return api.get<SessionListResponse>(`/api/v1/sessions?${params}`);
+  },
 
   get: (sessionId: string) =>
     api.get<SessionDetailResponse>(`/api/v1/sessions/${sessionId}`),

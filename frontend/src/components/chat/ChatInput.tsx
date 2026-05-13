@@ -14,7 +14,7 @@ import { useProjectStore } from '@/stores/project-store';
 import { useReadinessStore } from '@/stores/readiness-store';
 import { BookOpen, Database, FileText, Loader2, MicIcon, PaperclipIcon, RefreshCw, Zap } from 'lucide-react';
 import Image from 'next/image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Attachment,
   AttachmentHoverCard,
@@ -266,7 +266,7 @@ function ActionsButton({ onAction }: { onAction?: (text: string) => void }) {
   );
 }
 
-export function ChatInput({
+export const ChatInput = memo(function ChatInput({
   onSubmit,
   onAction,
   onStop,
@@ -316,4 +316,4 @@ export function ChatInput({
       </PromptInputFooter>
     </PromptInput>
   );
-}
+});

@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ListFilterPlus } from 'lucide-react';
 import { SessionItem } from '@/components/chat/SessionItem';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { sessionService } from '@/services/session-service';
 import type { SessionResponse } from '@/services/session-service';
 import { useChatStore } from '@/stores/chat-store';
@@ -34,9 +35,6 @@ interface SessionListProps {
 export function SessionList({ onSessionSelect }: SessionListProps) {
   const router = useRouter();
   const params = useParams();
-  // `/agent/[[...sessionId]]`는 catch-all 라우트라 params.sessionId가 배열이다.
-  // 그냥 `as string`으로 캐스트하면 `"id" === ["id"]` 비교가 false가 되어
-  // active 하이라이트가 안 된다.
   const rawSessionId = params?.sessionId;
   const activeSessionId = Array.isArray(rawSessionId)
     ? rawSessionId[0]
@@ -46,31 +44,82 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   const sessionListNonce = useChatStore((s) => s.sessionListNonce);
   const openHitlForSession = useHitlStore((s) => s.openForSession);
   const clearHitlSession = useHitlStore((s) => s.clearSession);
+
   const [sessions, setSessions] = useState<SessionResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const projectIdRef = useRef(currentProject?.project_id);
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const fetchSessions = useCallback(async () => {
     if (!currentProject) {
       setSessions([]);
       setIsLoading(false);
+      setNextCursor(null);
       return;
     }
     try {
       setIsLoading(true);
       const res = await sessionService.list(currentProject.project_id);
       setSessions(res.sessions);
+      setNextCursor(res.next_cursor);
     } catch {
       setSessions([]);
+      setNextCursor(null);
     } finally {
       setIsLoading(false);
     }
   }, [currentProject]);
 
   useEffect(() => {
+    const currentId = currentProject?.project_id;
+    if (currentId !== projectIdRef.current) {
+      projectIdRef.current = currentId;
+      setSessions([]);
+      setNextCursor(null);
+    }
     void Promise.resolve().then(fetchSessions);
   }, [fetchSessions, sessionListNonce]);
 
-  // 세션 삭제 후 리패치 + 현재 세션이면 리다이렉트
+  const fetchMore = useCallback(async () => {
+    if (!currentProject || !nextCursor || isFetchingMore) return;
+    try {
+      setIsFetchingMore(true);
+      const res = await sessionService.list(
+        currentProject.project_id,
+        nextCursor,
+      );
+      setSessions((prev) => [...prev, ...res.sessions]);
+      setNextCursor(res.next_cursor);
+    } catch {
+      // 실패 시 재시도 가능하도록 cursor 유지
+    } finally {
+      setIsFetchingMore(false);
+    }
+  }, [currentProject, nextCursor, isFetchingMore]);
+
+  // IntersectionObserver 기반 무한 스크롤
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const viewport = viewportRef.current;
+    if (!sentinel || !viewport || !nextCursor) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isFetchingMore) {
+          void fetchMore();
+        }
+      },
+      { root: viewport, rootMargin: '200px', threshold: 0 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [nextCursor, isFetchingMore, fetchMore]);
+
   const handleDelete = useCallback(
     async (sessionId: string) => {
       try {
@@ -103,7 +152,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
 
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
-      <div className='flex items-center justify-between px-2 pb-2'>
+      <div className='flex shrink-0 items-center justify-between px-2 pb-2'>
         <h3 className='text-fg-muted text-xs font-medium'>모든 작업</h3>
         <button
           type='button'
@@ -113,28 +162,37 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
           <ListFilterPlus className='size-4' />
         </button>
       </div>
-      <ScrollArea type='always' className='flex-1 overflow-hidden'>
-        {isLoading ? (
-          <SessionListSkeleton />
-        ) : (
-          <div className='flex w-0 min-w-full flex-col gap-2 pr-2.5'>
-            {sessions.map((session) => (
-              <SessionItem
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSessionId}
-                onClick={() => {
-                  openHitlForSession(session.id);
-                  router.push(`/agent/${session.id}`);
-                  onSessionSelect?.();
-                }}
-                onDelete={() => handleDelete(session.id)}
-                onRename={(title) => handleRename(session.id, title)}
-              />
-            ))}
-          </div>
-        )}
-      </ScrollArea>
+
+      {isLoading ? (
+        <SessionListSkeleton />
+      ) : (
+        <ScrollArea viewportRef={viewportRef} className='min-h-0 flex-1'>
+          {sessions.map((session) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              isActive={session.id === activeSessionId}
+              onClick={() => {
+                openHitlForSession(session.id);
+                router.push(`/agent/${session.id}`);
+                onSessionSelect?.();
+              }}
+              onDelete={() => handleDelete(session.id)}
+              onRename={(title) => handleRename(session.id, title)}
+            />
+          ))}
+
+          {nextCursor && !isFetchingMore && (
+            <div ref={sentinelRef} className='h-1' />
+          )}
+
+          {isFetchingMore && (
+            <div className='flex items-center justify-center gap-2 py-3'>
+              <Spinner size='size-3.5' className='text-fg-muted' />
+            </div>
+          )}
+        </ScrollArea>
+      )}
     </div>
   );
 }

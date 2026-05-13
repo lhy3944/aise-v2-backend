@@ -30,10 +30,12 @@ async def create_session(
 @router.get("", response_model=SessionListResponse)
 async def list_sessions(
     project_id: uuid.UUID = Query(description="프로젝트 ID"),
+    cursor: str | None = Query(default=None, description="이전 페이지 마지막 세션의 updated_at (ISO 8601)"),
+    limit: int = Query(default=30, ge=1, le=100, description="페이지 크기"),
     db: AsyncSession = Depends(get_db),
 ):
-    """프로젝트별 세션 목록 조회"""
-    return await session_svc.list_sessions(db, project_id)
+    """프로젝트별 세션 목록 조회 (커서 기반 페이지네이션)"""
+    return await session_svc.list_sessions(db, project_id, cursor=cursor, limit=limit)
 
 
 @router.get("/{session_id}", response_model=SessionDetailResponse)

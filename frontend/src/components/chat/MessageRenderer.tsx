@@ -346,7 +346,7 @@ const MessageItem = memo(
                 <ExtractedRequirements
                   requirements={parsed.requirementItems}
                   onAccept={() => {
-                    // TODO: 수락된 요구사항을 레코드 스토어에 반영
+                    // FIXME: 수락된 요구사항을 레코드 스토어에 반영 (Phase N에서 구현)
                   }}
                 />
               )}

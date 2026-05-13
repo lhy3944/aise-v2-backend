@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import type { Project } from '@/types/project';
 import { BookOpen, Box, Clock, FolderOpen, LayoutList, Trash2, Users } from 'lucide-react';
 import Link from 'next/link';
+import { memo } from 'react';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
@@ -15,7 +16,7 @@ interface ProjectCardProps {
   onDelete?: (projectId: string) => void;
 }
 
-export function ProjectCard({ project, onDelete }: ProjectCardProps) {
+export const ProjectCard = memo(function ProjectCard({ project, onDelete }: ProjectCardProps) {
   return (
     <div className='group relative'>
       <Link
@@ -113,4 +114,4 @@ export function ProjectCard({ project, onDelete }: ProjectCardProps) {
       )}
     </div>
   );
-}
+});

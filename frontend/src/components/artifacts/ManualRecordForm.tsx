@@ -10,9 +10,9 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { sectionService } from '@/services/section-service';
 import type { Section } from '@/types/project';
-import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -106,7 +106,7 @@ export function ManualRecordForm({
         </label>
         {loadingSections ? (
           <div className='border-line-primary text-fg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-sm'>
-            <Spinner size='size-4' /> 섹션을 불러오는 중…
+            <Spinner size='size-4' />
           </div>
         ) : loadError ? (
           <p className='text-destructive text-xs'>{loadError}</p>
@@ -126,7 +126,7 @@ export function ManualRecordForm({
                 >
                   <SelectValue placeholder='섹션을 선택하세요' />
                 </SelectTrigger>
-                <SelectContent position="popper" side="bottom" align="start">
+                <SelectContent position='popper' side='bottom' align='start'>
                   {sections.map((s) => (
                     <SelectItem key={s.section_id} value={s.section_id}>
                       {s.name}

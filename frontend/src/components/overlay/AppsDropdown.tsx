@@ -40,7 +40,8 @@ export function AppsDropdown({ contentClassName }: { contentClassName?: string }
     label: app.label,
     icon: app.icon,
     iconColor: app.iconColor,
-    onClick: () => console.log(`Navigating to ${app.label}`),
+    onClick: () => {},
+
   }));
 
   return (

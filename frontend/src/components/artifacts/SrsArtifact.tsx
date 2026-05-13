@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import {
@@ -111,7 +111,7 @@ function formatCreatedAt(value: string) {
   }
 }
 
-export function SrsArtifact() {
+export const SrsArtifact = memo(function SrsArtifact() {
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.project_id;
 
@@ -505,4 +505,4 @@ export function SrsArtifact() {
       </ScrollArea>
     </div>
   );
-}
+});

@@ -154,7 +154,7 @@
 
 /* Dark theme (Linear-inspired) */
 .dark {
-  --background: #010102;
+  --background: #101010;
   --foreground: #f7f8f8;
   --card: #0f1011;
   --card-foreground: #f7f8f8;
@@ -176,7 +176,7 @@
   --ring: #5e6ad2;
 
   /* AISE+ tokens — Linear surface ladder */
-  --bg-primary: #010102;
+  --bg-primary: #101010;
   --bg-secondary: #0f1011;
   --bg-surface: #0f1011;
   --bg-surface-2: #141516;

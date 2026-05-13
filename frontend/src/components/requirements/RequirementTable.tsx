@@ -10,7 +10,7 @@ import {
   ChevronDown,
   FolderPlus,
 } from 'lucide-react';
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,7 +34,7 @@ interface RequirementTableProps {
   onSectionReorder: (orderedIds: string[]) => void;
 }
 
-export function RequirementTable({
+export const RequirementTable = memo(function RequirementTable({
   requirements,
   sections,
   allSelected,
@@ -571,4 +571,4 @@ export function RequirementTable({
       </div>
     </div>
   );
-}
+});

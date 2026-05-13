@@ -59,27 +59,52 @@ async def create_session(db: AsyncSession, data: SessionCreate) -> SessionRespon
     return _to_session_response(session)
 
 
-async def list_sessions(db: AsyncSession, project_id: uuid.UUID) -> SessionListResponse:
-    """프로젝트별 세션 목록 조회 (최신순)"""
-    # 세션 + 메시지 수 서브쿼리
+async def list_sessions(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    cursor: str | None = None,
+    limit: int = 30,
+) -> SessionListResponse:
+    """프로젝트별 세션 목록 조회 (커서 기반 페이지네이션, 최신순)"""
+    from datetime import datetime, timezone
+
     msg_count = (
         select(SessionMessage.session_id, func.count().label("cnt"))
         .group_by(SessionMessage.session_id)
         .subquery()
     )
 
-    result = await db.execute(
+    stmt = (
         select(Session, func.coalesce(msg_count.c.cnt, 0).label("message_count"))
         .outerjoin(msg_count, Session.id == msg_count.c.session_id)
         .where(Session.project_id == project_id)
-        .order_by(Session.updated_at.desc())
     )
+
+    if cursor:
+        try:
+            cursor_dt = datetime.fromisoformat(cursor).replace(tzinfo=timezone.utc)
+            stmt = stmt.where(Session.updated_at < cursor_dt)
+        except (ValueError, TypeError):
+            pass
+
+    stmt = stmt.order_by(Session.updated_at.desc()).limit(limit + 1)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    has_next = len(rows) > limit
+    rows = rows[:limit]
 
     sessions = [
         _to_session_response(row.Session, row.message_count)
-        for row in result.all()
+        for row in rows
     ]
-    return SessionListResponse(sessions=sessions)
+
+    next_cursor = None
+    if has_next and sessions:
+        next_cursor = sessions[-1].updated_at.isoformat()
+
+    return SessionListResponse(sessions=sessions, next_cursor=next_cursor)
 
 
 async def get_session(db: AsyncSession, session_id: uuid.UUID) -> SessionDetailResponse:

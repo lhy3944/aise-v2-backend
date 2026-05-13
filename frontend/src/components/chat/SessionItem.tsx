@@ -17,7 +17,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 interface SessionItemProps {
   session: SessionResponse;
@@ -27,7 +27,7 @@ interface SessionItemProps {
   onRename?: (title: string) => void;
 }
 
-export function SessionItem({
+export const SessionItem = memo(function SessionItem({
   session,
   isActive,
   onClick,
@@ -108,4 +108,4 @@ export function SessionItem({
       </DropdownMenu>
     </div>
   );
-}
+});

@@ -6,7 +6,6 @@ import {
   Link2,
   MessageSquare,
   MoreHorizontal,
-  Pencil,
   Trash2,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';

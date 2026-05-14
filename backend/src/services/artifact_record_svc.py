@@ -21,6 +21,7 @@ Artifact.content JSONB 페이로드:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -73,6 +74,26 @@ DISPLAY_ID_PREFIX_MAP = {
 
 def _payload(artifact: Artifact) -> dict[str, Any]:
     return artifact.content if isinstance(artifact.content, dict) else {}
+
+
+def _content_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def _next_version_number(db: AsyncSession, artifact_id: uuid.UUID) -> int:
+    from sqlalchemy import func as sa_func
+
+    from src.models.artifact import ArtifactVersion as _AV
+
+    max_n = (
+        await db.execute(
+            select(sa_func.max(_AV.version_number)).where(
+                _AV.artifact_id == artifact_id,
+            )
+        )
+    ).scalar() or 0
+    return int(max_n) + 1
 
 
 def _build_content(
@@ -436,12 +457,38 @@ async def update_record_status(
     artifact_id: uuid.UUID,
     data: ArtifactRecordStatusUpdate,
 ) -> ArtifactRecordResponse:
+    from src.models.artifact import ArtifactVersion as _AV
+
     artifact = await _require_record(db, project_id, artifact_id)
     payload = dict(_payload(artifact))
     meta = dict(payload.get("metadata") or {})
+    old_status = meta.get("status")
     meta["status"] = data.status
     payload["metadata"] = meta
     artifact.content = payload
+
+    # draft → approved 또는 excluded → draft 전환 시 새 버전 생성
+    # → downstream(SRS 등)의 source_artifact_versions와 버전 차이가 발생해 impact 감지됨
+    status_change_creates_version = (
+        (old_status == "draft" and data.status == "approved")
+        or (old_status == "excluded" and data.status in ("draft", "approved"))
+    )
+    if status_change_creates_version:
+        version_number = await _next_version_number(db, artifact.id)
+        version = _AV(
+            artifact_id=artifact.id,
+            version_number=version_number,
+            parent_version_id=artifact.current_version_id,
+            snapshot=payload,
+            content_hash=_content_hash(payload),
+            commit_message=f"status: {old_status} → {data.status}",
+            author_id="system",
+        )
+        db.add(version)
+        await db.flush()
+        artifact.current_version_id = version.id
+        artifact.working_status = "clean"
+
     artifact.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(artifact)
@@ -763,59 +810,3 @@ async def get_record_by_display_id(
         Artifact.display_id == display_id,
     )
     return (await db.execute(stmt)).scalar_one_or_none()
-
-
-async def search_records(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    query: str,
-    section_name: str | None = None,
-    limit: int = 10,
-) -> list[ArtifactRecordResponse]:
-    stmt = (
-        select(Artifact)
-        .where(
-            Artifact.project_id == project_id,
-            Artifact.artifact_type == "record",
-            Artifact.lifecycle_status != "deleted",
-        )
-        .order_by(_order_index_expr().asc().nullslast(), Artifact.created_at.asc())
-        .limit(limit)
-    )
-
-    if section_name:
-        sec_stmt = select(RequirementSection.id).where(
-            RequirementSection.project_id == project_id,
-            RequirementSection.name.ilike(f"%{section_name}%"),
-        )
-        section_ids = [str(sid) for sid, in (await db.execute(sec_stmt)).all()]
-        if not section_ids:
-            return []
-        stmt = stmt.where(Artifact.content["section_id"].astext.in_(section_ids))
-
-    stmt = stmt.where(
-        Artifact.display_id.ilike(f"%{query}%")
-        | Artifact.content["text"].astext.ilike(f"%{query}%")
-    )
-
-    rows = (await db.execute(stmt)).scalars().all()
-    section_map, doc_map = await _enrich_names(db, list(rows))
-    return [
-        _to_response(
-            a,
-            section_name=section_map.get(_payload(a).get("section_id") or ""),
-            source_document_name=doc_map.get(_payload(a).get("source_document_id") or ""),
-        )
-        for a in rows
-    ]
-
-
-async def get_section_by_name(
-    db: AsyncSession, project_id: uuid.UUID, section_name: str,
-) -> RequirementSection | None:
-    stmt = select(RequirementSection).where(
-        RequirementSection.project_id == project_id,
-        RequirementSection.name.ilike(f"%{section_name}%"),
-        RequirementSection.is_active == True,  # noqa: E712
-    )
-    return (await db.execute(stmt)).scalars().first()

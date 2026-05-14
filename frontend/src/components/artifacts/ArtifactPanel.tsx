@@ -55,6 +55,7 @@ export function ArtifactPanel() {
   const activeTab = useArtifactStore((s) => s.activeTab);
   const setActiveTab = useArtifactStore((s) => s.setActiveTab);
   const generating = useArtifactActionStore((s) => s.generating);
+  const isRegenerating = Object.values(generating).some(Boolean);
   const overlay = useOverlay();
 
   const { stale: staleList } = useImpact(currentProject?.project_id ?? null);
@@ -154,15 +155,22 @@ export function ArtifactPanel() {
       {activeTabStale.length > 0 && (
         <div className='border-line-primary bg-amber-500 flex shrink-0 items-center gap-2 border-b px-4 py-1.5 mx-0.5'>
           <span className='text-white text-xs'>
-            {activeTabStale.length}개 산출물이 변경점 영향 분석이 필요합니다.
+            {isRegenerating
+              ? '산출물 재생성 중...'
+              : `${activeTabStale.length}개 산출물이 변경점 영향 분석이 필요합니다.`}
           </span>
           <Button
             variant='ghost'
             size='sm'
             className='text-white hover:bg-amber-600 hover:text-white ml-auto h-6 gap-1 px-2 text-xs'
             onClick={openImpactModal}
+            disabled={isRegenerating}
           >
-            <InspectionPanel className='size-4' />
+            {isRegenerating ? (
+              <Spinner size='size-4' />
+            ) : (
+              <InspectionPanel className='size-4' />
+            )}
             분석
           </Button>
         </div>

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AppException
-from src.models.artifact import Artifact, ArtifactVersion
+from src.models.artifact import Artifact, ArtifactDependency, ArtifactVersion
 from src.schemas.api.impact import (
     ImpactApplyEntry,
     ImpactApplyResponse,
@@ -162,6 +162,55 @@ async def get_project_impact(
                     stale_reasons=reasons,
                 )
             )
+
+    # 5. ArtifactDependency 기반 역방향 cascade
+    # 이미 stale로 감지된 artifact들의 downstream을 추가로 탐지
+    stale_ids = {s.artifact_id for s in stale_list}
+    visited = set(stale_ids)  # 무한 루프 방지
+    frontier = list(stale_ids)
+
+    while frontier:
+        next_frontier: list[str] = []
+        dep_rows = (
+            await db.execute(
+                select(ArtifactDependency).where(
+                    ArtifactDependency.upstream_artifact_id.in_(
+                        [uuid.UUID(fid) for fid in frontier]
+                    )
+                )
+            )
+        ).scalars().all()
+
+        for dep in dep_rows:
+            ds_id = str(dep.downstream_artifact_id)
+            if ds_id in visited:
+                continue
+            visited.add(ds_id)
+            ds_snap = snapshot_map.get(ds_id)
+            if ds_snap is None:
+                continue
+
+            us_snap = snapshot_map.get(str(dep.upstream_artifact_id))
+            stale_list.append(
+                ImpactedArtifact(
+                    artifact_id=ds_id,
+                    artifact_type=ds_snap["type"],
+                    display_id=ds_snap["display_id"],
+                    current_version_number=ds_snap.get("current_vn"),
+                    stale_reasons=[
+                        StaleReason(
+                            source_artifact_id=str(dep.upstream_artifact_id),
+                            source_artifact_type=us_snap["type"] if us_snap else "unknown",
+                            source_display_id=us_snap["display_id"] if us_snap else None,
+                            referenced_version=None,
+                            current_version=None,
+                        )
+                    ],
+                )
+            )
+            next_frontier.append(ds_id)
+
+        frontier = next_frontier
 
     return ImpactResponse(stale=stale_list)
 

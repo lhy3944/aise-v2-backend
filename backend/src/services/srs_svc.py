@@ -166,19 +166,20 @@ async def generate_srs(
     if not sections:
         raise AppException(400, "활성 섹션이 없습니다.")
 
-    # 2. 레코드 Artifact 조회
+    # 2. 승인된 레코드 Artifact 조회
     records = (await db.execute(
         select(Artifact)
         .where(
             Artifact.project_id == project_id,
             Artifact.artifact_type == "record",
             Artifact.lifecycle_status == "active",
+            Artifact.content["metadata"]["status"].astext == "approved",
         )
         .order_by(Artifact.created_at.asc())
     )).scalars().all()
 
     if not records:
-        raise AppException(400, MISSING_RECORDS_MESSAGE)
+        raise AppException(400, "승인된 레코드가 없습니다. 레코드를 먼저 승인해 주세요.")
 
     # Phase E lineage — 각 record 의 current_version_id 의 version_number 일괄 조회.
     record_version_ids = [
@@ -318,6 +319,11 @@ async def generate_srs(
     artifact.current_version_id = version.id
     artifact.working_status = "clean"
     artifact.updated_at = datetime.now(timezone.utc)
+
+    # 10. ArtifactDependency 기록 (record → srs)
+    from src.services.artifact_svc import upsert_dependency
+    for r in records:
+        await upsert_dependency(db, upstream_id=r.id, downstream_id=artifact.id)
 
     await db.commit()
     await db.refresh(version)

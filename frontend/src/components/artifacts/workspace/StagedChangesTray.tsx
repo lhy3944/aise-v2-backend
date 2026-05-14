@@ -39,7 +39,6 @@ interface StagedChangesTrayProps {
   // PR 액션
   onApprovePR: (prId: string) => void;
   onRejectPR: (prId: string) => void;
-  onMergePR: (prId: string) => void;
   onShowDiff: (pr: PullRequest) => void;
 }
 
@@ -64,7 +63,6 @@ export function StagedChangesTray({
   onCreatePR,
   onApprovePR,
   onRejectPR,
-  onMergePR,
   onShowDiff,
 }: StagedChangesTrayProps) {
   const resolveLabel = (artifactId: string) =>
@@ -93,7 +91,7 @@ export function StagedChangesTray({
             }
           >
             {unstaged.length === 0 ? (
-              <EmptyHint>편집 후 저장하면 여기에 표시됩니다</EmptyHint>
+              <EmptyHint>Unstaged 변경사항이 없습니다</EmptyHint>
             ) : (
               unstaged.map((d) => (
                 <DraftRow
@@ -144,7 +142,7 @@ export function StagedChangesTray({
             }
           >
             {staged.length === 0 ? (
-              <EmptyHint>Stage 된 변경이 없습니다</EmptyHint>
+              <EmptyHint>Staged 변경사항이 없습니다</EmptyHint>
             ) : (
               staged.map((d) => (
                 <DraftRow
@@ -187,7 +185,7 @@ export function StagedChangesTray({
                 <Spinner size='size-4' className='text-fg-muted' />
               </div>
             ) : openPRs.length === 0 ? (
-              <EmptyHint>열린 PR 이 없습니다</EmptyHint>
+              <EmptyHint>PR 변경사항이 없습니다</EmptyHint>
             ) : (
               openPRs.map((pr) => (
                 <div
@@ -208,42 +206,34 @@ export function StagedChangesTray({
                   <p className='text-fg-primary line-clamp-2 text-sm leading-snug'>
                     {pr.title}
                   </p>
-                  <div className='flex items-center gap-1'>
+                  <div className='flex mt-4 items-center gap-1'>
                     <Button
-                      variant='ghost'
+                      variant='outline'
                       size='sm'
-                      className='text-fg-secondary h-7 gap-1 px-2 text-[11px]'
+                      className='gap-1 text-xs'
                       onClick={() => onShowDiff(pr)}
                       title='변경 내용 보기'
                     >
                       <FileDiff className='size-4' />
-                      변경
+                      Diff 보기
                     </Button>
                     <Button
-                      variant='ghost'
+                      variant={'default'}
                       size='sm'
-                      className='h-7 gap-1 px-2 text-[11px] text-green-600'
+                      className='ml-auto text-xs'
                       onClick={() => onApprovePR(pr.pr_id)}
                     >
-                      <Check className='size-4' />
+                      <GitMerge className='size-4' />
                       승인
                     </Button>
                     <Button
-                      variant='ghost'
+                      variant='destructive'
                       size='sm'
-                      className='h-7 gap-1 px-2 text-[11px] text-red-500'
+                      className='text-xs'
                       onClick={() => onRejectPR(pr.pr_id)}
                     >
                       <X className='size-4' />
                       거절
-                    </Button>
-                    <Button
-                      size='sm'
-                      className='ml-auto h-7 gap-1 px-2 text-[11px]'
-                      onClick={() => onMergePR(pr.pr_id)}
-                    >
-                      <GitMerge className='size-4' />
-                      Merge
                     </Button>
                   </div>
                 </div>
@@ -276,12 +266,12 @@ function Section({
   return (
     <section className='flex flex-col gap-1.5'>
       <div className='flex items-center gap-1.5'>
-        <Icon className='text-fg-muted size-4' />
-        <span className='text-fg-secondary text-[11px] font-semibold tracking-wider uppercase'>
+        <Icon className='size-4' />
+        <span className='text-xs font-semibold tracking-wider uppercase'>
           {title}
         </span>
-        <span className='text-fg-muted text-[11px] tabular-nums'>
-          ({count})
+        <span className='inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums bg-accent-primary/10 text-accent-primary'>
+          {count}
         </span>
         <div className='ml-auto'>{trailing}</div>
       </div>

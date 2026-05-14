@@ -72,7 +72,14 @@ interface StatusChipProps {
   onClick?: () => void;
 }
 
-function StatusChip({ icon: Icon, label, count, tone, active, onClick }: StatusChipProps) {
+function StatusChip({
+  icon: Icon,
+  label,
+  count,
+  tone,
+  active,
+  onClick,
+}: StatusChipProps) {
   const toneCls = TONE_CLASSES[tone];
   const disabled = count === 0;
   return (
@@ -93,7 +100,7 @@ function StatusChip({ icon: Icon, label, count, tone, active, onClick }: StatusC
       <span>{label}</span>
       <span
         className={cn(
-          'inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] tabular-nums',
+          'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums',
           disabled
             ? 'bg-canvas-primary text-fg-muted'
             : cn(toneCls.bg, toneCls.text, 'font-semibold'),

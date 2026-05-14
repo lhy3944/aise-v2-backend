@@ -37,16 +37,13 @@ const KIND_ICON: Record<string, typeof Database> = {
   testcase: FlaskConical,
 };
 
-const KIND_LABEL: Record<string, string> = {
-  record: '레코드',
-  srs: 'SRS',
-  system_model: '시스템 모델',
-  data_model: '데이터 모델',
-  design: '설계(SDD)',
-  testcase: '테스트케이스',
-};
-
-const AUTO_REGENERATABLE = new Set(['srs', 'system_model', 'data_model', 'design', 'testcase']);
+const AUTO_REGENERATABLE = new Set([
+  'srs',
+  'system_model',
+  'data_model',
+  'design',
+  'testcase',
+]);
 
 function formatReason(r: StaleReason): string {
   const label =
@@ -146,7 +143,8 @@ export function ImpactPanel({
       if (selected.has(item.artifact_id)) {
         if (item.artifact_type === 'srs') kindsToRegen.add('srs');
         else if (item.artifact_type === 'design') kindsToRegen.add('design');
-        else if (item.artifact_type === 'testcase') kindsToRegen.add('testcase');
+        else if (item.artifact_type === 'testcase')
+          kindsToRegen.add('testcase');
       }
     }
 
@@ -163,11 +161,10 @@ export function ImpactPanel({
         system_model: 'design',
         data_model: 'design',
       };
-      setActiveTab((tabMap[first] ?? first) as Parameters<typeof setActiveTab>[0]);
+      setActiveTab(
+        (tabMap[first] ?? first) as Parameters<typeof setActiveTab>[0],
+      );
     }
-
-    // 모달 닫기 — 이후 스피너가 탭에 표시됨
-    onApplyComplete?.();
 
     try {
       await impactService.apply(projectId, {
@@ -182,6 +179,7 @@ export function ImpactPanel({
       }
       setApplying(false);
       setSelected(new Set());
+      onApplyComplete?.();
     }
   };
 
@@ -327,8 +325,8 @@ function StaleRow({
             </span>
           )}
           {hasDeleted && (
-            <span className='inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/5 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400'>
-              <CircleSlash className='size-3' />
+            <span className='inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/5 px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400'>
+              <CircleSlash className='size-4' />
               참조 삭제됨
             </span>
           )}

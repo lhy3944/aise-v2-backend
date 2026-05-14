@@ -288,6 +288,12 @@ async def generate_testcases(
             502, f"테스트케이스를 생성하지 못했습니다. 실패 섹션: {', '.join(skipped)}"
         )
 
+    # ArtifactDependency 기록 (srs → testcase)
+    from src.services.artifact_svc import upsert_dependency
+    srs_artifact_id = srs_version.artifact_id
+    for tc in testcases:
+        await upsert_dependency(db, upstream_id=srs_artifact_id, downstream_id=tc.id)
+
     await db.commit()
     for a in testcases:
         await db.refresh(a)
@@ -699,6 +705,12 @@ async def regenerate_all_testcases(
         raise AppException(
             502, f"테스트케이스를 생성하지 못했습니다. 실패 섹션: {', '.join(skipped)}"
         )
+
+    # ArtifactDependency 기록 (srs → testcase)
+    from src.services.artifact_svc import upsert_dependency
+    srs_artifact_id = srs_version.artifact_id
+    for tc in testcases:
+        await upsert_dependency(db, upstream_id=srs_artifact_id, downstream_id=tc.id)
 
     await db.commit()
     for a in testcases:

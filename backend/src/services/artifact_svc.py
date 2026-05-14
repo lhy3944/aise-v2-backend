@@ -157,6 +157,30 @@ async def _require_pr(db: AsyncSession, pr_id: uuid.UUID) -> PullRequest:
     return pr
 
 
+async def upsert_dependency(
+    db: AsyncSession,
+    *,
+    upstream_id: uuid.UUID,
+    downstream_id: uuid.UUID,
+    dep_type: str = "derives_from",
+) -> None:
+    """ArtifactDependency upsert — 이미 존재하면 무시."""
+    existing = (
+        await db.execute(
+            select(ArtifactDependency).where(
+                ArtifactDependency.upstream_artifact_id == upstream_id,
+                ArtifactDependency.downstream_artifact_id == downstream_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(ArtifactDependency(
+            upstream_artifact_id=upstream_id,
+            downstream_artifact_id=downstream_id,
+            dependency_type=dep_type,
+        ))
+
+
 async def _assert_project_exists(db: AsyncSession, project_id: uuid.UUID) -> None:
     project = await db.get(Project, project_id)
     if not project:
@@ -473,6 +497,7 @@ async def approve_pr(
     *,
     reviewer_id: str = "system",
 ) -> PullRequestResponse:
+    # TODO: reviewer_id 권한 검증 (프로젝트 관리자 승인 권한)
     pr = await _require_pr(db, pr_id)
     artifact = await _require_artifact(db, project_id, pr.artifact_id)
 
@@ -506,6 +531,7 @@ async def reject_pr(
     reason: str | None = None,
 ) -> PullRequestResponse:
     """reject: head_version 보존, working_status → dirty 복귀, open_pr_id 해제."""
+    # TODO: reviewer_id 권한 검증 (프로젝트 관리자 승인 권한)
     pr = await _require_pr(db, pr_id)
     artifact = await _require_artifact(db, project_id, pr.artifact_id)
 
@@ -542,6 +568,7 @@ async def merge_pr(
     *,
     merger_id: str = "system",
 ) -> PullRequestResponse:
+    # TODO: merger_id 권한 검증 (프로젝트 관리자 승인 권한)
     """merge: artifact.current_version_id → head_version_id, clean 복귀."""
     await _assert_project_exists(db, project_id)
 
@@ -564,6 +591,15 @@ async def merge_pr(
     artifact.working_status = "clean"
     artifact.open_pr_id = None
     artifact.updated_at = datetime.now(timezone.utc)
+
+    # record 타입: merge 시 metadata.status 를 approved 로 승격
+    if artifact.artifact_type == "record":
+        payload = dict(artifact.content or {})
+        meta = dict(payload.get("metadata") or {})
+        if meta.get("status") == "draft":
+            meta["status"] = "approved"
+            payload["metadata"] = meta
+            artifact.content = payload
 
     await _log_event(
         db,
@@ -698,31 +734,3 @@ async def propagate_changes(
 
 # ── ChangeEvent (감사 로그 조회) ────────────────────────────────────────────
 
-
-async def list_change_events(
-    db: AsyncSession, project_id: uuid.UUID, *, artifact_id: uuid.UUID | None = None
-) -> list[ChangeEventResponse]:
-    stmt = (
-        select(ChangeEvent)
-        .where(ChangeEvent.project_id == project_id)
-        .order_by(ChangeEvent.occurred_at.desc())
-        .limit(200)
-    )
-    if artifact_id:
-        stmt = stmt.where(ChangeEvent.artifact_id == artifact_id)
-    rows = (await db.execute(stmt)).scalars().all()
-    return [
-        ChangeEventResponse(
-            event_id=str(e.id),
-            project_id=str(e.project_id),
-            artifact_id=_uuid(e.artifact_id),
-            pr_id=_uuid(e.pr_id),
-            version_id=_uuid(e.version_id),
-            action=e.action,  # type: ignore[arg-type]
-            actor=e.actor,
-            diff_summary=e.diff_summary,
-            impact_summary=e.impact_summary,
-            occurred_at=e.occurred_at,
-        )
-        for e in rows
-    ]

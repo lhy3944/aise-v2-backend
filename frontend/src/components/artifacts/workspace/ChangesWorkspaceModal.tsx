@@ -9,6 +9,7 @@ import {
   type StagedChangeSummary,
 } from '@/components/artifacts/workspace/PullRequestCreateForm';
 import { StagedChangesTray } from '@/components/artifacts/workspace/StagedChangesTray';
+import { Button } from '@/components/ui/button';
 import { useOverlay } from '@/hooks/useOverlay';
 import { artifactRecordService } from '@/services/artifact-record-service';
 import { artifactService } from '@/services/artifact-service';
@@ -17,26 +18,18 @@ import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { usePrStore } from '@/stores/pr-store';
 import { EMPTY_BUCKET, useStagingStore } from '@/stores/staging-store';
 import type { ArtifactRecord, PullRequest } from '@/types/project';
+import { ArrowLeft } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface ChangesWorkspaceModalProps {
   projectId: string;
 }
 
-/**
- * Unstaged / Staged / Open PRs 작업 트레이를 모달 내에서 자립형으로 운영.
- *
- * ArtifactRecordsPanel 이 한 번 overlay.modal() 로 마운트한 이후에는
- * 이 컴포넌트가 자체적으로:
- *   - 레코드 목록 조회 (displayIdOf + PR submit 시 content payload 유지용)
- *   - staging-store / pr-store 구독 (stage/unstage/discard/PR actions 즉시 반영)
- *   - 레코드 변경 후 artifact-record-store.bumpRefresh() 로 상위 패널 재조회 트리거
- *
- * 덕분에 modal 이 열려있는 동안에도 상위 ArtifactRecordsPanel 과 독립적으로
- * 최신 상태를 유지한다.
- */
-export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps) {
+export function ChangesWorkspaceModal({
+  projectId,
+}: ChangesWorkspaceModalProps) {
   const [records, setRecords] = useState<ArtifactRecord[]>([]);
+  const [diffPr, setDiffPr] = useState<PullRequest | null>(null);
   const overlay = useOverlay();
 
   const unstaged = useStagingStore(
@@ -62,7 +55,6 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
   const unstagedList = useMemo(() => Object.values(unstaged), [unstaged]);
   const stagedList = useMemo(() => Object.values(staged), [staged]);
 
-  // 레코드 조회 — displayId 레이블 + PR 생성 시 content payload 유지용
   useEffect(() => {
     let cancelled = false;
     artifactRecordService
@@ -90,7 +82,10 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
     (artifactId: string) => stage(projectId, artifactId),
     [stage, projectId],
   );
-  const handleStageAll = useCallback(() => stageAll(projectId), [stageAll, projectId]);
+  const handleStageAll = useCallback(
+    () => stageAll(projectId),
+    [stageAll, projectId],
+  );
   const handleUnstage = useCallback(
     (artifactId: string) => unstage(projectId, artifactId),
     [unstage, projectId],
@@ -106,9 +101,6 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
 
   const submitPullRequest = useCallback(
     async (values: PullRequestCreateValues, drafts: typeof stagedList) => {
-      // staging-store v2: draft.content 가 이미 artifact_type 별 완전한 working
-      // copy snapshot. 호출자(record/srs/design/testcase 화면)가 setDraft 시점에
-      // 전체 payload 를 채워 넣어두므로 여기서는 그대로 PATCH 만 보낸다.
       for (const draft of drafts) {
         await artifactService.update(projectId, draft.artifactId, {
           content: draft.content,
@@ -123,7 +115,13 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
       bumpRecordsRefresh();
       bumpAllArtifacts();
     },
-    [projectId, clearArtifact, bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
+    [
+      projectId,
+      clearArtifact,
+      bumpPrRefresh,
+      bumpRecordsRefresh,
+      bumpAllArtifacts,
+    ],
   );
 
   const handleCreatePR = useCallback(() => {
@@ -161,7 +159,9 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
           onSubmit={onFormSubmit}
         />
       ),
-      footer: <PullRequestCreateActions onCancel={() => overlay.closeModal()} />,
+      footer: (
+        <PullRequestCreateActions onCancel={() => overlay.closeModal()} />
+      ),
     });
   }, [stagedList, displayIdOf, overlay, submitPullRequest]);
 
@@ -169,12 +169,15 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
     async (prId: string) => {
       try {
         await artifactService.approvePR(prId);
+        await artifactService.mergePR(prId);
         bumpPrRefresh();
+        bumpRecordsRefresh();
+        bumpAllArtifacts();
       } catch {
         // 글로벌 핸들링
       }
     },
-    [bumpPrRefresh],
+    [bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
   );
 
   const handleRejectPR = useCallback(
@@ -191,36 +194,41 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
     [bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
   );
 
-  const handleMergePR = useCallback(
-    async (prId: string) => {
-      try {
-        await artifactService.mergePR(prId);
-        bumpPrRefresh();
-        bumpRecordsRefresh();
-        bumpAllArtifacts();
-      } catch {
-        // 글로벌 핸들링
-      }
-    },
-    [bumpPrRefresh, bumpRecordsRefresh, bumpAllArtifacts],
-  );
+  const handleShowDiff = useCallback((pr: PullRequest) => {
+    setDiffPr(pr);
+  }, []);
 
-  const handleShowDiff = useCallback(
-    (pr: PullRequest) => {
-      const displayLabel = displayIdOf(pr.artifact_id) ?? pr.artifact_id.slice(0, 8);
-      overlay.modal({
-        title: `변경 내용 · ${displayLabel}`,
-        size: 'lg',
-        content: (
+  // ── Diff 서브뷰 ──────────────────────────────────────────────────────
+
+  if (diffPr) {
+    const displayLabel =
+      displayIdOf(diffPr.artifact_id) ?? diffPr.artifact_id.slice(0, 8);
+    return (
+      <div className='flex h-[60vh] min-h-[400px] flex-col gap-3'>
+        <div className='flex shrink-0 items-center gap-2'>
+          <Button
+            variant='ghost'
+            size='sm'
+            className='h-7 gap-1 px-2 text-xs'
+            onClick={() => setDiffPr(null)}
+          >
+            <ArrowLeft className='size-4' />
+          </Button>
+          <span className='text-fg-secondary text-xs font-medium'>
+            {displayLabel}
+          </span>
+        </div>
+        <div className='min-h-0 flex-1 overflow-hidden'>
           <DiffViewer
-            headVersionId={pr.head_version_id}
-            baseVersionId={pr.base_version_id ?? undefined}
+            headVersionId={diffPr.head_version_id}
+            baseVersionId={diffPr.base_version_id ?? undefined}
           />
-        ),
-      });
-    },
-    [displayIdOf, overlay],
-  );
+        </div>
+      </div>
+    );
+  }
+
+  // ── PR 리스트 뷰 ──────────────────────────────────────────────────────
 
   return (
     <StagedChangesTray
@@ -237,7 +245,6 @@ export function ChangesWorkspaceModal({ projectId }: ChangesWorkspaceModalProps)
       onCreatePR={handleCreatePR}
       onApprovePR={handleApprovePR}
       onRejectPR={handleRejectPR}
-      onMergePR={handleMergePR}
       onShowDiff={handleShowDiff}
     />
   );

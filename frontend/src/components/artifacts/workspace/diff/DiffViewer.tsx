@@ -130,13 +130,36 @@ export function DiffViewer({
   }
 
   return (
-    <div className='flex h-full min-h-0 flex-col gap-3'>
+    <div className='flex h-full min-h-[300px] flex-col gap-3'>
       {/* 툴바 */}
       <div className='text-fg-muted flex shrink-0 items-center gap-3 text-[11px]'>
         {hasTextChange && (
-          <Button variant={'outline'} size={'xs'} onClick={handleToggleView}>
-            {splitView ? '인라인 뷰' : '나란히 보기'}
-          </Button>
+          <div className='border-line-primary inline-flex overflow-hidden rounded-md border'>
+            <button
+              type='button'
+              className={cn(
+                'px-2.5 py-1 text-[11px] font-medium transition-colors',
+                splitView
+                  ? 'bg-canvas-surface text-fg-primary'
+                  : 'text-fg-muted hover:text-fg-primary',
+              )}
+              onClick={() => !splitView && handleToggleView()}
+            >
+              Split
+            </button>
+            <button
+              type='button'
+              className={cn(
+                'border-line-primary border-l px-2.5 py-1 text-[11px] font-medium transition-colors',
+                !splitView
+                  ? 'bg-canvas-surface text-fg-primary'
+                  : 'text-fg-muted hover:text-fg-primary',
+              )}
+              onClick={() => splitView && handleToggleView()}
+            >
+              Unified
+            </button>
+          </div>
         )}
         {!loading && metaChangedCount > 0 && (
           <Button

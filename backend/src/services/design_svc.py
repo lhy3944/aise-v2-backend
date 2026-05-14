@@ -280,6 +280,12 @@ async def generate_design(
     artifact.working_status = "clean"
     artifact.updated_at = datetime.now(timezone.utc)
 
+    # ArtifactDependency 기록 (srs → design)
+    from src.services.artifact_svc import upsert_dependency
+    await upsert_dependency(
+        db, upstream_id=srs_version.artifact_id, downstream_id=artifact.id
+    )
+
     await db.commit()
     await db.refresh(version)
     await db.refresh(artifact)

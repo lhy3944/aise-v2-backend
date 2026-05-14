@@ -1,9 +1,9 @@
 'use client';
 
-import { CandidateCard } from '@/components/artifacts/records/CandidateCard';
-import { RecordCard } from '@/components/artifacts/records/RecordCard';
 import { ArtifactEmptyGuide } from '@/components/artifacts/ArtifactEmptyGuide';
 import { ManualRecordModal } from '@/components/artifacts/ManualRecordModal';
+import { CandidateCard } from '@/components/artifacts/records/CandidateCard';
+import { RecordCard } from '@/components/artifacts/records/RecordCard';
 import { ChangesWorkspaceModal } from '@/components/artifacts/workspace/ChangesWorkspaceModal';
 import {
   ArtifactRecordEditor,
@@ -24,10 +24,10 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { useOverlay } from '@/hooks/useOverlay';
-import { cn } from '@/lib/utils';
 import { artifactRecordService } from '@/services/artifact-record-service';
 import { artifactService } from '@/services/artifact-service';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
+import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
 import { usePrStore } from '@/stores/pr-store';
 import { EMPTY_BUCKET, useStagingStore } from '@/stores/staging-store';
 import type {
@@ -68,7 +68,9 @@ const EMPTY_RECORD_GUIDES = [
   },
 ];
 
-export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ projectId }: ArtifactRecordsPanelProps) {
+export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({
+  projectId,
+}: ArtifactRecordsPanelProps) {
   const [records, setRecords] = useState<ArtifactRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [sectionFilters, setSectionFilters] = useState<string[]>([]);
@@ -194,6 +196,7 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
             r.artifact_id === updated.artifact_id ? updated : r,
           ),
         );
+        useArtifactRefreshStore.getState().bump('record');
       } catch {
         // 글로벌 핸들링
       }
@@ -207,6 +210,7 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
         await artifactRecordService.delete(projectId, artifactId);
         setRecords((prev) => prev.filter((r) => r.artifact_id !== artifactId));
         discardArtifactDraft(artifactId);
+        useArtifactRefreshStore.getState().bump('record');
       } catch {
         // 글로벌 핸들링
       }
@@ -345,6 +349,7 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
       clearCandidates();
       setSelectedCandidates(new Set());
       await fetchRecords();
+      useArtifactRefreshStore.getState().bump('record');
     } catch {
       // 글로벌 핸들링
     } finally {
@@ -422,7 +427,9 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
                   onClick={handleApproveCandidates}
                   disabled={selectedCandidates.size === 0 || approving}
                 >
-                  {approving ? <Spinner size='size-3' className='mr-1' /> : null}
+                  {approving ? (
+                    <Spinner size='size-3' className='mr-1' />
+                  ) : null}
                   {selectedCandidates.size}개 승인
                 </Button>
                 <Button
@@ -485,7 +492,11 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant='ghost' size='sm' className='h-7 gap-1.5 text-xs'>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='h-7 gap-1.5 text-xs'
+                    >
                       <Filter className='size-3' />
                       필터
                       {sectionFilters.length > 0 && (
@@ -511,7 +522,9 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
                         checked={sectionFilters.includes(id)}
                         onCheckedChange={(checked) =>
                           setSectionFilters((prev) =>
-                            checked ? [...prev, id] : prev.filter((s) => s !== id),
+                            checked
+                              ? [...prev, id]
+                              : prev.filter((s) => s !== id),
                           )
                         }
                         onSelect={(e) => e.preventDefault()}
@@ -526,33 +539,35 @@ export const ArtifactRecordsPanel = memo(function ArtifactRecordsPanel({ project
             </div>
             <ScrollArea className='min-h-0 flex-1'>
               <div className='p-3 pb-4'>
-                {Object.entries(grouped).map(([sectionName, sectionRecords]) => (
-                  <div key={sectionName} className='mb-4'>
-                    <h4 className='text-fg-muted mb-1.5 px-1 text-[10px] font-semibold tracking-wider uppercase'>
-                      {sectionName}
-                    </h4>
-                    <div className='flex flex-col gap-1.5'>
-                      {sectionRecords.map((record) => {
-                        const draft = unstagedArtifacts[record.artifact_id];
-                        const draftText =
-                          draft && typeof draft.content?.text === 'string'
-                            ? (draft.content.text as string)
-                            : null;
-                        return (
-                          <RecordCard
-                            key={record.artifact_id}
-                            record={record}
-                            draftText={draftText}
-                            onEdit={handleEdit}
-                            onShowVersions={handleShowVersions}
-                            onStatusChange={handleStatusChange}
-                            onDelete={handleDelete}
-                          />
-                        );
-                      })}
+                {Object.entries(grouped).map(
+                  ([sectionName, sectionRecords]) => (
+                    <div key={sectionName} className='mb-4'>
+                      <h4 className='text-fg-muted mb-1.5 px-1 text-[10px] font-semibold tracking-wider uppercase'>
+                        {sectionName}
+                      </h4>
+                      <div className='flex flex-col gap-1.5'>
+                        {sectionRecords.map((record) => {
+                          const draft = unstagedArtifacts[record.artifact_id];
+                          const draftText =
+                            draft && typeof draft.content?.text === 'string'
+                              ? (draft.content.text as string)
+                              : null;
+                          return (
+                            <RecordCard
+                              key={record.artifact_id}
+                              record={record}
+                              draftText={draftText}
+                              onEdit={handleEdit}
+                              onShowVersions={handleShowVersions}
+                              onStatusChange={handleStatusChange}
+                              onDelete={handleDelete}
+                            />
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             </ScrollArea>
           </div>

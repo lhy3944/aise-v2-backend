@@ -7,6 +7,8 @@ type ViewMode = 'card' | 'list';
 interface ProjectState {
   projects: Project[];
   currentProject: Project | null;
+  /** localStorage에 저장되는 마지막 선택 프로젝트 ID. 복구 시 DB에서 재조회. */
+  lastProjectId: string | null;
   viewMode: ViewMode;
   isLoading: boolean;
   error: string | null;
@@ -26,12 +28,17 @@ export const useProjectStore = create<ProjectState>()(
     (set) => ({
       projects: [],
       currentProject: null,
+      lastProjectId: null,
       viewMode: 'card',
       isLoading: false,
       error: null,
 
       setProjects: (projects) => set({ projects }),
-      setCurrentProject: (project) => set({ currentProject: project }),
+      setCurrentProject: (project) =>
+        set({
+          currentProject: project,
+          lastProjectId: project?.project_id ?? null,
+        }),
       setViewMode: (viewMode) => set({ viewMode }),
       addProject: (project) => set((s) => ({ projects: [project, ...s.projects] })),
       updateProject: (project) =>
@@ -44,13 +51,14 @@ export const useProjectStore = create<ProjectState>()(
         set((s) => ({
           projects: s.projects.filter((p) => p.project_id !== projectId),
           currentProject: s.currentProject?.project_id === projectId ? null : s.currentProject,
+          lastProjectId: s.currentProject?.project_id === projectId ? null : s.lastProjectId,
         })),
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
     }),
     {
       name: 'aise-project',
-      partialize: (s) => ({ currentProject: s.currentProject, viewMode: s.viewMode }),
+      partialize: (s) => ({ lastProjectId: s.lastProjectId, viewMode: s.viewMode }),
     },
   ),
 );

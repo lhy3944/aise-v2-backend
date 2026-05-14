@@ -38,7 +38,9 @@ async function handleGlobalError(error: ApiError): Promise<void> {
 
   const toastId = `api-error-${error.status}-${error.code}`;
 
-  if (error.status >= 500) {
+  if (error.status === 0) {
+    showToast.error(error.message, undefined, toastId);
+  } else if (error.status >= 500) {
     showToast.error('서버 오류가 발생했습니다', error.detail ?? error.message, toastId);
   } else if (error.status >= 400) {
     showToast.error(error.message, error.detail ?? undefined, toastId);
@@ -62,7 +64,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, config);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, config);
+  } catch (networkError) {
+    const apiError = new ApiError(0, {
+      code: 'NETWORK_ERROR',
+      message: '서버에 연결할 수 없습니다. 네트워크 연결을 확인해 주세요.',
+    });
+
+    if (!skipErrorHandling) {
+      await handleGlobalError(apiError);
+    }
+
+    throw apiError;
+  }
 
   if (!response.ok) {
     let errorInfo: ErrorResponse['error'] = {

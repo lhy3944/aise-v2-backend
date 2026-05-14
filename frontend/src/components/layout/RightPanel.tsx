@@ -10,7 +10,7 @@ export function RightPanel() {
 
   return (
     <div className='bg-canvas-surface relative flex h-full flex-col overflow-hidden'>
-      <div className='min-w-[500px] h-full'>
+      <div className='min-w-0 md:min-w-[500px] h-full'>
         <AnimatePresence mode='wait' initial={false}>
           {view === 'source-viewer' ? (
             <motion.div

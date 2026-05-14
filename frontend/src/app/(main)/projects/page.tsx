@@ -8,6 +8,7 @@ import {
   ProjectCreateFormActions,
 } from '@/components/projects/ProjectCreateForm';
 import { ProjectListItem } from '@/components/projects/ProjectListItem';
+import { ProjectListError } from '@/components/projects/ProjectListError';
 import { ProjectListSkeleton } from '@/components/projects/ProjectListSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,7 @@ export default function ProjectsPage() {
     addProject,
     removeProject,
     isLoading,
+    error,
     setLoading,
     setError,
   } = useProjectStore();
@@ -183,6 +185,8 @@ export default function ProjectsPage() {
         {/* Content */}
         {isLoading ? (
           <ProjectListSkeleton />
+        ) : error ? (
+          <ProjectListError message={error} onRetry={fetchProjects} />
         ) : filteredProjects.length === 0 ? (
           search ? (
             <div className='animate-in fade-in flex min-h-[calc(100vh-14rem)] flex-col items-center justify-center text-center duration-300'>

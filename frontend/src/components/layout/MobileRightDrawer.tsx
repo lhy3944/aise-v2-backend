@@ -45,7 +45,7 @@ export function MobileRightDrawer() {
       </Button>
 
       <DrawerContent
-        className='border-line-primary bg-canvas-primary top-15! bottom-0! flex h-auto w-[95vw] flex-col border-l p-0 sm:w-[580px]'
+        className='border-line-primary bg-canvas-primary top-15! bottom-0! flex h-auto flex-col border-l p-0'
         overlayClassName='top-15!'
       >
         <DrawerTitle className='sr-only'>패널</DrawerTitle>

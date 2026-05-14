@@ -63,72 +63,6 @@ async def aggregate_field(
     return result
 
 
-async def get_content_sample(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    artifact_type: str,
-    limit: int = 3,
-) -> list[dict[str, Any]]:
-    """해당 artifact_type의 content 샘플 반환.
-
-    LLM이 질문에 필요한 필드를 파악할 때 사용.
-    """
-    rows = (
-        await db.execute(
-            select(Artifact.content)
-            .where(
-                Artifact.project_id == project_id,
-                Artifact.artifact_type == artifact_type,
-                Artifact.lifecycle_status == "active",
-            )
-            .limit(limit)
-        )
-    ).scalars().all()
-
-    return [c if isinstance(c, dict) else {} for c in rows]
-
-
-async def list_distinct_values(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    artifact_type: str,
-    field_path: str,
-) -> list[str]:
-    """특정 필드의 고유값 목록. 필드 존재 확인용."""
-    expr = _jsonb_column(field_path)
-    rows = (
-        await db.execute(
-            select(expr)
-            .where(
-                Artifact.project_id == project_id,
-                Artifact.artifact_type == artifact_type,
-                Artifact.lifecycle_status == "active",
-            )
-            .distinct()
-        )
-    ).scalars().all()
-
-    return [v for v in rows if v]
-
-
-async def count_by_type(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    artifact_type: str,
-) -> int:
-    """해당 artifact_type의 활성 artifact 수."""
-    result = (
-        await db.execute(
-            select(func.count()).where(
-                Artifact.project_id == project_id,
-                Artifact.artifact_type == artifact_type,
-                Artifact.lifecycle_status == "active",
-            )
-        )
-    ).scalar()
-    return result or 0
-
-
 async def query_content_by_field(
     db: AsyncSession,
     project_id: uuid.UUID,
@@ -167,8 +101,5 @@ async def query_content_by_field(
 
 __all__ = [
     "aggregate_field",
-    "get_content_sample",
-    "list_distinct_values",
-    "count_by_type",
     "query_content_by_field",
 ]

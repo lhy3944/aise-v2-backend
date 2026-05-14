@@ -31,23 +31,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 
 
-ARTIFACT_TYPES = ("record", "srs", "system_model", "data_model", "design", "testcase")
-WORKING_STATUSES = ("clean", "dirty", "staged")
-LIFECYCLE_STATUSES = ("active", "archived", "deleted")
-PR_STATUSES = ("open", "approved", "rejected", "merged", "superseded")
-DEPENDENCY_TYPES = ("derives_from", "references", "covers")
-CHANGE_ACTIONS = (
-    "created",
-    "edited",
-    "staged",
-    "pr_opened",
-    "pr_approved",
-    "pr_merged",
-    "pr_rejected",
-    "reverted",
-)
-
-
 class Artifact(Base):
     """산출물 working copy — 타입별 payload를 JSONB로 통합."""
 

@@ -15,13 +15,6 @@ class ReviewRequest(BaseModel):
     requirement_ids: list[uuid.UUID] = Field(default_factory=list, description="리뷰 대상 요구사항 ID 목록 (빈 배열이면 전체 리뷰)")
 
 
-class ReviewSuggestion(BaseModel):  # v2 예정
-    """Review 수정 제안 (v2 예정)"""
-    target_id: str | None = Field(default=None, description="수정 대상 ID (missing 타입이면 null)")
-    original_text: str | None = Field(default=None, description="기존 문장 (missing 타입이면 null)")
-    suggested_text: str = Field(description="수정 제안 문장")
-
-
 class ReviewIssue(BaseModel):
     """Review에서 발견된 이슈"""
     issue_id: str = Field(description="이슈 ID")
@@ -49,18 +42,6 @@ class ReviewResponse(BaseModel):
 
 # ── 제안 수락/거절 (v2 예정) ──
 
-
-class AcceptSuggestionResponse(BaseModel):  # v2 예정
-    """제안 수락 응답 (v2 예정)"""
-    success: bool
-    action: Literal["updated", "created"]
-    requirement_id: str
-    updated_text: str
-
-
-class RejectSuggestionResponse(BaseModel):  # v2 예정
-    """제안 거절 응답 (v2 예정)"""
-    success: bool
 
 
 # ── 최근 리뷰 결과 조회 ──

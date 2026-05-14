@@ -12,27 +12,7 @@ class RequirementType(str, Enum):
     OTHER = "other"
 
 
-class MemberRole(str, Enum):
-    OWNER = "owner"
-    EDITOR = "editor"
-    VIEWER = "viewer"
-
-
 class Platform(str, Enum):
-    JIRA = "jira"
-    POLARION = "polarion"
-
-
-class DiagramTool(str, Enum):
-    PLANTUML = "plantuml"
-    MERMAID = "mermaid"
-
-
-class ExportFormat(str, Enum):
-    PDF = "pdf"
-    MARKDOWN = "markdown"
-    WORD = "word"
-    EXCEL = "excel"
     JIRA = "jira"
     POLARION = "polarion"
 

@@ -8,10 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 
 
-HITL_STATUSES = ("pending", "resumed", "expired", "cancelled")
-HITL_KINDS = ("clarify", "confirm", "decision")
-
-
 class HitlRequest(Base):
     """Persisted HITL interrupt context for resume and audit."""
 

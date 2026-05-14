@@ -72,11 +72,6 @@ async def generate_prompt_suggestions(
     return {"fingerprint": fingerprint, "suggestions": suggestions}
 
 
-def invalidate_cache(project_id: uuid.UUID) -> None:
-    """프로젝트 캐시 무효화 (레코드/문서/섹션 변경 시 호출)"""
-    _suggestion_cache.pop(str(project_id), None)
-
-
 async def _gather_project_context(
     db: AsyncSession, project_id: uuid.UUID,
 ) -> dict:

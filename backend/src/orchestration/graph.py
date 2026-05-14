@@ -155,15 +155,6 @@ async def get_checkpointer() -> BaseCheckpointSaver:
     return MemorySaver()
 
 
-async def shutdown_checkpointer() -> None:
-    """Close the shared pool if one was opened. Safe to call unconditionally."""
-    global _pg_pool, _pg_saver
-    if _pg_pool is not None:
-        await _pg_pool.close()
-    _pg_pool = None
-    _pg_saver = None
-
-
 # ---------- Graph builder ----------
 
 
@@ -1198,5 +1189,4 @@ __all__ = [
     "get_checkpointer",
     "resume_chat",
     "run_chat",
-    "shutdown_checkpointer",
 ]

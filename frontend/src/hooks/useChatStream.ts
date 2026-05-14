@@ -3,6 +3,8 @@
 import {
   streamAgentChat,
   streamAgentResume,
+  uploadAgentAttachments,
+  type AgentAttachmentPayload,
   type StreamCallbacks,
 } from '@/services/agent-service';
 import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
@@ -26,9 +28,43 @@ import { useProjectStore } from '@/stores/project-store';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTokenDrain } from '@/hooks/useTokenDrain';
+import type { FileUIPart } from 'ai';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const streamAbortControllers = new Map<string, () => void>();
+
+type SendMessageInput = string | { text: string; files?: FileUIPart[] };
+
+function normalizeSendInput(input: SendMessageInput): {
+  text: string;
+  files: FileUIPart[];
+} {
+  if (typeof input === 'string') {
+    return { text: input, files: [] };
+  }
+  return { text: input.text, files: input.files ?? [] };
+}
+
+async function filePartToFile(file: FileUIPart): Promise<File | null> {
+  if (file.type !== 'file' || !file.url) return null;
+  const response = await fetch(file.url);
+  const blob = await response.blob();
+  const name = file.filename ?? 'attachment';
+  return new File([blob], name, {
+    type: file.mediaType ?? blob.type ?? 'application/octet-stream',
+  });
+}
+
+function toChatAttachments(attachments: AgentAttachmentPayload[]) {
+  return attachments.map((item) => ({
+    id: item.id,
+    filename: item.filename,
+    contentType: item.content_type,
+    sizeBytes: item.size_bytes,
+    storageKey: item.storage_key,
+    textPreview: item.text_preview,
+  }));
+}
 
 /**
  * 채팅 메시지 전송, 스트리밍, tool call 실행, 세션 로드를 관리
@@ -541,8 +577,10 @@ export function useChatStream(sessionId?: string) {
   );
 
   const sendMessage = useCallback(
-    async (text: string) => {
-      if (!text.trim() || !currentProject || isStreaming) return;
+    async (input: SendMessageInput) => {
+      const { text, files } = normalizeSendInput(input);
+      const trimmed = text.trim();
+      if ((!trimmed && files.length === 0) || !currentProject || isStreaming) return;
 
       let targetSessionId = activeSessionId;
 
@@ -551,7 +589,7 @@ export function useChatStream(sessionId?: string) {
         try {
           const newSession = await sessionService.create(
             currentProject.project_id,
-            text.slice(0, 40),
+            trimmed.slice(0, 40) || files[0]?.filename?.slice(0, 40),
           );
           targetSessionId = newSession.id;
           setPendingSessionId(targetSessionId);
@@ -564,10 +602,19 @@ export function useChatStream(sessionId?: string) {
         }
       }
 
+      const uploadFiles = (
+        await Promise.all(files.map((file) => filePartToFile(file)))
+      ).filter((file): file is File => file !== null);
+      const attachments = await uploadAgentAttachments(
+        targetSessionId,
+        uploadFiles,
+      );
+
       const userMsg: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: 'user',
-        content: text,
+        content: trimmed,
+        attachments: toChatAttachments(attachments),
         createdAt: new Date().toISOString(),
       };
       addMessage(targetSessionId, userMsg);
@@ -585,7 +632,11 @@ export function useChatStream(sessionId?: string) {
       clearBufferedTokens(targetSessionId);
 
       const abort = streamAgentChat(
-        { session_id: targetSessionId, message: text },
+        {
+          session_id: targetSessionId,
+          message: trimmed,
+          attachments,
+        },
         buildStreamCallbacks(targetSessionId),
       );
 

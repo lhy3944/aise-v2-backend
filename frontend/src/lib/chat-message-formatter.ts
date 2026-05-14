@@ -1,4 +1,8 @@
-import type { ChatMessage, ToolCallData } from '@/stores/chat-store';
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ToolCallData,
+} from '@/stores/chat-store';
 import type { HitlData, SourceRef } from '@/types/agent-events';
 
 /** 백엔드 도구 결과를 사용자 친화적 문자열로 포맷 */
@@ -104,6 +108,36 @@ export interface BackendMessage {
   created_at: string;
 }
 
+function mapAttachments(value: unknown): ChatAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const attachments = value
+    .map((item): ChatAttachment | null => {
+      if (!item || typeof item !== 'object') return null;
+      const raw = item as Record<string, unknown>;
+      if (typeof raw.id !== 'string' || typeof raw.filename !== 'string') {
+        return null;
+      }
+
+      return {
+        id: raw.id,
+        filename: raw.filename,
+        contentType:
+          typeof raw.content_type === 'string'
+            ? raw.content_type
+            : 'application/octet-stream',
+        sizeBytes: typeof raw.size_bytes === 'number' ? raw.size_bytes : 0,
+        storageKey:
+          typeof raw.storage_key === 'string' ? raw.storage_key : undefined,
+        textPreview:
+          typeof raw.text_preview === 'string' ? raw.text_preview : null,
+      };
+    })
+    .filter((item): item is ChatAttachment => item !== null);
+
+  return attachments.length > 0 ? attachments : undefined;
+}
+
 /** 백엔드 세션 메시지를 ChatMessage[] 로 변환 */
 export function mapBackendMessages(messages: BackendMessage[]): ChatMessage[] {
   return messages.map((m) => {
@@ -116,8 +150,12 @@ export function mapBackendMessages(messages: BackendMessage[]): ChatMessage[] {
       td && 'hitl_data' in td && td.hitl_data != null
         ? (td.hitl_data as HitlData)
         : undefined;
+    const attachments =
+      td && 'attachments' in td ? mapAttachments(td.attachments) : undefined;
     const tdEntries = td
-      ? Object.entries(td).filter(([k]) => k !== 'sources' && k !== 'hitl_data')
+      ? Object.entries(td).filter(
+          ([k]) => k !== 'sources' && k !== 'hitl_data' && k !== 'attachments',
+        )
       : [];
     const tdRest = Object.fromEntries(tdEntries);
     const hasOtherToolData = tdEntries.length > 0;
@@ -152,6 +190,7 @@ export function mapBackendMessages(messages: BackendMessage[]): ChatMessage[] {
       toolData: hasOtherToolData
         ? { type: 'requirements' as const, data: tdRest }
         : undefined,
+      attachments,
       sources: sourcesField ?? undefined,
       hitlData: hitlDataField,
       hitlResponded,

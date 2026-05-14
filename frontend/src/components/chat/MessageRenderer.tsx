@@ -24,7 +24,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
 import type { ConfirmData } from '@/types/agent-events';
-import type { ChatMessage } from '@/stores/chat-store';
+import type { ChatAttachment, ChatMessage } from '@/stores/chat-store';
+import { FileText, ImageIcon, Paperclip } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
 
@@ -61,6 +62,41 @@ interface RequirementData {
   type: string;
   text: string;
   reason: string;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MessageAttachments({
+  attachments,
+}: {
+  attachments?: ChatAttachment[];
+}) {
+  if (!attachments || attachments.length === 0) return null;
+
+  return (
+    <div className='mt-2 flex max-w-full flex-col items-end gap-1.5'>
+      {attachments.map((attachment) => {
+        const isImage = attachment.contentType.startsWith('image/');
+        const Icon = isImage ? ImageIcon : FileText;
+        return (
+          <div
+            key={attachment.id}
+            className='border-line-primary bg-canvas-surface text-fg-secondary flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs'
+          >
+            <Icon className='size-3.5 shrink-0' />
+            <span className='truncate'>{attachment.filename}</span>
+            <span className='text-fg-muted shrink-0'>
+              {formatBytes(attachment.sizeBytes)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const CLARIFY_BLOCK_RE =
@@ -244,7 +280,12 @@ const MessageItem = memo(
           {isUser ? (
             <div className='group/bubble'>
               <MessageBubble className='relative px-8'>
-                {message.content}
+                {message.content || (
+                  <span className='text-fg-muted inline-flex items-center gap-1'>
+                    <Paperclip className='size-3.5' />
+                    첨부파일
+                  </span>
+                )}
                 <div className='absolute top-1 right-1 opacity-0 transition-opacity group-hover/bubble:opacity-100'>
                   <MessageActions
                     content={message.content}
@@ -252,6 +293,7 @@ const MessageItem = memo(
                   />
                 </div>
               </MessageBubble>
+              <MessageAttachments attachments={message.attachments} />
             </div>
           ) : (
             <>

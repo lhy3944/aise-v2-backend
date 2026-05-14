@@ -15,6 +15,15 @@ export interface ToolCallData {
   durationMs?: number;
 }
 
+export interface ChatAttachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  storageKey?: string;
+  textPreview?: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -28,6 +37,8 @@ export interface ChatMessage {
   } | null;
   /** Function Calling 도구 호출 */
   toolCalls?: ToolCallData[];
+  /** User-uploaded files attached to this turn. Originals are stored in MinIO. */
+  attachments?: ChatAttachment[];
   /** RAG 출처 — SSE `sources` 이벤트 수신 시 세팅. 본문 `[N]` 인용 앵커와 매칭. */
   sources?: SourceRef[];
   /** Supervisor 가 plan 실행을 결정한 경우 step 진행 상태. plan_update SSE 누적. */

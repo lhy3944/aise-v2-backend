@@ -34,6 +34,7 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  type PromptInputMessage,
   usePromptInputAttachments,
 } from '@/components/ui/ai-elements/prompt-input';
 import { cn } from '@/lib/utils';
@@ -176,6 +177,29 @@ function VoiceButton() {
   );
 }
 
+function SubmitButton({
+  isSubmitting,
+  isStreaming,
+  onStop,
+}: {
+  isSubmitting?: boolean;
+  isStreaming?: boolean;
+  onStop?: () => void;
+}) {
+  const inputValue = useChatStore((s) => s.inputValue);
+  const attachments = usePromptInputAttachments();
+  const hasText = !!inputValue.trim();
+  const hasFiles = attachments.files.length > 0;
+
+  return (
+    <PromptInputSubmit
+      disabled={!hasText && !hasFiles && !isStreaming && !isSubmitting}
+      status={isSubmitting ? 'submitted' : isStreaming ? 'streaming' : undefined}
+      onStop={onStop}
+    />
+  );
+}
+
 function ActionsButton({ onAction }: { onAction?: (text: string) => void }) {
   const currentProject = useProjectStore((s) => s.currentProject);
   const readiness = useReadinessStore((s) => s.data);
@@ -275,7 +299,7 @@ export const ChatInput = memo(function ChatInput({
   isSubmitting,
   autoFocus = true,
 }: {
-  onSubmit?: (text: string) => void;
+  onSubmit?: (message: PromptInputMessage) => void | Promise<void>;
   onAction?: (text: string) => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -286,9 +310,9 @@ export const ChatInput = memo(function ChatInput({
   const inputValue = useChatStore((s) => s.inputValue);
   const setInputValue = useChatStore((s) => s.setInputValue);
 
-  const handleSubmit = () => {
-    if (!inputValue.trim() || disabled) return;
-    onSubmit?.(inputValue.trim());
+  const handleSubmit = async (message: PromptInputMessage) => {
+    if ((!message.text.trim() && message.files.length === 0) || disabled) return;
+    await onSubmit?.({ ...message, text: message.text.trim() });
   };
 
   return (
@@ -308,9 +332,9 @@ export const ChatInput = memo(function ChatInput({
           <VoiceButton />
           <ActionsButton onAction={onAction} />
         </PromptInputTools>
-        <PromptInputSubmit
-          disabled={!inputValue?.trim() && !isStreaming && !isSubmitting}
-          status={isSubmitting ? 'submitted' : isStreaming ? 'streaming' : undefined}
+        <SubmitButton
+          isSubmitting={isSubmitting}
+          isStreaming={isStreaming}
           onStop={onStop}
         />
       </PromptInputFooter>

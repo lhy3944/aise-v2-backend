@@ -7,9 +7,10 @@ LangGraph-only: orchestration.run_chat 기반. SSE AgentStreamEvent envelope
 from __future__ import annotations
 
 import uuid
+from pathlib import PurePosixPath
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy import select
@@ -18,9 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.core.database import get_db, get_session_factory
 from src.models.session import Session as SessionModel
 from src.orchestration.graph import build_graph, get_checkpointer, resume_chat, run_chat
-from src.schemas.api.agent import AgentChatRequest
+from src.schemas.api.agent import (
+    AgentAttachment,
+    AgentAttachmentUploadResponse,
+    AgentChatRequest,
+)
 from src.schemas.events import ResumeRequest
-from src.services import hitl_state_svc, session_svc
+from src.services import hitl_state_svc, session_svc, storage_svc
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -30,6 +35,9 @@ _SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
+
+_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+_MAX_TEXT_PREVIEW_CHARS = 12_000
 
 
 # Lazy per-factory graph cache. Compiling a LangGraph StateGraph captures
@@ -61,9 +69,110 @@ async def _resolve_project_id(session_id: uuid.UUID, db: AsyncSession) -> uuid.U
     return project_id
 
 
+def _safe_filename(filename: str | None) -> str:
+    name = PurePosixPath(filename or "attachment").name.strip()
+    if not name or name in {".", ".."}:
+        return "attachment"
+    return "".join(ch if ch.isalnum() or ch in "._- " else "_" for ch in name)[:180]
+
+
+def _extract_text_preview(data: bytes, content_type: str, filename: str) -> str | None:
+    lower_name = filename.lower()
+    text_like = (
+        content_type.startswith("text/")
+        or content_type in {"application/json", "application/xml"}
+        or lower_name.endswith((".md", ".txt", ".json", ".csv", ".xml", ".yaml", ".yml"))
+    )
+    if not text_like:
+        return None
+    for encoding in ("utf-8-sig", "utf-8", "cp949"):
+        try:
+            return data.decode(encoding, errors="strict")[:_MAX_TEXT_PREVIEW_CHARS]
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")[:_MAX_TEXT_PREVIEW_CHARS]
+
+
+def _attachment_context(message: str, attachments: list[AgentAttachment]) -> str:
+    if not attachments:
+        return message
+
+    lines = [message, "", "[첨부파일]"]
+    for idx, item in enumerate(attachments, start=1):
+        lines.append(
+            f"{idx}. {item.filename} ({item.content_type}, {item.size_bytes} bytes)"
+        )
+        if item.text_preview:
+            lines.append("```")
+            lines.append(item.text_preview)
+            lines.append("```")
+    return "\n".join(lines).strip()
+
+
+def _filter_session_attachments(
+    project_id: uuid.UUID,
+    session_id: uuid.UUID,
+    attachments: list[AgentAttachment],
+) -> list[AgentAttachment]:
+    prefix = f"chat-attachments/{project_id}/{session_id}/"
+    valid: list[AgentAttachment] = []
+    for item in attachments:
+        if item.storage_key.startswith(prefix):
+            valid.append(item)
+        else:
+            logger.warning(
+                "Ignoring attachment outside session prefix: session=%s key=%s",
+                session_id,
+                item.storage_key,
+            )
+    return valid
+
+
+@router.post("/attachments", response_model=AgentAttachmentUploadResponse)
+async def upload_agent_attachments(
+    session_id: uuid.UUID = Form(...),
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    project_id = await _resolve_project_id(session_id, db)
+    bucket = storage_svc.get_default_bucket()
+    uploaded: list[AgentAttachment] = []
+
+    for file in files:
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="empty attachment is not allowed")
+        if len(data) > _MAX_ATTACHMENT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"attachment exceeds {_MAX_ATTACHMENT_BYTES} bytes",
+            )
+
+        attachment_id = str(uuid.uuid4())
+        filename = _safe_filename(file.filename)
+        content_type = file.content_type or "application/octet-stream"
+        storage_key = (
+            f"chat-attachments/{project_id}/{session_id}/{attachment_id}/{filename}"
+        )
+        await storage_svc.upload_file(bucket, storage_key, data, content_type)
+        uploaded.append(
+            AgentAttachment(
+                id=attachment_id,
+                filename=filename,
+                content_type=content_type,
+                size_bytes=len(data),
+                storage_key=storage_key,
+                text_preview=_extract_text_preview(data, content_type, filename),
+            )
+        )
+
+    return AgentAttachmentUploadResponse(attachments=uploaded)
+
+
 async def _stream_chat(
     session_id: uuid.UUID,
     message: str,
+    attachments: list[AgentAttachment],
     session_factory: async_sessionmaker[AsyncSession],
 ):
     """SSE generator using the AgentStreamEvent envelope per docs/events.md.
@@ -85,12 +194,31 @@ async def _stream_chat(
             yield f"data: {payload}\n\n"
             return
 
+        valid_attachments = _filter_session_attachments(
+            project_id, session_id, attachments
+        )
         history = await session_svc.get_history(db, session_id, limit=50)
-        await session_svc.add_message(db, session_id, role="user", content=message)
-        await session_svc.update_session_title_if_first(db, session_id, message)
+        user_tool_data = (
+            {"attachments": [item.model_dump() for item in valid_attachments]}
+            if valid_attachments
+            else None
+        )
+        await session_svc.add_message(
+            db,
+            session_id,
+            role="user",
+            content=message,
+            tool_data=user_tool_data,
+        )
+        await session_svc.update_session_title_if_first(
+            db,
+            session_id,
+            message or (valid_attachments[0].filename if valid_attachments else ""),
+        )
         await db.commit()
 
     graph = await _get_graph(session_factory)
+    user_input = _attachment_context(message, valid_attachments)
     assistant_parts: list[str] = []
     # tool_call_id → 누적 entry. tool_result 이벤트가 도착하면 동일 id에
     # duration_ms/status/result를 덧붙여 저장용 레코드를 완성한다.
@@ -105,7 +233,7 @@ async def _stream_chat(
             graph,
             project_id=project_id,
             session_id=session_id,
-            user_input=message,
+            user_input=user_input,
             history=history,
             session_factory=session_factory,
         ):
@@ -178,7 +306,9 @@ async def agent_chat(
     """Agent Chat SSE 엔드포인트."""
     logger.info(f"agent/chat: session={body.session_id}")
     return StreamingResponse(
-        _stream_chat(body.session_id, body.message, session_factory),
+        _stream_chat(
+            body.session_id, body.message, body.attachments, session_factory
+        ),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

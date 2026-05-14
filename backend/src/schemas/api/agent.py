@@ -5,6 +5,19 @@ import uuid
 from pydantic import BaseModel, Field
 
 
+class AgentAttachment(BaseModel):
+    id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    storage_key: str
+    text_preview: str | None = None
+
+
+class AgentAttachmentUploadResponse(BaseModel):
+    attachments: list[AgentAttachment]
+
+
 class AgentChatMessage(BaseModel):
     role: str  # "user" | "assistant" | "tool"
     content: str
@@ -15,4 +28,4 @@ class AgentChatMessage(BaseModel):
 class AgentChatRequest(BaseModel):
     session_id: uuid.UUID
     message: str
-    attachments: list[dict] = Field(default_factory=list)  # [{filename, content_type, ...}]
+    attachments: list[AgentAttachment] = Field(default_factory=list)

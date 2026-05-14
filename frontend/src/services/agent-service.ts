@@ -30,6 +30,20 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 export interface AgentChatRequest {
   session_id: string;
   message: string;
+  attachments?: AgentAttachmentPayload[];
+}
+
+export interface AgentAttachmentPayload {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
+  text_preview?: string | null;
+}
+
+interface AgentAttachmentUploadResponse {
+  attachments: AgentAttachmentPayload[];
 }
 
 export interface AgentResumeRequest {
@@ -243,4 +257,37 @@ export function streamAgentChat(
   callbacks: StreamCallbacks,
 ): () => void {
   return _startSseStream(`${API_BASE}/api/v1/agent/chat`, request, callbacks);
+}
+
+export async function uploadAgentAttachments(
+  sessionId: string,
+  files: File[],
+): Promise<AgentAttachmentPayload[]> {
+  if (files.length === 0) return [];
+
+  const form = new FormData();
+  form.append('session_id', sessionId);
+  for (const file of files) {
+    form.append('files', file, file.name);
+  }
+
+  const response = await fetch(`${API_BASE}/api/v1/agent/attachments`, {
+    method: 'POST',
+    body: form,
+  });
+
+  if (!response.ok) {
+    let message = `첨부파일 업로드 실패: ${response.status}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === 'string') message = body.detail;
+      if (typeof body?.error?.message === 'string') message = body.error.message;
+    } catch {
+      // keep the fallback message
+    }
+    throw new Error(message);
+  }
+
+  const data = (await response.json()) as AgentAttachmentUploadResponse;
+  return data.attachments;
 }

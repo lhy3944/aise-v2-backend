@@ -17,11 +17,11 @@ const SKELETON_WIDTHS = [72, 58, 85, 63, 91, 54, 78, 67];
 
 function SessionListSkeleton() {
   return (
-    <div className='flex flex-col gap-1.5 px-1'>
+    <div className="flex flex-col gap-1.5 px-1">
       {SKELETON_WIDTHS.map((width, i) => (
-        <div key={i} className='flex items-center gap-2 px-2.5 py-2'>
-          <Skeleton className='h-3.5 w-3.5 shrink-0 rounded' />
-          <Skeleton className='h-3.5 rounded' style={{ width: `${width}%` }} />
+        <div key={i} className="flex items-center gap-2 px-2.5 py-2">
+          <Skeleton className="h-3.5 w-3.5 shrink-0 rounded" />
+          <Skeleton className="h-3.5 rounded" style={{ width: `${width}%` }} />
         </div>
       ))}
     </div>
@@ -42,6 +42,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
 
   const currentProject = useProjectStore((s) => s.currentProject);
   const sessionListNonce = useChatStore((s) => s.sessionListNonce);
+  const streamingSessionIds = useChatStore((s) => s.streamingSessionIds);
   const openHitlForSession = useHitlStore((s) => s.openForSession);
   const clearHitlSession = useHitlStore((s) => s.clearSession);
 
@@ -82,7 +83,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
       setNextCursor(null);
     }
     void Promise.resolve().then(fetchSessions);
-  }, [fetchSessions, sessionListNonce]);
+  }, [currentProject?.project_id, fetchSessions, sessionListNonce]);
 
   const fetchMore = useCallback(async () => {
     if (!currentProject || !nextCursor || isFetchingMore) return;
@@ -151,27 +152,28 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   );
 
   return (
-    <div className='flex min-h-0 flex-1 flex-col'>
-      <div className='flex shrink-0 items-center justify-between px-2 pb-2'>
-        <h3 className='text-fg-muted text-xs font-medium'>모든 작업</h3>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between px-2 pb-2">
+        <h3 className="text-fg-muted text-xs font-medium">모든 작업</h3>
         <button
-          type='button'
-          aria-label='필터'
-          className='text-icon-default hover:text-icon-active hover:bg-canvas-secondary cursor-pointer rounded-md p-1.5 transition-colors'
+          type="button"
+          aria-label="필터"
+          className="text-icon-default hover:text-icon-active hover:bg-canvas-secondary cursor-pointer rounded-md p-1.5 transition-colors"
         >
-          <ListFilterPlus className='size-4' />
+          <ListFilterPlus className="size-4" />
         </button>
       </div>
 
       {isLoading ? (
         <SessionListSkeleton />
       ) : (
-        <ScrollArea viewportRef={viewportRef} className='min-h-0 flex-1'>
+        <ScrollArea viewportRef={viewportRef} className="min-h-0 flex-1">
           {sessions.map((session) => (
-            <div key={session.id} className='mb-px'>
+            <div key={session.id} className="mb-px">
               <SessionItem
                 session={session}
                 isActive={session.id === activeSessionId}
+                isStreaming={streamingSessionIds.has(session.id)}
                 onClick={() => {
                   openHitlForSession(session.id);
                   router.push(`/agent/${session.id}`);
@@ -184,12 +186,12 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
           ))}
 
           {nextCursor && !isFetchingMore && (
-            <div ref={sentinelRef} className='h-1' />
+            <div ref={sentinelRef} className="h-1" />
           )}
 
           {isFetchingMore && (
-            <div className='flex items-center justify-center gap-2 py-3'>
-              <Spinner size='size-3.5' className='text-fg-muted' />
+            <div className="flex items-center justify-center gap-2 py-3">
+              <Spinner size="size-3.5" className="text-fg-muted" />
             </div>
           )}
         </ScrollArea>

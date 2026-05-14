@@ -8,7 +8,11 @@ import {
 import { streamExtractArtifactRecords } from '@/services/artifact-record-service';
 import { sessionService } from '@/services/session-service';
 import { srsService } from '@/services/srs-service';
-import { formatToolInterrupt, formatToolResult, mapBackendMessages } from '@/lib/chat-message-formatter';
+import {
+  formatToolInterrupt,
+  formatToolResult,
+  mapBackendMessages,
+} from '@/lib/chat-message-formatter';
 import { useArtifactActionStore } from '@/stores/artifact-action-store';
 import { useArtifactRecordStore } from '@/stores/artifact-record-store';
 import { useArtifactRefreshStore } from '@/stores/artifact-refresh-store';
@@ -24,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTokenDrain } from '@/hooks/useTokenDrain';
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+const streamAbortControllers = new Map<string, () => void>();
 
 /**
  * 채팅 메시지 전송, 스트리밍, tool call 실행, 세션 로드를 관리
@@ -52,8 +57,6 @@ export function useChatStream(sessionId?: string) {
   const isStreaming = useChatStore((s) =>
     activeSessionId ? s.streamingSessionIds.has(activeSessionId) : false,
   );
-
-  const abortControllersRef = useRef<Map<string, () => void>>(new Map());
 
   const pendingHitl = useHitlStore((s) => {
     const active = s.activeThreadId
@@ -251,30 +254,27 @@ export function useChatStream(sessionId?: string) {
     [],
   );
 
-  const markToolCallInterrupted = useCallback(
-    (sid: string, data: HitlData) => {
-      const updateLast = useChatStore.getState().updateLastAssistantMessage;
-      updateLast(sid, (msg) => ({
-        ...msg,
-        toolCalls: msg.toolCalls?.map((tc) =>
-          tc.state === 'running'
-            ? {
-                ...tc,
-                state: 'completed' as const,
-                result: formatToolInterrupt(tc.name, data),
-                durationMs:
-                  tc.durationMs ??
-                  (tc.startedAt !== undefined
-                    ? Math.max(0, Date.now() - tc.startedAt)
-                    : undefined),
-              }
-            : tc,
-        ),
-        hitlData: data,
-      }));
-    },
-    [],
-  );
+  const markToolCallInterrupted = useCallback((sid: string, data: HitlData) => {
+    const updateLast = useChatStore.getState().updateLastAssistantMessage;
+    updateLast(sid, (msg) => ({
+      ...msg,
+      toolCalls: msg.toolCalls?.map((tc) =>
+        tc.state === 'running'
+          ? {
+              ...tc,
+              state: 'completed' as const,
+              result: formatToolInterrupt(tc.name, data),
+              durationMs:
+                tc.durationMs ??
+                (tc.startedAt !== undefined
+                  ? Math.max(0, Date.now() - tc.startedAt)
+                  : undefined),
+            }
+          : tc,
+      ),
+      hitlData: data,
+    }));
+  }, []);
 
   // Records 갱신 트리거
   const bumpRefresh = useArtifactRecordStore((s) => s.bumpRefresh);
@@ -413,9 +413,9 @@ export function useChatStream(sessionId?: string) {
               system_model: 'design',
               data_model: 'design',
             };
-            useArtifactStore.getState().setActiveTab(
-              (tabMap[kind] ?? kind) as ArtifactType,
-            );
+            useArtifactStore
+              .getState()
+              .setActiveTab((tabMap[kind] ?? kind) as ArtifactType);
           }
 
           executeToolCall(sid, toolCall.name);
@@ -453,10 +453,12 @@ export function useChatStream(sessionId?: string) {
         },
         onDone: () => {
           requestFinishAfterDrain(sid, 'done');
+          streamAbortControllers.delete(sid);
         },
         onError: (error) => {
           enqueueToken(sid, `\n\n${error}`);
           requestFinishAfterDrain(sid, 'error');
+          streamAbortControllers.delete(sid);
         },
       };
     },
@@ -471,7 +473,11 @@ export function useChatStream(sessionId?: string) {
   );
 
   const resumeFromInterrupt = useCallback(
-    (response: Record<string, unknown>, hitlThreadId?: string, hitlSessionId?: string) => {
+    (
+      response: Record<string, unknown>,
+      hitlThreadId?: string,
+      hitlSessionId?: string,
+    ) => {
       const threadId = hitlThreadId ?? pendingHitl?.threadId;
       const sid = hitlSessionId ?? pendingHitl?.sessionId;
       if (!threadId || !sid) return;
@@ -479,10 +485,12 @@ export function useChatStream(sessionId?: string) {
       removeHitl(threadId);
 
       const isApproved = response.action === 'approve';
-      const updateByInterruptId = useChatStore.getState().updateMessageByInterruptId;
+      const updateByInterruptId =
+        useChatStore.getState().updateMessageByInterruptId;
       let hitlKind: ArtifactKind | null = null;
       updateByInterruptId(sid, threadId, (msg) => {
-        const ctx = (msg.hitlData as Record<string, unknown> | null)?.context as Record<string, unknown> | undefined;
+        const ctx = (msg.hitlData as Record<string, unknown> | null)
+          ?.context as Record<string, unknown> | undefined;
         const agentName = (ctx?.artifact_kind as string) ?? '';
         const kindMap: Record<string, ArtifactKind> = {
           srs_generator: 'srs',
@@ -500,7 +508,9 @@ export function useChatStream(sessionId?: string) {
 
       if (isApproved && hitlKind) {
         useArtifactActionStore.getState().setGenerating(hitlKind, true);
-        useArtifactStore.getState().setActiveTab(hitlKind === 'record' ? 'records' : hitlKind);
+        useArtifactStore
+          .getState()
+          .setActiveTab(hitlKind === 'record' ? 'records' : hitlKind);
       }
 
       const assistantMsg: ChatMessage = {
@@ -518,7 +528,7 @@ export function useChatStream(sessionId?: string) {
         { thread_id: threadId, response },
         buildStreamCallbacks(sid),
       );
-      abortControllersRef.current.set(sid, abort);
+      streamAbortControllers.set(sid, abort);
     },
     [
       pendingHitl,
@@ -579,7 +589,7 @@ export function useChatStream(sessionId?: string) {
         buildStreamCallbacks(targetSessionId),
       );
 
-      abortControllersRef.current.set(targetSessionId, abort);
+      streamAbortControllers.set(targetSessionId, abort);
     },
     [
       currentProject,
@@ -598,19 +608,17 @@ export function useChatStream(sessionId?: string) {
   const stopStreaming = useCallback(() => {
     if (!activeSessionId) return;
     flushBufferedTokens(activeSessionId);
-    abortControllersRef.current.get(activeSessionId)?.();
-    abortControllersRef.current.delete(activeSessionId);
+    streamAbortControllers.get(activeSessionId)?.();
+    streamAbortControllers.delete(activeSessionId);
     finishStreaming(activeSessionId);
   }, [activeSessionId, finishStreaming, flushBufferedTokens]);
 
-  // Cleanup on unmount
+  // Keep the SSE connection alive across route changes, but render any buffered
+  // text before this view disappears so returning to the session feels current.
   useEffect(() => {
-    const controllers = abortControllersRef.current;
     return () => {
       if (sessionId) {
         flushBufferedTokens(sessionId);
-        controllers.get(sessionId)?.();
-        controllers.delete(sessionId);
       }
     };
   }, [sessionId, flushBufferedTokens]);

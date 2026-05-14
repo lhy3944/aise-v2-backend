@@ -7,6 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Spinner } from '@/components/ui/spinner';
 import { useOverlay } from '@/hooks/useOverlay';
 import { cn } from '@/lib/utils';
 import type { SessionResponse } from '@/services/session-service';
@@ -22,6 +23,7 @@ import { memo, useState } from 'react';
 interface SessionItemProps {
   session: SessionResponse;
   isActive: boolean;
+  isStreaming?: boolean;
   onClick: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
@@ -30,6 +32,7 @@ interface SessionItemProps {
 export const SessionItem = memo(function SessionItem({
   session,
   isActive,
+  isStreaming = false,
   onClick,
   onDelete,
   onRename,
@@ -62,14 +65,22 @@ export const SessionItem = memo(function SessionItem({
       )}
     >
       {isActive && (
-        <div className='absolute left-0 top-0 h-full w-[3px] bg-accent-primary' />
+        <div className="absolute left-0 top-0 h-full w-[3px] bg-accent-primary" />
       )}
       <button
         onClick={onClick}
-        className='flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 justify-start'
+        className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 justify-start"
       >
-        <MessageSquare className='h-3.5 w-3.5 shrink-0' fill='currentColor' />
-        <span className='min-w-0 truncate text-[13px]'>{session.title}</span>
+        {isStreaming ? (
+          <Spinner
+            size="size-3.5"
+            className="text-accent-primary shrink-0"
+            aria-label="Generating response"
+          />
+        ) : (
+          <MessageSquare className="h-3.5 w-3.5 shrink-0" fill="currentColor" />
+        )}
+        <span className="min-w-0 truncate text-[13px]">{session.title}</span>
       </button>
 
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -81,27 +92,27 @@ export const SessionItem = memo(function SessionItem({
               menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
             )}
           >
-            <MoreHorizontal className='h-4 w-4' />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align='start' side='right' className='w-40'>
-          <DropdownMenuItem className='gap-2 text-xs' onClick={handleRename}>
-            <Pencil className='h-3.5 w-3.5' />
+        <DropdownMenuContent align="start" side="right" className="w-40">
+          <DropdownMenuItem className="gap-2 text-xs" onClick={handleRename}>
+            <Pencil className="h-3.5 w-3.5" />
             이름 변경
           </DropdownMenuItem>
-          <DropdownMenuItem className='gap-2 text-xs'>
-            <Share2 className='h-3.5 w-3.5' />
+          <DropdownMenuItem className="gap-2 text-xs">
+            <Share2 className="h-3.5 w-3.5" />
             공유
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            className='text-destructive focus:text-destructive gap-2 text-xs'
+            className="text-destructive focus:text-destructive gap-2 text-xs"
             onClick={(e) => {
               e.stopPropagation();
               onDelete?.();
             }}
           >
-            <Trash2 className='h-3.5 w-3.5' />
+            <Trash2 className="h-3.5 w-3.5" />
             삭제
           </DropdownMenuItem>
         </DropdownMenuContent>

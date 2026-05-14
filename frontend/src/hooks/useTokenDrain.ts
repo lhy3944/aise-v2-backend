@@ -5,46 +5,45 @@ interface UseTokenDrainOptions {
   isMobile: boolean;
 }
 
+const tokenBuffer = new Map<string, string>();
+const tokenDrainTimers = new Map<string, number>();
+const pendingFinishStatus = new Map<string, 'done' | 'error'>();
+
 /**
- * SSE 토큰 버퍼링 — 모바일/데스크탑별 청크 크기와 드레인 주기를 조절해
- * 잦은 setState 호출을 줄이고 자연스러운 타이핑 효과를 제공한다.
+ * Buffers SSE tokens per session. The backing maps live at module scope so a
+ * stream can continue draining even when the chat page unmounts during route
+ * changes.
  */
 export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
   const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
   const finishStreaming = useChatStore((s) => s.finishStreaming);
-
-  const tokenBufferRef = useRef<Map<string, string>>(new Map());
-  const tokenDrainTimerRef = useRef<Map<string, number>>(new Map());
-  const pendingFinishStatusRef = useRef<Map<string, 'done' | 'error'>>(
-    new Map(),
-  );
   const scheduleTokenDrainRef = useRef<
     (sid: string, immediate?: boolean) => void
   >(() => {});
 
   const clearBufferedTokens = useCallback((sid: string) => {
-    tokenBufferRef.current.delete(sid);
-    pendingFinishStatusRef.current.delete(sid);
-    const timerId = tokenDrainTimerRef.current.get(sid);
+    tokenBuffer.delete(sid);
+    pendingFinishStatus.delete(sid);
+    const timerId = tokenDrainTimers.get(sid);
     if (timerId !== undefined) {
       clearTimeout(timerId);
-      tokenDrainTimerRef.current.delete(sid);
+      tokenDrainTimers.delete(sid);
     }
   }, []);
 
   const scheduleTokenDrain = useCallback(
     (sid: string, immediate = false) => {
-      if (tokenDrainTimerRef.current.has(sid)) return;
+      if (tokenDrainTimers.has(sid)) return;
 
       const delay = immediate ? 0 : isMobile ? 18 : 10;
       const timerId = window.setTimeout(() => {
-        tokenDrainTimerRef.current.delete(sid);
+        tokenDrainTimers.delete(sid);
 
-        const buffered = tokenBufferRef.current.get(sid) ?? '';
+        const buffered = tokenBuffer.get(sid) ?? '';
         if (!buffered) {
-          const pendingStatus = pendingFinishStatusRef.current.get(sid);
+          const pendingStatus = pendingFinishStatus.get(sid);
           if (pendingStatus) {
-            pendingFinishStatusRef.current.delete(sid);
+            pendingFinishStatus.delete(sid);
             finishStreaming(sid, pendingStatus);
           }
           return;
@@ -56,18 +55,15 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
 
         appendToLastAssistant(sid, nextChunk);
 
-        if (rest) tokenBufferRef.current.set(sid, rest);
-        else tokenBufferRef.current.delete(sid);
+        if (rest) tokenBuffer.set(sid, rest);
+        else tokenBuffer.delete(sid);
 
-        if (
-          tokenBufferRef.current.has(sid) ||
-          pendingFinishStatusRef.current.has(sid)
-        ) {
+        if (tokenBuffer.has(sid) || pendingFinishStatus.has(sid)) {
           scheduleTokenDrainRef.current(sid);
         }
       }, delay);
 
-      tokenDrainTimerRef.current.set(sid, timerId);
+      tokenDrainTimers.set(sid, timerId);
     },
     [appendToLastAssistant, finishStreaming, isMobile],
   );
@@ -78,21 +74,21 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
 
   const flushBufferedTokens = useCallback(
     (sid: string) => {
-      const timerId = tokenDrainTimerRef.current.get(sid);
+      const timerId = tokenDrainTimers.get(sid);
       if (timerId !== undefined) {
         clearTimeout(timerId);
-        tokenDrainTimerRef.current.delete(sid);
+        tokenDrainTimers.delete(sid);
       }
 
-      const buffered = tokenBufferRef.current.get(sid);
+      const buffered = tokenBuffer.get(sid);
       if (buffered) {
         appendToLastAssistant(sid, buffered);
       }
-      tokenBufferRef.current.delete(sid);
+      tokenBuffer.delete(sid);
 
-      const pendingStatus = pendingFinishStatusRef.current.get(sid);
+      const pendingStatus = pendingFinishStatus.get(sid);
       if (pendingStatus) {
-        pendingFinishStatusRef.current.delete(sid);
+        pendingFinishStatus.delete(sid);
         finishStreaming(sid, pendingStatus);
       }
     },
@@ -101,8 +97,8 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
 
   const enqueueToken = useCallback(
     (sid: string, token: string) => {
-      const prev = tokenBufferRef.current.get(sid) ?? '';
-      tokenBufferRef.current.set(sid, prev + token);
+      const prev = tokenBuffer.get(sid) ?? '';
+      tokenBuffer.set(sid, prev + token);
       scheduleTokenDrain(sid, true);
     },
     [scheduleTokenDrain],
@@ -110,7 +106,7 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
 
   const requestFinishAfterDrain = useCallback(
     (sid: string, status: 'done' | 'error') => {
-      pendingFinishStatusRef.current.set(sid, status);
+      pendingFinishStatus.set(sid, status);
       scheduleTokenDrain(sid);
     },
     [scheduleTokenDrain],

@@ -177,17 +177,17 @@ export function ArtifactPanel() {
       )}
 
       {/* Content */}
-      <div className='flex min-h-0 flex-1 flex-col'>
-        <TabsContent value='records' className='mt-0 h-full'>
+      <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
+        <TabsContent value='records' className='mt-0 min-h-0 flex-1'>
           <ArtifactRecordsPanel projectId={currentProject.project_id} />
         </TabsContent>
-        <TabsContent value='srs' className='mt-0 h-full'>
+        <TabsContent value='srs' className='mt-0 min-h-0 flex-1'>
           <SrsArtifact />
         </TabsContent>
-        <TabsContent value='design' className='mt-0 h-full'>
+        <TabsContent value='design' className='mt-0 min-h-0 flex-1'>
           <DesignArtifact />
         </TabsContent>
-        <TabsContent value='testcase' className='mt-0 h-full'>
+        <TabsContent value='testcase' className='mt-0 min-h-0 flex-1'>
           <TestCaseArtifact />
         </TabsContent>
       </div>

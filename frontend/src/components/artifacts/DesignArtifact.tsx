@@ -128,14 +128,14 @@ export function DesignArtifact() {
           </TabsList>
         </div>
 
-        <div className='flex min-h-0 flex-1 flex-col'>
-          <TabsContent value='system_model' className='mt-0 h-full'>
+        <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
+          <TabsContent value='system_model' className='mt-0 min-h-0 flex-1'>
             <SystemModelPanel />
           </TabsContent>
-          <TabsContent value='data_model' className='mt-0 h-full'>
+          <TabsContent value='data_model' className='mt-0 min-h-0 flex-1'>
             <DataModelPanel />
           </TabsContent>
-          <TabsContent value='design' className='mt-0 h-full'>
+          <TabsContent value='design' className='mt-0 min-h-0 flex-1'>
             <SddPanel />
           </TabsContent>
         </div>

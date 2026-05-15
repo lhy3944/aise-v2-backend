@@ -40,8 +40,9 @@ export function KnowledgePreviewModal({
   const [totalChars, setTotalChars] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const isPdf = doc?.file_type === 'pdf';
   const canRender = doc?.file_type === 'md';
-  const defaultTab = canRender ? 'rendered' : 'raw';
+  const defaultTab = isPdf ? 'original' : canRender ? 'rendered' : 'raw';
 
   const fetchPreview = useCallback(async () => {
     if (!doc) return;
@@ -65,6 +66,11 @@ export function KnowledgePreviewModal({
       void Promise.resolve().then(fetchPreview);
     }
   }, [doc, fetchPreview]);
+
+  const pdfUrl =
+    doc && isPdf
+      ? knowledgeService.downloadUrl(projectId, doc.document_id)
+      : null;
 
   return (
     <Dialog open={!!doc} onOpenChange={(open) => !open && onClose()}>
@@ -98,6 +104,50 @@ export function KnowledgePreviewModal({
             <div className='flex items-center justify-center py-12'>
               <Spinner size='size-6' className='text-fg-muted' />
             </div>
+          ) : isPdf ? (
+            <Tabs
+              defaultValue={defaultTab}
+              className='flex min-h-0 flex-1 flex-col'
+            >
+              <TabsList
+                variant='line'
+                className='border-line-subtle w-full shrink-0 justify-start border-b px-6'
+              >
+                <TabsTrigger
+                  value='original'
+                  className='data-[state=active]:text-accent-primary after:bg-accent-primary'
+                >
+                  원문
+                </TabsTrigger>
+                <TabsTrigger
+                  value='chunk'
+                  className='data-[state=active]:text-accent-primary after:bg-accent-primary'
+                >
+                  청크
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent
+                value='original'
+                className='min-h-0 flex-1'
+              >
+                {pdfUrl && (
+                  <iframe
+                    src={pdfUrl}
+                    className='size-full border-0'
+                    title={doc?.name ?? 'PDF 뷰어'}
+                    style={{ minHeight: '70vh' }}
+                  />
+                )}
+              </TabsContent>
+              <TabsContent
+                value='chunk'
+                className='min-h-0 flex-1 overflow-y-auto px-6 py-4'
+              >
+                <pre className='text-fg-secondary whitespace-pre-wrap text-xs leading-relaxed'>
+                  {previewText}
+                </pre>
+              </TabsContent>
+            </Tabs>
           ) : canRender ? (
             <Tabs
               defaultValue={defaultTab}

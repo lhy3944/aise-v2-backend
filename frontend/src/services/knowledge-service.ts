@@ -6,6 +6,7 @@ import type {
 } from '@/types/project';
 
 const BASE = '/api/v1/projects';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export const knowledgeService = {
   list: (projectId: string) =>
@@ -63,4 +64,7 @@ export const knowledgeService = {
 
   delete: (projectId: string, documentId: string) =>
     api.delete<void>(`${BASE}/${projectId}/knowledge/documents/${documentId}`),
+
+  downloadUrl: (projectId: string, documentId: string) =>
+    `${API_BASE}${BASE}/${projectId}/knowledge/documents/${documentId}/download`,
 };

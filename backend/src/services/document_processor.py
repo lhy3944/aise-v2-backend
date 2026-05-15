@@ -34,14 +34,50 @@ def parse_document(file_bytes: bytes, file_type: str) -> str:
     raise AppException(400, f"지원하지 않는 파일 형식입니다: {file_type}")
 
 
+def _rects_overlap(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
+    return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
+
+
+def _extract_page_with_tables(page) -> str:
+    """페이지에서 테이블과 텍스트를 y-좌표 기준으로 인터리브 추출."""
+    tables = page.find_tables()
+
+    if not tables.tables:
+        return page.get_text(sort=True)
+
+    table_info = [(t.bbox, t.to_markdown()) for t in tables.tables]
+    table_bboxes = [bbox for bbox, _ in table_info]
+
+    entries: list[tuple[float, str]] = []
+
+    blocks = page.get_text("dict", sort=True)["blocks"]
+    for block in blocks:
+        if block["type"] != 0:
+            continue
+        if any(_rects_overlap(block["bbox"], tb) for tb in table_bboxes):
+            continue
+        for line in block["lines"]:
+            line_text = "".join(span["text"] for span in line["spans"])
+            if line_text.strip():
+                entries.append((line["bbox"][1], line_text))
+
+    for bbox, md in table_info:
+        entries.append((bbox[1], md))
+
+    entries.sort(key=lambda e: e[0])
+    return "\n".join(text for _, text in entries)
+
+
 def _parse_pdf(data: bytes) -> str:
     import pymupdf
 
     text_parts = []
     with pymupdf.open(stream=data, filetype="pdf") as doc:
-        for page in doc:
-            text_parts.append(page.get_text())
-    return "\n".join(text_parts)
+        for page_num, page in enumerate(doc):
+            page_text = _extract_page_with_tables(page)
+            if page_text.strip():
+                text_parts.append(f"## 페이지 {page_num + 1}\n\n{page_text}")
+    return "\n\n".join(text_parts)
 
 
 def _parse_docx(data: bytes) -> str:
@@ -111,8 +147,9 @@ async def process_document(document_id: uuid.UUID) -> None:
             if not text.strip():
                 raise ValueError("문서에서 텍스트를 추출할 수 없습니다.")
 
-            # 4. 청킹
-            chunks = chunk_text(text, max_tokens=500, overlap_tokens=50, file_type=doc.file_type)
+            # 4. 청킹 — PDF는 마크다운으로 파싱되므로 md 청커 사용
+            chunk_file_type = "md" if doc.file_type == "pdf" else doc.file_type
+            chunks = chunk_text(text, max_tokens=500, overlap_tokens=50, file_type=chunk_file_type)
             if not chunks:
                 raise ValueError("청킹 결과가 비어 있습니다.")
 
@@ -142,7 +179,8 @@ async def process_document(document_id: uuid.UUID) -> None:
             logger.info(f"문서 처리 완료: document_id={document_id}, chunks={len(chunks)}")
 
         except Exception as e:
-            logger.error(f"문서 처리 실패: document_id={document_id}, error={e}")
+            logger.error(f"문서 처리 실패: document_id={document_id}, error={e!r}")
+            logger.exception("상세 traceback:")
             await db.rollback()
 
             # 에러 상태로 업데이트 (새 트랜잭션)

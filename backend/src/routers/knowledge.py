@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File, BackgroundTasks
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
@@ -83,6 +84,23 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
 ):
     await knowledge_svc.delete_document(project_id, document_id, db)
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    project_id: uuid.UUID,
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """원문 파일 다운로드 (PDF 뷰어 등에서 사용)"""
+    content_type, file_bytes, filename = await knowledge_svc.download_document(
+        project_id, document_id, db,
+    )
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.post("/chat", response_model=KnowledgeChatResponse)

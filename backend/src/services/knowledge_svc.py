@@ -1,5 +1,6 @@
 """Knowledge Repository 서비스 -- 문서 업로드/조회/삭제/토글/미리보기"""
 
+import urllib.parse
 import uuid
 
 from fastapi import BackgroundTasks, UploadFile
@@ -344,3 +345,20 @@ async def get_chunk_with_context(
         "before": before,
         "after": after,
     }
+
+
+async def download_document(
+    project_id: uuid.UUID,
+    document_id: uuid.UUID,
+    db: AsyncSession,
+) -> tuple[str, bytes, str]:
+    """원문 파일 다운로드 — (content_type, file_bytes, encoded_filename) 반환"""
+    doc = await _find_document(project_id, document_id, db)
+
+    bucket = storage_svc.get_default_bucket()
+    file_bytes = await storage_svc.download_file(bucket, doc.storage_key)
+    content_type = CONTENT_TYPE_MAP.get(doc.file_type, "application/octet-stream")
+    encoded_filename = urllib.parse.quote(doc.name, safe="")
+
+    logger.info(f"문서 다운로드: document_id={document_id}, size={len(file_bytes)}")
+    return content_type, file_bytes, encoded_filename

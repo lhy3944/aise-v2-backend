@@ -166,8 +166,8 @@ export const MessageResponse = memo(
                 look: 'classic',
               },
             }}
-            isAnimating={false}
-            animated={false}
+            isAnimating={streaming}
+            animated={streaming}
             controls={{
               code: { copy: true, download: true },
               table: { fullscreen: true, copy: true, download: true },

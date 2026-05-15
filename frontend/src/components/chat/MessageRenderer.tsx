@@ -23,11 +23,11 @@ import { WaveDots } from '@/components/ui/ai-elements/wave-dots';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
-import type { ConfirmData } from '@/types/agent-events';
 import type { ChatAttachment, ChatMessage } from '@/stores/chat-store';
+import type { ConfirmData } from '@/types/agent-events';
 import { FileText, ImageIcon, Paperclip } from 'lucide-react';
 import Image from 'next/image';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
 
 interface MessageRendererProps {

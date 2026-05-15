@@ -1,94 +1,100 @@
 import { useChatStore } from '@/stores/chat-store';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 interface UseTokenDrainOptions {
   isMobile: boolean;
 }
 
-const tokenBuffer = new Map<string, string>();
-const tokenDrainTimers = new Map<string, number>();
-const pendingFinishStatus = new Map<string, 'done' | 'error'>();
-
 /**
- * Buffers SSE tokens per session. The backing maps live at module scope so a
- * stream can continue draining even when the chat page unmounts during route
- * changes.
+ * Throttle 기반 토큰 드레인 (AI SDK Elements 방식).
+ *
+ * LLM 토큰을 mutable 버퍼에 즉시 누적하고,
+ * 50ms(throttle) 간격으로 React state에 flush 한다.
+ *
+ * rAF와 달리 일정 간격으로 작은 청크를 Streamdown에 전달하므로
+ * CSS staggered animation의 delay가 순서대로 적용되어
+ * 시각적으로 순차적인 타이핑 효과가 보장된다.
+ *
+ * 성능: 초당 최대 20회 리렌더 (50ms throttle)
+ * 모바일: 초당 최대 10회 리렌더 (100ms throttle)
  */
 export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
   const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
   const finishStreaming = useChatStore((s) => s.finishStreaming);
-  const scheduleTokenDrainRef = useRef<
-    (sid: string, immediate?: boolean) => void
-  >(() => {});
+
+  // 모듈 스코프: 컴포넌트 리렌더와 무관하게 유지
+  const storeRef = useRef({
+    buffers: new Map<string, string>(),
+    pendingFinish: new Map<string, 'done' | 'error'>(),
+    timers: new Map<string, ReturnType<typeof setTimeout>>(),
+  });
+
+  const THROTTLE_MS = isMobile ? 100 : 50;
+
+  const drain = useCallback(
+    (sid: string) => {
+      const { buffers, pendingFinish, timers } = storeRef.current;
+      timers.delete(sid);
+
+      const buffered = buffers.get(sid);
+      if (buffered) {
+        buffers.delete(sid);
+        appendToLastAssistant(sid, buffered);
+      }
+
+      const pendingStatus = pendingFinish.get(sid);
+      if (!buffers.has(sid) && pendingStatus) {
+        pendingFinish.delete(sid);
+        finishStreaming(sid, pendingStatus);
+        return;
+      }
+
+      // 버퍼에 더 쌓인 토큰이 있으면 다음 throttle tick에서 계속
+      if (buffers.has(sid)) {
+        timers.set(sid, setTimeout(() => drain(sid), THROTTLE_MS));
+      }
+    },
+    [appendToLastAssistant, finishStreaming, THROTTLE_MS],
+  );
+
+  const scheduleDrain = useCallback(
+    (sid: string) => {
+      const { timers } = storeRef.current;
+      if (timers.has(sid)) return;
+      timers.set(sid, setTimeout(() => drain(sid), THROTTLE_MS));
+    },
+    [drain],
+  );
 
   const clearBufferedTokens = useCallback((sid: string) => {
-    tokenBuffer.delete(sid);
-    pendingFinishStatus.delete(sid);
-    const timerId = tokenDrainTimers.get(sid);
-    if (timerId !== undefined) {
-      clearTimeout(timerId);
-      tokenDrainTimers.delete(sid);
+    const { buffers, pendingFinish, timers } = storeRef.current;
+    buffers.delete(sid);
+    pendingFinish.delete(sid);
+    const t = timers.get(sid);
+    if (t !== undefined) {
+      clearTimeout(t);
+      timers.delete(sid);
     }
   }, []);
 
-  const scheduleTokenDrain = useCallback(
-    (sid: string, immediate = false) => {
-      if (tokenDrainTimers.has(sid)) return;
-
-      const delay = immediate ? 0 : isMobile ? 18 : 10;
-      const timerId = window.setTimeout(() => {
-        tokenDrainTimers.delete(sid);
-
-        const buffered = tokenBuffer.get(sid) ?? '';
-        if (!buffered) {
-          const pendingStatus = pendingFinishStatus.get(sid);
-          if (pendingStatus) {
-            pendingFinishStatus.delete(sid);
-            finishStreaming(sid, pendingStatus);
-          }
-          return;
-        }
-
-        const chunkSize = isMobile ? 28 : 120;
-        const nextChunk = buffered.slice(0, chunkSize);
-        const rest = buffered.slice(chunkSize);
-
-        appendToLastAssistant(sid, nextChunk);
-
-        if (rest) tokenBuffer.set(sid, rest);
-        else tokenBuffer.delete(sid);
-
-        if (tokenBuffer.has(sid) || pendingFinishStatus.has(sid)) {
-          scheduleTokenDrainRef.current(sid);
-        }
-      }, delay);
-
-      tokenDrainTimers.set(sid, timerId);
-    },
-    [appendToLastAssistant, finishStreaming, isMobile],
-  );
-
-  useEffect(() => {
-    scheduleTokenDrainRef.current = scheduleTokenDrain;
-  }, [scheduleTokenDrain]);
-
   const flushBufferedTokens = useCallback(
     (sid: string) => {
-      const timerId = tokenDrainTimers.get(sid);
-      if (timerId !== undefined) {
-        clearTimeout(timerId);
-        tokenDrainTimers.delete(sid);
+      const { buffers, pendingFinish, timers } = storeRef.current;
+      const t = timers.get(sid);
+      if (t !== undefined) {
+        clearTimeout(t);
+        timers.delete(sid);
       }
 
-      const buffered = tokenBuffer.get(sid);
+      const buffered = buffers.get(sid);
       if (buffered) {
         appendToLastAssistant(sid, buffered);
       }
-      tokenBuffer.delete(sid);
+      buffers.delete(sid);
 
-      const pendingStatus = pendingFinishStatus.get(sid);
+      const pendingStatus = pendingFinish.get(sid);
       if (pendingStatus) {
-        pendingFinishStatus.delete(sid);
+        pendingFinish.delete(sid);
         finishStreaming(sid, pendingStatus);
       }
     },
@@ -97,19 +103,21 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
 
   const enqueueToken = useCallback(
     (sid: string, token: string) => {
-      const prev = tokenBuffer.get(sid) ?? '';
-      tokenBuffer.set(sid, prev + token);
-      scheduleTokenDrain(sid, true);
+      const { buffers } = storeRef.current;
+      const prev = buffers.get(sid) ?? '';
+      buffers.set(sid, prev + token);
+      scheduleDrain(sid);
     },
-    [scheduleTokenDrain],
+    [scheduleDrain],
   );
 
   const requestFinishAfterDrain = useCallback(
     (sid: string, status: 'done' | 'error') => {
-      pendingFinishStatus.set(sid, status);
-      scheduleTokenDrain(sid);
+      const { pendingFinish } = storeRef.current;
+      pendingFinish.set(sid, status);
+      scheduleDrain(sid);
     },
-    [scheduleTokenDrain],
+    [scheduleDrain],
   );
 
   return {

@@ -592,9 +592,6 @@ export function useChatStream(sessionId?: string) {
             trimmed.slice(0, 40) || files[0]?.filename?.slice(0, 40),
           );
           targetSessionId = newSession.id;
-          setPendingSessionId(targetSessionId);
-          useChatStore.getState().bumpSessionListNonce();
-          router.replace(`/agent/${targetSessionId}`);
           setIsCreatingSession(false);
         } catch {
           setIsCreatingSession(false);
@@ -630,6 +627,15 @@ export function useChatStream(sessionId?: string) {
       addMessage(targetSessionId, assistantMsg);
       setSessionStreaming(targetSessionId, true);
       clearBufferedTokens(targetSessionId);
+
+      // 스토어에 메시지가 들어간 후 pendingSessionId 설정 + 네비게이션.
+      // 순서 중요: addMessage → setPendingSessionId 해야
+      // activeSessionId 변경 시 스토어에 이미 메시지가 있어 깜빡임 방지.
+      if (!activeSessionId) {
+        setPendingSessionId(targetSessionId);
+        useChatStore.getState().bumpSessionListNonce();
+        router.replace(`/agent/${targetSessionId}`);
+      }
 
       const abort = streamAgentChat(
         {

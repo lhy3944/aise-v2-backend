@@ -1,6 +1,8 @@
 # ---- Build stage ----
 FROM node:20-alpine AS builder
 
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
 WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL=""
@@ -8,11 +10,11 @@ ARG BACKEND_URL="http://localhost:8081"
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV BACKEND_URL=${BACKEND_URL}
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN pnpm build
 
 # ---- Run stage ----
 FROM node:20-alpine AS runner

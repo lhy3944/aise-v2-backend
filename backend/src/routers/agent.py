@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -114,7 +114,7 @@ def _filter_session_attachments(
     session_id: uuid.UUID,
     attachments: list[AgentAttachment],
 ) -> list[AgentAttachment]:
-    prefix = f"chat-attachments/{project_id}/{session_id}/"
+    prefix = f"{project_id}/{session_id}/"
     valid: list[AgentAttachment] = []
     for item in attachments:
         if item.storage_key.startswith(prefix):
@@ -135,7 +135,7 @@ async def upload_agent_attachments(
     db: AsyncSession = Depends(get_db),
 ):
     project_id = await _resolve_project_id(session_id, db)
-    bucket = storage_svc.get_default_bucket()
+    bucket = storage_svc.get_attachments_bucket()
     uploaded: list[AgentAttachment] = []
 
     for file in files:
@@ -151,9 +151,7 @@ async def upload_agent_attachments(
         attachment_id = str(uuid.uuid4())
         filename = _safe_filename(file.filename)
         content_type = file.content_type or "application/octet-stream"
-        storage_key = (
-            f"chat-attachments/{project_id}/{session_id}/{attachment_id}/{filename}"
-        )
+        storage_key = f"{project_id}/{session_id}/{attachment_id}/{filename}"
         await storage_svc.upload_file(bucket, storage_key, data, content_type)
         uploaded.append(
             AgentAttachment(
@@ -167,6 +165,46 @@ async def upload_agent_attachments(
         )
 
     return AgentAttachmentUploadResponse(attachments=uploaded)
+
+
+@router.get("/attachments/{storage_key:path}")
+async def get_attachment(storage_key: str):
+    """첨부파일 직접 스트림 반환 (Next.js Image 최적화 호환)"""
+    bucket = storage_svc.get_attachments_bucket()
+    try:
+        data = await storage_svc.download_file(bucket, storage_key)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"첨부파일을 찾을 수 없습니다: {e}")
+
+    # storage_key 마지막 세그먼트에서 파일명 추출
+    filename = storage_key.rsplit("/", 1)[-1] if "/" in storage_key else storage_key
+
+    content_type = "application/octet-stream"
+    if "." in filename:
+        ext = filename.rsplit(".", 1)[-1].lower()
+        mime_map = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+            "webp": "image/webp",
+            "svg": "image/svg+xml",
+            "pdf": "application/pdf",
+            "md": "text/markdown",
+            "txt": "text/plain",
+            "csv": "text/csv",
+            "json": "application/json",
+        }
+        content_type = mime_map.get(ext, content_type)
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
 
 
 async def _stream_chat(

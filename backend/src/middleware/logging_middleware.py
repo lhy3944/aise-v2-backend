@@ -1,47 +1,56 @@
 import time
 import uuid
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from loguru import logger
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from src.core.exceptions import AppException
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # 각 요청에 고유 ID 할당
+class LoggingMiddleware:
+    """순수 ASGI 로깅 미들웨어.
+
+    BaseHTTPMiddleware는 SSE 스트리밍과 충돌하여 CancelledError를 유발한다.
+    (Starlette의 cancel scope가 SSE 응답 완료 후 DB 연결 종료를 취소시킴)
+    따라서 BaseHTTPMiddleware 대신 순수 ASGI 미들웨어로 구현한다.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         request_id = str(uuid.uuid4())[:8]
+        path = scope.get("path", "")
+        method = scope.get("method", "")
 
         with logger.contextualize(request_id=request_id):
-            logger.info(f"Request: {request.method} {request.url.path}")
+            logger.info(f"Request: {method} {path}")
             start_time = time.time()
+            status_code: int | None = None
 
-            # 다음 미들웨어 또는 엔드포인트 실행
+            async def send_wrapper(message: dict) -> None:
+                nonlocal status_code
+                if message["type"] == "http.response.start":
+                    status_code = message.get("status")
+                await send(message)
+
             try:
-                response = await call_next(request)
-                process_time = (time.time() - start_time) * 1000  # 밀리초 단위
-                logger.info(f"Response: Status={response.status_code} (took: {process_time:.2f}ms)")
-
-                return response
+                await self.app(scope, receive, send_wrapper)
             except AppException as e:
-                # 애플리케이션 예외는 적절한 상태 코드로 반환
                 process_time = (time.time() - start_time) * 1000
                 logger.warning(f"AppException: {e.detail}")
                 logger.info(f"Response: Status={e.status_code} (took: {process_time:.2f}ms)")
-                return JSONResponse(
-                    status_code=e.status_code,
-                    content={"detail": e.detail},
-                )
+                raise
             except Exception as e:
-                # BaseHTTPMiddleware 특성상 exception handler로 전달되지 않으므로
-                # 여기서 직접 500 응답을 반환한다.
                 process_time = (time.time() - start_time) * 1000
                 logger.exception(f"Unhandled exception: {e}")
                 logger.info(f"Response: Status=500 (took: {process_time:.2f}ms)")
-                return JSONResponse(
-                    status_code=500,
-                    content={"detail": "Internal Server Error"},
-                )
+                raise
+
+            if status_code is not None:
+                process_time = (time.time() - start_time) * 1000
+                logger.info(f"Response: Status={status_code} (took: {process_time:.2f}ms)")

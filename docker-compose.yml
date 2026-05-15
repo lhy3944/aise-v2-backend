@@ -66,6 +66,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aise}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aise1234}
       MINIO_BUCKET: ${MINIO_BUCKET:-aise-knowledge}
+      MINIO_ATTACHMENTS_BUCKET: ${MINIO_ATTACHMENTS_BUCKET:-chat-attachments}
     depends_on:
       postgres:
         condition: service_healthy

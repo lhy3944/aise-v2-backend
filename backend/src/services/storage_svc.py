@@ -34,6 +34,10 @@ def get_default_bucket() -> str:
     return os.getenv("MINIO_BUCKET", "aise-knowledge")
 
 
+def get_attachments_bucket() -> str:
+    return os.getenv("MINIO_ATTACHMENTS_BUCKET", "chat-attachments")
+
+
 async def ensure_bucket(bucket: str) -> None:
     """버킷이 존재하지 않으면 생성"""
     client = _get_client()
@@ -89,6 +93,14 @@ async def delete_file(bucket: str, key: str) -> None:
     except S3Error as e:
         logger.error(f"MinIO 삭제 실패: {e}")
         raise AppException(500, f"파일 삭제 실패: {e}")
+
+
+def get_presigned_url(bucket: str, key: str, expires: int = 3600) -> str:
+    """Presigned GET URL 생성 (기본 1시간)"""
+    client = _get_client()
+    from datetime import timedelta
+
+    return client.presigned_get_object(bucket, key, expires=timedelta(seconds=expires))
 
 
 async def delete_prefix(bucket: str, prefix: str) -> int:

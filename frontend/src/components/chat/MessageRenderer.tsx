@@ -26,14 +26,19 @@ import { createCitationPlugin } from '@/lib/markdown/citation-plugin';
 import type { ConfirmData } from '@/types/agent-events';
 import type { ChatAttachment, ChatMessage } from '@/stores/chat-store';
 import { FileText, ImageIcon, Paperclip } from 'lucide-react';
-import { memo, useMemo } from 'react';
+import Image from 'next/image';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Shimmer } from '../ui/ai-elements/shimmer';
 
 interface MessageRendererProps {
   messages: ChatMessage[];
   onSendMessage?: (text: string) => void;
   /** HITL 인라인 카드 응답 콜백 */
-  onHitlRespond?: (response: Record<string, unknown>, threadId: string, sessionId: string) => void;
+  onHitlRespond?: (
+    response: Record<string, unknown>,
+    threadId: string,
+    sessionId: string,
+  ) => void;
   /** 첫 세션 응답 대기 중일 때 skeleton UI 표시 여부 */
   firstResponseSkeleton?: boolean;
   /** 현재 세션 스트리밍 중 — 산출물 생성 pending 표시용 */
@@ -70,6 +75,47 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function AttachmentThumbnail({ attachment }: { attachment: ChatAttachment }) {
+  const isImage = attachment.contentType.startsWith('image/');
+  const [imgError, setImgError] = useState(false);
+
+  // 상대 경로 사용 — Next.js rewrites가 /api/* → 백엔드로 프록시
+  // 같은 오리진이므로 Next.js Image 최적화 + remotePatterns 설정 불필요
+  const src = attachment.storageKey
+    ? `/api/v1/agent/attachments/${attachment.storageKey}`
+    : null;
+
+  if (isImage && src && !imgError) {
+    return (
+      <div className='relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-line-primary'>
+        <Image
+          src={src}
+          alt={attachment.filename}
+          fill
+          className='object-cover p-1'
+          sizes='80px'
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+
+  if (isImage && src && imgError) {
+    // 이미지 로드 실패 시 파일명 표시로 폴백
+  }
+
+  const Icon = isImage ? ImageIcon : FileText;
+  return (
+    <div className='border-line-primary bg-canvas-surface text-fg-secondary flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs'>
+      <Icon className='size-3.5 shrink-0' />
+      <span className='truncate'>{attachment.filename}</span>
+      <span className='text-fg-muted shrink-0'>
+        {formatBytes(attachment.sizeBytes)}
+      </span>
+    </div>
+  );
+}
+
 function MessageAttachments({
   attachments,
 }: {
@@ -77,24 +123,22 @@ function MessageAttachments({
 }) {
   if (!attachments || attachments.length === 0) return null;
 
+  const hasImage = attachments.some((a) => a.contentType.startsWith('image/'));
+  const images = attachments.filter((a) => a.contentType.startsWith('image/'));
+  const files = attachments.filter((a) => !a.contentType.startsWith('image/'));
+
   return (
-    <div className='mt-2 flex max-w-full flex-col items-end gap-1.5'>
-      {attachments.map((attachment) => {
-        const isImage = attachment.contentType.startsWith('image/');
-        const Icon = isImage ? ImageIcon : FileText;
-        return (
-          <div
-            key={attachment.id}
-            className='border-line-primary bg-canvas-surface text-fg-secondary flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs'
-          >
-            <Icon className='size-3.5 shrink-0' />
-            <span className='truncate'>{attachment.filename}</span>
-            <span className='text-fg-muted shrink-0'>
-              {formatBytes(attachment.sizeBytes)}
-            </span>
-          </div>
-        );
-      })}
+    <div className='flex max-w-full flex-col items-end gap-1.5'>
+      {hasImage && (
+        <div className='flex flex-wrap items-end justify-end gap-1.5'>
+          {images.map((attachment) => (
+            <AttachmentThumbnail key={attachment.id} attachment={attachment} />
+          ))}
+        </div>
+      )}
+      {files.map((attachment) => (
+        <AttachmentThumbnail key={attachment.id} attachment={attachment} />
+      ))}
     </div>
   );
 }
@@ -174,7 +218,11 @@ interface MessageItemProps {
   message: ChatMessage;
   isLast: boolean;
   onSendMessage?: (text: string) => void;
-  onHitlRespond?: (response: Record<string, unknown>, threadId: string, sessionId: string) => void;
+  onHitlRespond?: (
+    response: Record<string, unknown>,
+    threadId: string,
+    sessionId: string,
+  ) => void;
   firstResponseSkeleton?: boolean;
   isSessionStreaming?: boolean;
 }
@@ -278,7 +326,8 @@ const MessageItem = memo(
       <Message from={message.role}>
         <MessageContent from={message.role}>
           {isUser ? (
-            <div className='group/bubble'>
+            <div className='group/bubble flex flex-col items-end gap-1.5'>
+              <MessageAttachments attachments={message.attachments} />
               <MessageBubble className='relative px-8'>
                 {message.content || (
                   <span className='text-fg-muted inline-flex items-center gap-1'>
@@ -293,7 +342,6 @@ const MessageItem = memo(
                   />
                 </div>
               </MessageBubble>
-              <MessageAttachments attachments={message.attachments} />
             </div>
           ) : (
             <>
@@ -427,11 +475,22 @@ const MessageItem = memo(
                   <ConfirmCard
                     data={message.hitlData as ConfirmData}
                     onRespond={(response) =>
-                      onHitlRespond(response, message.hitlData!.interrupt_id, message.id)
+                      onHitlRespond(
+                        response,
+                        message.hitlData!.interrupt_id,
+                        message.id,
+                      )
                     }
                     responded={message.hitlResponded}
                     approved={message.hitlApproved}
-                    artifactPending={!!(message.hitlResponded && message.hitlApproved && isSessionStreaming && !message.hitlArtifactDone)}
+                    artifactPending={
+                      !!(
+                        message.hitlResponded &&
+                        message.hitlApproved &&
+                        isSessionStreaming &&
+                        !message.hitlArtifactDone
+                      )
+                    }
                   />
                 </div>
               )}

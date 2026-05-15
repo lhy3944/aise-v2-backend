@@ -15,8 +15,8 @@ interface UseTokenDrainOptions {
  * CSS staggered animation의 delay가 순서대로 적용되어
  * 시각적으로 순차적인 타이핑 효과가 보장된다.
  *
- * 성능: 초당 최대 20회 리렌더 (50ms throttle)
- * 모바일: 초당 최대 10회 리렌더 (100ms throttle)
+ * 성능: 초당 최대 30회 리렌더 (33ms throttle)
+ * 모바일: 초당 최대 15회 리렌더 (66ms throttle)
  */
 export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
   const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
@@ -29,7 +29,7 @@ export function useTokenDrain({ isMobile }: UseTokenDrainOptions) {
     timers: new Map<string, ReturnType<typeof setTimeout>>(),
   });
 
-  const THROTTLE_MS = isMobile ? 100 : 50;
+  const THROTTLE_MS = isMobile ? 66 : 33;
 
   const drain = useCallback(
     (sid: string) => {

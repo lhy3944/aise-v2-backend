@@ -56,3 +56,73 @@ async def test_create_session_project_not_found_returns_404(client, db):
         json={"project_id": str(uuid.uuid4())},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_session_can_toggle_favorite(client, db):
+    await ensure_sessions_table(db)
+    project_id = await create_test_project(client, "favorite project")
+
+    created = await client.post(
+        "/api/v1/sessions",
+        json={"project_id": project_id, "title": "favorite me"},
+    )
+    assert created.status_code == 201
+    session_id = created.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/sessions/{session_id}",
+        json={"is_favorite": True},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["is_favorite"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_sorts_by_created_and_can_pin_favorites(client, db):
+    await ensure_sessions_table(db)
+    project_id = await create_test_project(client, "sorting project")
+
+    older = await client.post(
+        "/api/v1/sessions",
+        json={"project_id": project_id, "title": "older"},
+    )
+    newer = await client.post(
+        "/api/v1/sessions",
+        json={"project_id": project_id, "title": "newer"},
+    )
+    assert older.status_code == 201
+    assert newer.status_code == 201
+    older_id = older.json()["id"]
+    newer_id = newer.json()["id"]
+
+    # Make the older session the most recently updated session.
+    renamed = await client.patch(
+        f"/api/v1/sessions/{older_id}",
+        json={"title": "older updated"},
+    )
+    assert renamed.status_code == 200
+
+    by_created = await client.get(
+        f"/api/v1/sessions?project_id={project_id}&sort_by=created"
+    )
+
+    assert by_created.status_code == 200
+    assert [item["id"] for item in by_created.json()["sessions"][:2]] == [
+        newer_id,
+        older_id,
+    ]
+
+    favorited = await client.patch(
+        f"/api/v1/sessions/{older_id}",
+        json={"is_favorite": True},
+    )
+    assert favorited.status_code == 200
+
+    favorite_first = await client.get(
+        f"/api/v1/sessions?project_id={project_id}&sort_by=created&favorite_first=true"
+    )
+
+    assert favorite_first.status_code == 200
+    assert favorite_first.json()["sessions"][0]["id"] == older_id

@@ -21,7 +21,7 @@ from src.agents.registry import register_agent
 from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext, AgentState
 from src.prompts.general import build_general_chat_prompt
-from src.services import llm_svc
+from src.services import llm_svc, user_skill_svc
 
 
 @register_agent
@@ -80,6 +80,10 @@ class GeneralChatAgent(BaseAgent):
         messages = build_general_chat_prompt(
             query=query,
             history=state.get("history", []) or [],
+        )
+        messages = user_skill_svc.apply_personal_skill_instructions(
+            messages,
+            state.get("personal_skill_instructions"),
         )
 
         buffer = ""

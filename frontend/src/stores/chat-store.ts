@@ -1,11 +1,11 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
-import type { HitlData, PlanStep, SourceRef } from '@/types/agent-events';
+import type { HitlData, PlanStep, SourceRef } from "@/types/agent-events";
 
 export interface ToolCallData {
   name: string;
   arguments: Record<string, unknown>;
-  state: 'running' | 'completed' | 'error';
+  state: "running" | "completed" | "error";
   result?: string;
   error?: string;
   /** Unix ms — when the tool_call SSE arrived (for live elapsed timer) */
@@ -26,13 +26,13 @@ export interface ChatAttachment {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   /** 메시지 상태 — undefined는 'done'과 동일 (서버 로드 메시지 호환) */
-  status?: 'streaming' | 'done' | 'error';
+  status?: "streaming" | "done" | "error";
   /** 구조화된 데이터 (clarify, requirements, generate_srs) */
   toolData?: {
-    type: 'clarify' | 'requirements' | 'generate_srs';
+    type: "clarify" | "requirements" | "generate_srs";
     data: unknown;
   } | null;
   /** Function Calling 도구 호출 */
@@ -66,13 +66,21 @@ interface ChatState {
 
   /** 세션 목록 갱신 트리거 (새 세션 생성 시 bump) */
   sessionListNonce: number;
+  sessionFavorites: Record<string, boolean>;
 
   // 메시지 관리
   setMessages: (sessionId: string, messages: ChatMessage[]) => void;
   addMessage: (sessionId: string, message: ChatMessage) => void;
   appendToLastAssistant: (sessionId: string, token: string) => void;
-  updateLastAssistantMessage: (sessionId: string, updater: (msg: ChatMessage) => ChatMessage) => void;
-  updateMessageByInterruptId: (sessionId: string, interruptId: string, updater: (msg: ChatMessage) => ChatMessage) => void;
+  updateLastAssistantMessage: (
+    sessionId: string,
+    updater: (msg: ChatMessage) => ChatMessage,
+  ) => void;
+  updateMessageByInterruptId: (
+    sessionId: string,
+    interruptId: string,
+    updater: (msg: ChatMessage) => ChatMessage,
+  ) => void;
   clearSession: (sessionId: string) => void;
   getMessages: (sessionId: string) => ChatMessage[];
 
@@ -80,20 +88,23 @@ interface ChatState {
   isSessionStreaming: (sessionId: string) => boolean;
   setSessionStreaming: (sessionId: string, streaming: boolean) => void;
   /** message.status + streamingSessionIds를 원자적으로 업데이트 (재렌더 1회) */
-  finishStreaming: (sessionId: string, status?: 'done' | 'error') => void;
+  finishStreaming: (sessionId: string, status?: "done" | "error") => void;
 
   // 입력값
   setInputValue: (val: string) => void;
 
   // 세션 목록 갱신
   bumpSessionListNonce: () => void;
+  setSessionFavorite: (sessionId: string, isFavorite: boolean) => void;
+  setSessionFavorites: (favorites: Record<string, boolean>) => void;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessionMessages: {},
   streamingSessionIds: new Set(),
-  inputValue: '',
+  inputValue: "",
   sessionListNonce: 0,
+  sessionFavorites: {},
 
   setMessages: (sessionId, messages) =>
     set((s) => ({
@@ -112,22 +123,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set((s) => {
       const current = s.sessionMessages[sessionId] ?? [];
       const last = current[current.length - 1];
-      if (!last || last.role !== 'assistant') return s;
+      if (!last || last.role !== "assistant") return s;
 
       const nextMessages = [...current];
       nextMessages[nextMessages.length - 1] = {
         ...last,
         content: last.content + token,
-        status: 'streaming',
+        status: "streaming",
       };
-      return { sessionMessages: { ...s.sessionMessages, [sessionId]: nextMessages } };
+      return {
+        sessionMessages: { ...s.sessionMessages, [sessionId]: nextMessages },
+      };
     }),
 
   updateLastAssistantMessage: (sessionId, updater) =>
     set((s) => {
       const msgs = [...(s.sessionMessages[sessionId] ?? [])];
       const last = msgs[msgs.length - 1];
-      if (last?.role === 'assistant') {
+      if (last?.role === "assistant") {
         msgs[msgs.length - 1] = updater(last);
       }
       return { sessionMessages: { ...s.sessionMessages, [sessionId]: msgs } };
@@ -165,12 +178,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return { streamingSessionIds: next };
     }),
 
-  finishStreaming: (sessionId, status = 'done') =>
+  finishStreaming: (sessionId, status = "done") =>
     set((s) => {
       const current = s.sessionMessages[sessionId] ?? [];
       const last = current[current.length - 1];
       let nextMessages = current;
-      if (last?.role === 'assistant' && last.status === 'streaming') {
+      if (last?.role === "assistant" && last.status === "streaming") {
         nextMessages = [...current];
         nextMessages[nextMessages.length - 1] = { ...last, status };
       }
@@ -196,5 +209,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   setInputValue: (val) => set({ inputValue: val }),
 
-  bumpSessionListNonce: () => set((s) => ({ sessionListNonce: s.sessionListNonce + 1 })),
+  bumpSessionListNonce: () =>
+    set((s) => ({ sessionListNonce: s.sessionListNonce + 1 })),
+
+  setSessionFavorite: (sessionId, isFavorite) =>
+    set((s) => ({
+      sessionFavorites: { ...s.sessionFavorites, [sessionId]: isFavorite },
+    })),
+
+  setSessionFavorites: (favorites) =>
+    set((s) => ({
+      sessionFavorites: { ...s.sessionFavorites, ...favorites },
+    })),
 }));

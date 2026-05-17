@@ -1,19 +1,43 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ListFilterPlus } from 'lucide-react';
-import { SessionItem } from '@/components/chat/SessionItem';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
-import { sessionService } from '@/services/session-service';
-import type { SessionResponse } from '@/services/session-service';
-import { useChatStore } from '@/stores/chat-store';
-import { useHitlStore } from '@/stores/hitl-store';
-import { useProjectStore } from '@/stores/project-store';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  Check,
+  CirclePlus,
+  ListFilterPlus,
+  RefreshCw,
+  Star,
+} from "lucide-react";
+import { SessionItem } from "@/components/chat/SessionItem";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
+import { sessionService, type SessionSortBy } from "@/services/session-service";
+import type { SessionResponse } from "@/services/session-service";
+import { useChatStore } from "@/stores/chat-store";
+import { useHitlStore } from "@/stores/hitl-store";
+import { useProjectStore } from "@/stores/project-store";
 
 const SKELETON_WIDTHS = [72, 58, 85, 63, 91, 54, 78, 67];
+
+const SORT_OPTIONS: Array<{
+  value: SessionSortBy;
+  label: string;
+  icon: typeof CirclePlus;
+}> = [
+  { value: "created", label: "생성됨", icon: CirclePlus },
+  { value: "updated", label: "업데이트됨", icon: RefreshCw },
+];
 
 function SessionListSkeleton() {
   return (
@@ -43,6 +67,8 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   const currentProject = useProjectStore((s) => s.currentProject);
   const sessionListNonce = useChatStore((s) => s.sessionListNonce);
   const streamingSessionIds = useChatStore((s) => s.streamingSessionIds);
+  const setSessionFavorites = useChatStore((s) => s.setSessionFavorites);
+  const setSessionFavorite = useChatStore((s) => s.setSessionFavorite);
   const openHitlForSession = useHitlStore((s) => s.openForSession);
   const clearHitlSession = useHitlStore((s) => s.clearSession);
 
@@ -50,10 +76,21 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SessionSortBy>("updated");
+  const [favoriteFirst, setFavoriteFirst] = useState(false);
   const projectIdRef = useRef(currentProject?.project_id);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const rememberFavorites = useCallback(
+    (items: SessionResponse[]) => {
+      setSessionFavorites(
+        Object.fromEntries(items.map((item) => [item.id, item.is_favorite])),
+      );
+    },
+    [setSessionFavorites],
+  );
 
   const fetchSessions = useCallback(async () => {
     if (!currentProject) {
@@ -64,8 +101,16 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
     }
     try {
       setIsLoading(true);
-      const res = await sessionService.list(currentProject.project_id);
+      const res = await sessionService.list(
+        currentProject.project_id,
+        undefined,
+        {
+          sortBy,
+          favoriteFirst,
+        },
+      );
       setSessions(res.sessions);
+      rememberFavorites(res.sessions);
       setNextCursor(res.next_cursor);
     } catch {
       setSessions([]);
@@ -73,7 +118,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject]);
+  }, [currentProject, sortBy, favoriteFirst, rememberFavorites]);
 
   useEffect(() => {
     const currentId = currentProject?.project_id;
@@ -92,17 +137,28 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
       const res = await sessionService.list(
         currentProject.project_id,
         nextCursor,
+        {
+          sortBy,
+          favoriteFirst,
+        },
       );
       setSessions((prev) => [...prev, ...res.sessions]);
+      rememberFavorites(res.sessions);
       setNextCursor(res.next_cursor);
     } catch {
-      // 실패 시 재시도 가능하도록 cursor 유지
+      // Keep the cursor so the next intersection can retry.
     } finally {
       setIsFetchingMore(false);
     }
-  }, [currentProject, nextCursor, isFetchingMore]);
+  }, [
+    currentProject,
+    nextCursor,
+    isFetchingMore,
+    sortBy,
+    favoriteFirst,
+    rememberFavorites,
+  ]);
 
-  // IntersectionObserver 기반 무한 스크롤
   useEffect(() => {
     const sentinel = sentinelRef.current;
     const viewport = viewportRef.current;
@@ -114,7 +170,7 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
           void fetchMore();
         }
       },
-      { root: viewport, rootMargin: '200px', threshold: 0 },
+      { root: viewport, rootMargin: "200px", threshold: 0 },
     );
 
     observer.observe(sentinel);
@@ -128,10 +184,10 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
         clearHitlSession(sessionId);
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
         if (activeSessionId === sessionId) {
-          router.push('/agent');
+          router.push("/agent");
         }
       } catch {
-        // 에러 무시 (글로벌 핸들링)
+        // Ignore menu-level failures for now.
       }
     },
     [activeSessionId, clearHitlSession, router],
@@ -140,28 +196,84 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
   const handleRename = useCallback(
     async (sessionId: string, newTitle: string) => {
       try {
-        await sessionService.update(sessionId, newTitle);
+        await sessionService.update(sessionId, { title: newTitle });
         setSessions((prev) =>
           prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)),
         );
       } catch {
-        // 에러 무시
+        // Ignore menu-level failures for now.
       }
     },
     [],
   );
 
+  const handleFavoriteToggle = useCallback(
+    async (sessionId: string, isFavorite: boolean) => {
+      try {
+        const updated = await sessionService.update(sessionId, {
+          is_favorite: isFavorite,
+        });
+        setSessionFavorite(sessionId, updated.is_favorite);
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === sessionId
+              ? { ...session, is_favorite: updated.is_favorite }
+              : session,
+          ),
+        );
+        if (favoriteFirst) void fetchSessions();
+      } catch {
+        // Ignore menu-level failures for now.
+      }
+    },
+    [favoriteFirst, fetchSessions, setSessionFavorite],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between px-2 pb-2">
-        <h3 className="text-fg-muted text-xs font-medium">모든 작업</h3>
-        <button
-          type="button"
-          aria-label="필터"
-          className="text-icon-default hover:text-icon-active hover:bg-canvas-secondary cursor-pointer rounded-md p-1.5 transition-colors"
-        >
-          <ListFilterPlus className="size-4" />
-        </button>
+        <h3 className="text-xs font-medium text-fg-muted">모든 작업</h3>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="세션 정렬"
+              className={cn(
+                "cursor-pointer rounded-md p-1.5 text-icon-default transition-colors hover:bg-canvas-secondary hover:text-icon-active",
+                favoriteFirst && "text-icon-active",
+              )}
+            >
+              <ListFilterPlus className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuLabel className="text-xs text-fg-muted">
+              정렬
+            </DropdownMenuLabel>
+            {SORT_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <DropdownMenuItem
+                key={value}
+                className="gap-2 text-sm"
+                onSelect={(event) => event.preventDefault()}
+                onClick={() => setSortBy(value)}
+              >
+                <Icon className="size-4" />
+                <span className="flex-1">{label}</span>
+                {sortBy === value && <Check className="size-4" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 text-sm"
+              onSelect={(event) => event.preventDefault()}
+              onClick={() => setFavoriteFirst((prev) => !prev)}
+            >
+              <Star className="size-4 text-amber-400" />
+              <span className="flex-1">즐겨찾기 고정</span>
+              {favoriteFirst && <Check className="size-4" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {isLoading ? (
@@ -181,6 +293,9 @@ export function SessionList({ onSessionSelect }: SessionListProps) {
                 }}
                 onDelete={() => handleDelete(session.id)}
                 onRename={(title) => handleRename(session.id, title)}
+                onFavoriteToggle={(next) =>
+                  handleFavoriteToggle(session.id, next)
+                }
               />
             </div>
           ))}

@@ -1,4 +1,4 @@
-"""Session API 스키마"""
+"""Session API schemas."""
 
 from datetime import datetime
 import uuid
@@ -7,12 +7,16 @@ from pydantic import BaseModel, Field
 
 
 class SessionCreate(BaseModel):
-    project_id: uuid.UUID = Field(description="프로젝트 ID")
-    title: str | None = Field(default=None, description="세션 제목 (없으면 첫 메시지에서 자동 생성)")
+    project_id: uuid.UUID = Field(description="Project ID")
+    title: str | None = Field(
+        default=None,
+        description="Session title. If omitted, it can be generated from the first message.",
+    )
 
 
 class SessionUpdate(BaseModel):
-    title: str = Field(description="세션 제목")
+    title: str | None = Field(default=None, description="Session title")
+    is_favorite: bool | None = Field(default=None, description="Favorite session flag")
 
 
 class SessionMessageResponse(BaseModel):
@@ -28,6 +32,7 @@ class SessionResponse(BaseModel):
     id: str
     project_id: str
     title: str
+    is_favorite: bool = False
     created_at: datetime
     updated_at: datetime
     message_count: int = 0

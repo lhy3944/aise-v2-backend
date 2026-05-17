@@ -1,4 +1,4 @@
-"""Session API 라우터"""
+"""Session API routes."""
 
 import uuid
 
@@ -23,19 +23,28 @@ async def create_session(
     body: SessionCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """세션 생성"""
+    """Create a session."""
     return await session_svc.create_session(db, body)
 
 
 @router.get("", response_model=SessionListResponse)
 async def list_sessions(
-    project_id: uuid.UUID = Query(description="프로젝트 ID"),
-    cursor: str | None = Query(default=None, description="이전 페이지 마지막 세션의 updated_at (ISO 8601)"),
-    limit: int = Query(default=30, ge=1, le=100, description="페이지 크기"),
+    project_id: uuid.UUID = Query(description="Project ID"),
+    cursor: str | None = Query(default=None, description="Cursor from the previous page"),
+    limit: int = Query(default=30, ge=1, le=100, description="Page size"),
+    sort_by: str = Query(default="updated", pattern="^(created|updated)$"),
+    favorite_first: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ):
-    """프로젝트별 세션 목록 조회 (커서 기반 페이지네이션)"""
-    return await session_svc.list_sessions(db, project_id, cursor=cursor, limit=limit)
+    """List sessions for a project."""
+    return await session_svc.list_sessions(
+        db,
+        project_id,
+        cursor=cursor,
+        limit=limit,
+        sort_by=sort_by,
+        favorite_first=favorite_first,
+    )
 
 
 @router.get("/{session_id}", response_model=SessionDetailResponse)
@@ -43,7 +52,7 @@ async def get_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """세션 상세 조회 (메시지 포함)"""
+    """Get session detail with messages."""
     return await session_svc.get_session(db, session_id)
 
 
@@ -53,8 +62,8 @@ async def update_session(
     body: SessionUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """세션 제목 수정"""
-    return await session_svc.update_session(db, session_id, body.title)
+    """Update a session."""
+    return await session_svc.update_session(db, session_id, body)
 
 
 @router.delete("/{session_id}", status_code=204)
@@ -62,5 +71,5 @@ async def delete_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """세션 삭제"""
+    """Delete a session."""
     await session_svc.delete_session(db, session_id)

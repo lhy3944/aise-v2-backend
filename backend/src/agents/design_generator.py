@@ -45,7 +45,11 @@ class DesignGeneratorAgent(BaseAgent):
         logger.info(f"DesignGeneratorAgent run: project={ctx.project_id}")
 
         try:
-            response = await design_svc.generate_design(ctx.db, ctx.project_id)
+            response = await design_svc.generate_design(
+                ctx.db,
+                ctx.project_id,
+                personal_skill_instructions=state.get("personal_skill_instructions"),
+            )
         except AppException as exc:
             logger.warning(f"DesignGeneratorAgent: design_svc rejected: {exc.detail}")
             return {"error": exc.detail}

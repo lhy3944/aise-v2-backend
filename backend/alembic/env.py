@@ -1,19 +1,20 @@
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 config = context.config
 
 # .env의 DATABASE_URL 또는 기본값으로 sqlalchemy.url 설정
 db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://aise:aise1234@localhost:5432/aise")
 # Alembic은 sync 드라이버 필요
-sync_url = db_url.replace("+asyncpg", "+psycopg2") if "+asyncpg" in db_url else db_url
+sync_url = db_url.replace("+asyncpg", "+psycopg") if "+asyncpg" in db_url else db_url
 config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:

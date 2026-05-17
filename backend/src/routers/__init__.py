@@ -13,5 +13,6 @@ from .system_model import router as system_model_router
 from .data_model import router as data_model_router
 from .impact import router as impact_router
 from .session import router as session_router
+from .user_skill import router as user_skill_router
 
-__all__ = ["project_router", "requirement_router", "glossary_router", "review_router", "section_router", "knowledge_router", "agent_router", "agents_router", "artifact_record_router", "srs_router", "design_router", "system_model_router", "data_model_router", "impact_router", "session_router"]
+__all__ = ["project_router", "requirement_router", "glossary_router", "review_router", "section_router", "knowledge_router", "agent_router", "agents_router", "artifact_record_router", "srs_router", "design_router", "system_model_router", "data_model_router", "impact_router", "session_router", "user_skill_router"]

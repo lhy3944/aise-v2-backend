@@ -15,7 +15,7 @@ from src.schemas.api.srs import (
     SrsDocumentResponse,
     SrsListResponse,
 )
-from src.services import srs_svc
+from src.services import srs_svc, user_skill_svc
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/srs",
@@ -29,7 +29,12 @@ async def generate_srs(
     db: AsyncSession = Depends(get_db),
 ):
     """승인된 레코드 기반 SRS 생성 (새 ArtifactVersion 추가)."""
-    return await srs_svc.generate_srs(db, project_id)
+    instructions = await user_skill_svc.format_enabled_skill_instructions(db)
+    return await srs_svc.generate_srs(
+        db,
+        project_id,
+        personal_skill_instructions=instructions,
+    )
 
 
 @router.get("", response_model=SrsListResponse)
@@ -57,4 +62,9 @@ async def regenerate_srs(
     db: AsyncSession = Depends(get_db),
 ):
     """SRS 재생성 (새 ArtifactVersion 추가). srs_id 는 base 로만 사용."""
-    return await srs_svc.generate_srs(db, project_id)
+    instructions = await user_skill_svc.format_enabled_skill_instructions(db)
+    return await srs_svc.generate_srs(
+        db,
+        project_id,
+        personal_skill_instructions=instructions,
+    )

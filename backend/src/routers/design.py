@@ -15,7 +15,7 @@ from src.schemas.api.design import (
     DesignListResponse,
     DesignPipelineResponse,
 )
-from src.services import design_svc
+from src.services import design_svc, user_skill_svc
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/design",
@@ -29,7 +29,12 @@ async def generate_design(
     db: AsyncSession = Depends(get_db),
 ):
     """SRS clean version 기반 설계 산출물 생성 (새 ArtifactVersion 추가)."""
-    return await design_svc.generate_design(db, project_id)
+    instructions = await user_skill_svc.format_enabled_skill_instructions(db)
+    return await design_svc.generate_design(
+        db,
+        project_id,
+        personal_skill_instructions=instructions,
+    )
 
 
 @router.get("", response_model=DesignListResponse)
@@ -59,7 +64,12 @@ async def regenerate_design(
     db: AsyncSession = Depends(get_db),
 ):
     """Design 재생성 (새 ArtifactVersion 추가). design_id 는 base 로만 사용."""
-    return await design_svc.generate_design(db, project_id)
+    instructions = await user_skill_svc.format_enabled_skill_instructions(db)
+    return await design_svc.generate_design(
+        db,
+        project_id,
+        personal_skill_instructions=instructions,
+    )
 
 
 @router.post("/pipeline", response_model=DesignPipelineResponse, status_code=201)

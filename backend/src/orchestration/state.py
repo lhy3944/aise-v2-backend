@@ -88,6 +88,9 @@ class AgentState(TypedDict, total=False):
     #   "max_score": float,
     # }
     rag_cache: dict[str, Any] | None
+    project_context: Any | None
+    rag_signal: dict[str, Any] | None
+    personal_skill_instructions: str | None
 
     # final agent output
     final_answer: str | None

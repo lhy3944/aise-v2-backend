@@ -21,7 +21,7 @@ from src.agents.base import AgentCapability, BaseAgent
 from src.agents.registry import register_agent
 from src.core.exceptions import AppException
 from src.orchestration.state import AgentContext, AgentState
-from src.services import llm_svc, rag_svc
+from src.services import llm_svc, rag_svc, user_skill_svc
 
 
 @register_agent
@@ -84,6 +84,10 @@ class KnowledgeQAAgent(BaseAgent):
                 db=ctx.db,
                 query_embedding=cached_embedding,
                 rewritten_query=rewritten_query,
+            )
+            messages = user_skill_svc.apply_personal_skill_instructions(
+                messages,
+                state.get("personal_skill_instructions"),
             )
         except AppException as exc:
             yield {"kind": "final", "update": {"error": str(exc.detail)}}

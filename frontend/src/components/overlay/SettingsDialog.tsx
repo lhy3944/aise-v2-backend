@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { SettingsAccount } from '@/components/overlay/SettingsAccount';
 import { SettingsGeneral } from '@/components/overlay/SettingsGeneral';
+import { SettingsSkills } from '@/components/overlay/SettingsSkills';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -70,7 +71,7 @@ const SETTINGS_MENU: SettingsMenuItem[] = [
     id: 'skills',
     label: '스킬',
     icon: Sparkles,
-    content: <p className='text-fg-muted text-sm'>스킬</p>,
+    content: <SettingsSkills />,
   },
   {
     id: 'integration',

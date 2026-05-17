@@ -63,7 +63,11 @@ class SrsGeneratorAgent(BaseAgent):
         logger.info(f"SrsGeneratorAgent run: project={ctx.project_id}")
 
         try:
-            response = await srs_svc.generate_srs(ctx.db, ctx.project_id)
+            response = await srs_svc.generate_srs(
+                ctx.db,
+                ctx.project_id,
+                personal_skill_instructions=state.get("personal_skill_instructions"),
+            )
         except AppException as exc:
             logger.warning(f"SrsGeneratorAgent: srs_svc rejected: {exc.detail}")
             return {"error": exc.detail}

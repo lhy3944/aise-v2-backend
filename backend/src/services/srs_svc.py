@@ -44,6 +44,7 @@ from src.schemas.api.srs import (
 )
 from src.services.artifact_messages import MISSING_RECORDS_MESSAGE
 from src.services.llm_svc import chat_completion
+from src.services.user_skill_svc import apply_personal_skill_instructions
 
 
 # ── 직렬화 헬퍼 ─────────────────────────────────────────────────────────────
@@ -145,7 +146,10 @@ async def _next_version_number(db: AsyncSession, artifact_id: uuid.UUID) -> int:
 
 
 async def generate_srs(
-    db: AsyncSession, project_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    personal_skill_instructions: str | None = None,
 ) -> SrsDocumentResponse:
     """승인된 레코드 기반 SRS 새 버전 생성.
 
@@ -243,6 +247,10 @@ async def generate_srs(
                     output_format_hint=section.output_format_hint,
                     records=sec_records,
                     glossary=glossary_dicts,
+                )
+                messages = apply_personal_skill_instructions(
+                    messages,
+                    personal_skill_instructions,
                 )
                 section_content = await chat_completion(
                     messages, temperature=0.2, max_completion_tokens=4096

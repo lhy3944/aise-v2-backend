@@ -39,6 +39,7 @@ from src.schemas.api.artifact_testcase import (
 )
 from src.services.artifact_messages import MISSING_SRS_MESSAGE
 from src.services.llm_svc import chat_completion
+from src.services.user_skill_svc import apply_personal_skill_instructions
 
 
 def _content_hash(payload: dict[str, Any]) -> str:
@@ -127,7 +128,10 @@ def _to_response(artifact: Artifact) -> TestCaseArtifactResponse:
 
 
 async def generate_testcases(
-    db: AsyncSession, project_id: uuid.UUID
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    personal_skill_instructions: str | None = None,
 ) -> TestCaseGenerateResponse:
     """프로젝트의 SRS Artifact 의 current(clean) version 을 입력으로 TC 생성.
 
@@ -208,6 +212,10 @@ async def generate_testcases(
             section_content=section_content,
             srs_section_id=section_id_str,
             glossary=glossary_dicts,
+        )
+        messages = apply_personal_skill_instructions(
+            messages,
+            personal_skill_instructions,
         )
 
         try:

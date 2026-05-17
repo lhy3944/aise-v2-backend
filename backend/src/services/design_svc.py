@@ -38,6 +38,7 @@ from src.schemas.api.design import (
 )
 from src.services.artifact_messages import MISSING_SRS_MESSAGE
 from src.services.llm_svc import chat_completion
+from src.services.user_skill_svc import apply_personal_skill_instructions
 from src.schemas.api.design import DesignPipelineResponse
 
 
@@ -144,7 +145,10 @@ async def _next_version_number(db: AsyncSession, artifact_id: uuid.UUID) -> int:
 
 
 async def generate_design(
-    db: AsyncSession, project_id: uuid.UUID
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    personal_skill_instructions: str | None = None,
 ) -> DesignDocumentResponse:
     """SRS clean version 기반으로 설계 산출물 새 버전 생성.
 
@@ -204,6 +208,10 @@ async def generate_design(
                 srs_section_content=srs_content,
                 srs_section_id=srs_section_id,
                 glossary=glossary_dicts,
+            )
+            messages = apply_personal_skill_instructions(
+                messages,
+                personal_skill_instructions,
             )
             design_content = await chat_completion(
                 messages, temperature=0.2, max_completion_tokens=4096

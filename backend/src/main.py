@@ -25,7 +25,7 @@ from src.core.exceptions import (
 )
 from src.core.logging import setup_logging
 from src.middleware import LoggingMiddleware
-from src.routers import project_router, requirement_router, glossary_router, review_router, section_router, knowledge_router, agent_router, agents_router, artifact_record_router, srs_router, design_router, system_model_router, data_model_router, impact_router, session_router
+from src.routers import project_router, requirement_router, glossary_router, review_router, section_router, knowledge_router, agent_router, agents_router, artifact_record_router, srs_router, design_router, system_model_router, data_model_router, impact_router, session_router, user_skill_router
 from src.routers.artifact import routers as artifact_routers
 
 # 로깅 초기화 (앱 시작 시점에 명시적으로 실행)
@@ -60,5 +60,6 @@ app.include_router(system_model_router)
 app.include_router(data_model_router)
 app.include_router(impact_router)
 app.include_router(session_router)
+app.include_router(user_skill_router)
 for r in artifact_routers:
     app.include_router(r)

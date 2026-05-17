@@ -11,6 +11,13 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_PORT=8082
 FRONTEND_PORT=3009
 
+if [ -f "$ROOT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/.env"
+    set +a
+fi
+
 # 색상
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

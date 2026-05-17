@@ -3,14 +3,14 @@
 import uuid
 
 from loguru import logger
-from sqlalchemy import select, func, delete
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.models.project import Project
 from src.models.session import Session, SessionMessage
 from src.schemas.api.session import (
     SessionCreate,
+    SessionUpdate,
     SessionResponse,
     SessionDetailResponse,
     SessionMessageResponse,
@@ -24,6 +24,7 @@ def _to_session_response(session: Session, message_count: int = 0) -> SessionRes
         id=str(session.id),
         project_id=str(session.project_id),
         title=session.title,
+        is_favorite=session.is_favorite,
         created_at=session.created_at,
         updated_at=session.updated_at,
         message_count=message_count,
@@ -64,6 +65,8 @@ async def list_sessions(
     project_id: uuid.UUID,
     cursor: str | None = None,
     limit: int = 30,
+    sort_by: str = "updated",
+    favorite_first: bool = False,
 ) -> SessionListResponse:
     """프로젝트별 세션 목록 조회 (커서 기반 페이지네이션, 최신순)"""
     from datetime import datetime, timezone
@@ -80,14 +83,33 @@ async def list_sessions(
         .where(Session.project_id == project_id)
     )
 
-    if cursor:
+    date_column = Session.created_at if sort_by == "created" else Session.updated_at
+    cursor_favorite: bool | None = None
+    cursor_value = cursor
+    if cursor and "|" in cursor:
+        raw_favorite, cursor_value = cursor.split("|", 1)
+        cursor_favorite = raw_favorite == "1"
+
+    if cursor_value:
         try:
-            cursor_dt = datetime.fromisoformat(cursor).replace(tzinfo=timezone.utc)
-            stmt = stmt.where(Session.updated_at < cursor_dt)
+            cursor_dt = datetime.fromisoformat(cursor_value).replace(tzinfo=timezone.utc)
+            if favorite_first and cursor_favorite is not None:
+                stmt = stmt.where(
+                    or_(
+                        Session.is_favorite < cursor_favorite,
+                        and_(Session.is_favorite == cursor_favorite, date_column < cursor_dt),
+                    )
+                )
+            else:
+                stmt = stmt.where(date_column < cursor_dt)
         except (ValueError, TypeError):
             pass
 
-    stmt = stmt.order_by(Session.updated_at.desc()).limit(limit + 1)
+    order_by = []
+    if favorite_first:
+        order_by.append(Session.is_favorite.desc())
+    order_by.append(date_column.desc())
+    stmt = stmt.order_by(*order_by).limit(limit + 1)
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -102,7 +124,12 @@ async def list_sessions(
 
     next_cursor = None
     if has_next and sessions:
-        next_cursor = sessions[-1].updated_at.isoformat()
+        last = sessions[-1]
+        date_value = last.created_at if sort_by == "created" else last.updated_at
+        if favorite_first:
+            next_cursor = f"{1 if last.is_favorite else 0}|{date_value.isoformat()}"
+        else:
+            next_cursor = date_value.isoformat()
 
     return SessionListResponse(sessions=sessions, next_cursor=next_cursor)
 
@@ -123,6 +150,7 @@ async def get_session(db: AsyncSession, session_id: uuid.UUID) -> SessionDetailR
         id=str(session.id),
         project_id=str(session.project_id),
         title=session.title,
+        is_favorite=session.is_favorite,
         created_at=session.created_at,
         updated_at=session.updated_at,
         message_count=len(messages),
@@ -130,10 +158,13 @@ async def get_session(db: AsyncSession, session_id: uuid.UUID) -> SessionDetailR
     )
 
 
-async def update_session(db: AsyncSession, session_id: uuid.UUID, title: str) -> SessionResponse:
+async def update_session(db: AsyncSession, session_id: uuid.UUID, data: SessionUpdate) -> SessionResponse:
     """세션 제목 수정"""
     session = await get_or_404(db, Session, Session.id == session_id, error_msg="세션을 찾을 수 없습니다.")
-    session.title = title
+    if data.title is not None:
+        session.title = data.title
+    if data.is_favorite is not None:
+        session.is_favorite = data.is_favorite
     await db.commit()
     await db.refresh(session)
     return _to_session_response(session)

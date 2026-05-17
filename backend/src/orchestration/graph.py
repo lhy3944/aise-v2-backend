@@ -610,6 +610,7 @@ async def run_chat(
     # 2. ProjectContextSnapshot 구성 (Supervisor 입력용)
     if session_factory is not None and project_uuid_for_gate is not None:
         from src.orchestration.context import build_project_context
+        from src.services.user_skill_svc import format_enabled_skill_instructions
 
         rag_signal: dict[str, Any] | None = None
         if gate_result is not None and gate_result.rag_cache:
@@ -627,6 +628,14 @@ async def run_chat(
                     initial_state["rag_signal"] = rag_signal
         except Exception:  # pragma: no cover — snapshot 실패는 치명적 아님
             logger.exception("build_project_context failed, proceeding without snapshot")
+
+        try:
+            async with session_factory() as db:
+                instructions = await format_enabled_skill_instructions(db)
+                if instructions:
+                    initial_state["personal_skill_instructions"] = instructions
+        except Exception:  # pragma: no cover - personalization must not break chat
+            logger.exception("format_enabled_skill_instructions failed, proceeding without skills")
 
     # 3. Supervisor — tool-calling or JSON-based routing.
     try:

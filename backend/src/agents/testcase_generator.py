@@ -107,7 +107,11 @@ class TestCaseGeneratorAgent(BaseAgent):
 
         # 기본: TC 생성
         try:
-            response = await testcase_svc.generate_testcases(ctx.db, ctx.project_id)
+            response = await testcase_svc.generate_testcases(
+                ctx.db,
+                ctx.project_id,
+                personal_skill_instructions=state.get("personal_skill_instructions"),
+            )
         except AppException as exc:
             logger.warning(
                 f"TestCaseGeneratorAgent: testcase_svc rejected: {exc.detail}"

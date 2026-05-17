@@ -6,6 +6,7 @@ from src.models.knowledge import KnowledgeDocument, KnowledgeChunk
 from src.models.srs import SrsDocument, SrsSection
 from src.models.session import Session, SessionMessage
 from src.models.hitl import HitlRequest
+from src.models.user_skill import UserSkill
 from src.models.artifact import (
     Artifact,
     ArtifactVersion,
@@ -29,6 +30,7 @@ __all__ = [
     "Session",
     "SessionMessage",
     "HitlRequest",
+    "UserSkill",
     "Artifact",
     "ArtifactVersion",
     "PullRequest",

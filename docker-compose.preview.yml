@@ -50,7 +50,8 @@ services:
     ports:
       - "8181:8081"
     env_file:
-      - .env.preview
+      - path: .env.preview
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aise}:${POSTGRES_PASSWORD:-aise1234}@postgres:5432/${POSTGRES_DB:-aise}
       ENVIRONMENT: preview
